@@ -1,139 +1,30 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
 
 
 __license__   = 'GPL v3'
 __copyright__ = '2009, Kovid Goyal <kovid@kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
 
-import os, re, shutil, zipfile, glob, json, errno
-from zlib import compress
-is_ci = os.environ.get('CI', '').lower() == 'true'
+import errno
+import glob
+import json
+import os
+import shutil
+import zipfile
 
-from setup import Command, basenames, __appname__, download_securely, dump_json
-from polyglot.builtins import codepoint_to_chr, itervalues, iteritems, only_unicode_recursive
+from polyglot.builtins import iteritems, itervalues, only_unicode_recursive
+from setup import Command, basenames, download_securely, dump_json
 
 
 def get_opts_from_parser(parser):
     def do_opt(opt):
-        for x in opt._long_opts:
-            yield x
-        for x in opt._short_opts:
-            yield x
+        yield from opt._long_opts
+        yield from opt._short_opts
     for o in parser.option_list:
-        for x in do_opt(o):
-            yield x
+        yield from do_opt(o)
     for g in parser.option_groups:
         for o in g.option_list:
-            for x in do_opt(o):
-                yield x
-
-
-class Kakasi(Command):  # {{{
-
-    description = 'Compile resources for unihandecode'
-
-    KAKASI_PATH = os.path.join(Command.SRC,  __appname__,
-            'ebooks', 'unihandecode', 'pykakasi')
-
-    def run(self, opts):
-        self.records = {}
-        src = self.j(self.KAKASI_PATH, 'kakasidict.utf8')
-        dest = self.j(self.RESOURCES, 'localization',
-                'pykakasi','kanwadict2.calibre_msgpack')
-        base = os.path.dirname(dest)
-        if not os.path.exists(base):
-            os.makedirs(base)
-
-        if self.newer(dest, src):
-            self.info('\tGenerating Kanwadict')
-
-            for line in open(src, "rb"):
-                self.parsekdict(line)
-            self.kanwaout(dest)
-
-        src = self.j(self.KAKASI_PATH, 'itaijidict.utf8')
-        dest = self.j(self.RESOURCES, 'localization',
-                'pykakasi','itaijidict2.calibre_msgpack')
-
-        if self.newer(dest, src):
-            self.info('\tGenerating Itaijidict')
-            self.mkitaiji(src, dest)
-
-        src = self.j(self.KAKASI_PATH, 'kanadict.utf8')
-        dest = self.j(self.RESOURCES, 'localization',
-                'pykakasi','kanadict2.calibre_msgpack')
-
-        if self.newer(dest, src):
-            self.info('\tGenerating kanadict')
-            self.mkkanadict(src, dest)
-
-    def mkitaiji(self, src, dst):
-        dic = {}
-        for line in open(src, "rb"):
-            line = line.decode('utf-8').strip()
-            if line.startswith(';;'):  # skip comment
-                continue
-            if re.match(r"^$",line):
-                continue
-            pair = re.sub(r'\\u([0-9a-fA-F]{4})', lambda x:codepoint_to_chr(int(x.group(1),16)), line)
-            dic[pair[0]] = pair[1]
-        from calibre.utils.serialize import msgpack_dumps
-        with open(dst, 'wb') as f:
-            f.write(msgpack_dumps(dic))
-
-    def mkkanadict(self, src, dst):
-        dic = {}
-        for line in open(src, "rb"):
-            line = line.decode('utf-8').strip()
-            if line.startswith(';;'):  # skip comment
-                continue
-            if re.match(r"^$",line):
-                continue
-            (alpha, kana) = line.split(' ')
-            dic[kana] = alpha
-        from calibre.utils.serialize import msgpack_dumps
-        with open(dst, 'wb') as f:
-            f.write(msgpack_dumps(dic))
-
-    def parsekdict(self, line):
-        line = line.decode('utf-8').strip()
-        if line.startswith(';;'):  # skip comment
-            return
-        (yomi, kanji) = line.split(' ')
-        if ord(yomi[-1:]) <= ord('z'):
-            tail = yomi[-1:]
-            yomi = yomi[:-1]
-        else:
-            tail = ''
-        self.updaterec(kanji, yomi, tail)
-
-    def updaterec(self, kanji, yomi, tail):
-        key = "%04x"%ord(kanji[0])
-        if key in self.records:
-            if kanji in self.records[key]:
-                rec = self.records[key][kanji]
-                rec.append((yomi,tail))
-                self.records[key].update({kanji: rec})
-            else:
-                self.records[key][kanji]=[(yomi, tail)]
-        else:
-            self.records[key] = {}
-            self.records[key][kanji]=[(yomi, tail)]
-
-    def kanwaout(self, out):
-        from calibre.utils.serialize import msgpack_dumps
-        with open(out, 'wb') as f:
-            dic = {}
-            for k, v in iteritems(self.records):
-                dic[k] = compress(msgpack_dumps(v))
-            f.write(msgpack_dumps(dic))
-
-    def clean(self):
-        kakasi = self.j(self.RESOURCES, 'localization', 'pykakasi')
-        if os.path.exists(kakasi):
-            shutil.rmtree(kakasi)
-# }}}
+            yield from do_opt(o)
 
 
 class CACerts(Command):  # {{{
@@ -141,22 +32,29 @@ class CACerts(Command):  # {{{
     description = 'Get updated mozilla CA certificate bundle'
     CA_PATH = os.path.join(Command.RESOURCES, 'mozilla-ca-certs.pem')
 
+    def add_options(self, parser):
+        parser.add_option('--path-to-cacerts', help='Path to previously downloaded mozilla-ca-certs.pem')
+
     def run(self, opts):
-        try:
-            with open(self.CA_PATH, 'rb') as f:
-                raw = f.read()
-        except EnvironmentError as err:
-            if err.errno != errno.ENOENT:
-                raise
-            raw = b''
-        nraw = download_securely('https://curl.haxx.se/ca/cacert.pem')
-        if not nraw:
-            raise RuntimeError('Failed to download CA cert bundle')
-        if nraw != raw:
-            self.info('Updating Mozilla CA certificates')
-            with open(self.CA_PATH, 'wb') as f:
-                f.write(nraw)
-            self.verify_ca_certs()
+        if opts.path_to_cacerts:
+            shutil.copyfile(opts.path_to_cacerts, self.CA_PATH)
+            os.chmod(self.CA_PATH, 0o644)
+        else:
+            try:
+                with open(self.CA_PATH, 'rb') as f:
+                    raw = f.read()
+            except OSError as err:
+                if err.errno != errno.ENOENT:
+                    raise
+                raw = b''
+            nraw = download_securely('https://curl.haxx.se/ca/cacert.pem')
+            if not nraw:
+                raise RuntimeError('Failed to download CA cert bundle')
+            if nraw != raw:
+                self.info('Updating Mozilla CA certificates')
+                with open(self.CA_PATH, 'wb') as f:
+                    f.write(nraw)
+                self.verify_ca_certs()
 
     def verify_ca_certs(self):
         from calibre.utils.https import get_https_resource_securely
@@ -169,11 +67,18 @@ class RecentUAs(Command):  # {{{
     description = 'Get updated list of common browser user agents'
     UA_PATH = os.path.join(Command.RESOURCES, 'user-agent-data.json')
 
+    def add_options(self, parser):
+        parser.add_option('--path-to-user-agent-data', help='Path to previously downloaded user-agent-data.json')
+
     def run(self, opts):
         from setup.browser_data import get_data
-        data = get_data()
-        with open(self.UA_PATH, 'wb') as f:
-            f.write(json.dumps(data, indent=2, ensure_ascii=False, sort_keys=True).encode('utf-8'))
+        if opts.path_to_user_agent_data:
+            shutil.copyfile(opts.path_to_user_agent_data, self.UA_PATH)
+            os.chmod(self.UA_PATH, 0o644)
+        else:
+            data = get_data()
+            with open(self.UA_PATH, 'w', encoding='utf-8') as f:
+                json.dump(data, f, indent=2, ensure_ascii=False, sort_keys=True)
 # }}}
 
 
@@ -186,7 +91,7 @@ class RapydScript(Command):  # {{{
                 help='Only compile the specified module')
 
     def run(self, opts):
-        from calibre.utils.rapydscript import compile_srv, compile_editor, compile_viewer
+        from calibre.utils.rapydscript import compile_editor, compile_srv, compile_viewer
         if opts.only_module:
             locals()['compile_' + opts.only_module]()
         else:
@@ -199,7 +104,7 @@ class RapydScript(Command):  # {{{
 class Resources(Command):  # {{{
 
     description = 'Compile various needed calibre resources'
-    sub_commands = ['kakasi', 'liberation_fonts', 'mathjax', 'rapydscript', 'hyphenation']
+    sub_commands = ['liberation_fonts', 'mathjax', 'rapydscript', 'hyphenation', 'piper_voices']
 
     def run(self, opts):
         from calibre.utils.serialize import msgpack_dumps
@@ -216,8 +121,7 @@ class Resources(Command):  # {{{
             with open(dest, 'wb') as f:
                 f.write(msgpack_dumps(scripts))
 
-        from calibre.web.feeds.recipes.collection import \
-                serialize_builtin_recipes, iterate_over_builtin_recipe_files
+        from calibre.web.feeds.recipes.collection import iterate_over_builtin_recipe_files, serialize_builtin_recipes
 
         files = [x[1] for x in iterate_over_builtin_recipe_files()]
 
@@ -276,6 +180,7 @@ class Resources(Command):  # {{{
         dest = self.j(self.RESOURCES, 'template-functions.json')
         function_dict = {}
         import inspect
+
         from calibre.utils.formatter_functions import formatter_functions
         for obj in formatter_functions().get_builtins().values():
             eval_func = inspect.getmembers(obj,
@@ -298,7 +203,7 @@ class Resources(Command):  # {{{
             except Exception:
                 continue
             src = src.replace('def ' + func.__name__, 'def replace')
-            imports = ['from %s import %s' % (x.__module__, x.__name__) for x in func.imports]
+            imports = [f'from {x.__module__} import {x.__name__}' for x in func.imports]
             if imports:
                 src = '\n'.join(imports) + '\n\n' + src
             function_dict[func.name] = src
@@ -323,8 +228,6 @@ class Resources(Command):  # {{{
             x = self.j(self.RESOURCES, x+'.pickle')
             if os.path.exists(x):
                 os.remove(x)
-        from setup.commands import kakasi
-        kakasi.clean()
         for x in ('builtin_recipes.xml', 'builtin_recipes.zip',
                 'template-functions.json', 'user-manual-translation-stats.json'):
             x = self.j(self.RESOURCES, x)

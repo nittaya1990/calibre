@@ -1,23 +1,21 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
 
 
 __license__   = 'GPL v3'
 __copyright__ = '2010, Kovid Goyal <kovid@kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
 
-import os, time
+import os
+import time
 from datetime import date
 
-from calibre import prints, guess_type, isbytestring, fsync
-from calibre.devices.errors import DeviceError
-from calibre.devices.usbms.driver import debug_print
+from calibre import fsync, guess_type, isbytestring, prints
 from calibre.constants import DEBUG, preferred_encoding
+from calibre.devices.errors import DeviceError
 from calibre.ebooks.chardet import xml_to_unicode
-from calibre.ebooks.metadata import authors_to_string, title_sort, \
-                                    authors_to_sort_string
+from calibre.ebooks.metadata import authors_to_sort_string, authors_to_string, title_sort
+from calibre.prints import debug_print
 from polyglot.binary import from_base64_bytes
-from polyglot.builtins import unicode_type, zip
 
 '''
 cacheExt.xml
@@ -49,11 +47,11 @@ EMPTY_EXT_CACHE = b'''\
 '''
 
 MIME_MAP   = {
-                "lrf" : "application/x-sony-bbeb",
+                'lrf' : 'application/x-sony-bbeb',
                 'lrx' : 'application/x-sony-bbeb',
-                "rtf" : "application/rtf",
-                "pdf" : "application/pdf",
-                "txt" : "text/plain" ,
+                'rtf' : 'application/rtf',
+                'pdf' : 'application/pdf',
+                'txt' : 'text/plain',
                 'epub': 'application/epub+zip',
               }
 
@@ -66,16 +64,16 @@ INVERSE_MONTH_MAP = dict(zip(MONTH_MAP.values(), MONTH_MAP.keys()))
 def strptime(src):
     src = src.strip()
     src = src.split()
-    src[0] = unicode_type(DAY_MAP[src[0][:-1]])+','
-    src[2] = unicode_type(MONTH_MAP[src[2]])
+    src[0] = str(DAY_MAP[src[0][:-1]])+','
+    src[2] = str(MONTH_MAP[src[2]])
     return time.strptime(' '.join(src), '%w, %d %m %Y %H:%M:%S %Z')
 
 
 def strftime(epoch, zone=time.localtime):
     try:
-        src = time.strftime("%w, %d %m %Y %H:%M:%S GMT", zone(epoch)).split()
+        src = time.strftime('%w, %d %m %Y %H:%M:%S GMT', zone(epoch)).split()
     except:
-        src = time.strftime("%w, %d %m %Y %H:%M:%S GMT", zone()).split()
+        src = time.strftime('%w, %d %m %Y %H:%M:%S GMT', zone()).split()
 
     src[0] = INVERSE_DAY_MAP[int(src[0][:-1])]+','
     src[2] = INVERSE_MONTH_MAP[int(src[2])]
@@ -84,7 +82,7 @@ def strftime(epoch, zone=time.localtime):
 
 def uuid():
     from uuid import uuid4
-    return unicode_type(uuid4()).replace('-', '', 1).upper()
+    return str(uuid4()).replace('-', '', 1).upper()
 
 # }}}
 
@@ -105,35 +103,35 @@ class XMLCache:
         for source_id, path in paths.items():
             if source_id == 0:
                 if not os.path.exists(path):
-                    raise DeviceError(('The SONY XML cache %r does not exist. Try'
-                        ' disconnecting and reconnecting your reader.')%repr(path))
-                with lopen(path, 'rb') as f:
+                    raise DeviceError(f'The SONY XML cache {repr(path)!r} does not exist. Try'
+                        ' disconnecting and reconnecting your reader.')
+                with open(path, 'rb') as f:
                     raw = f.read()
             else:
                 raw = EMPTY_CARD_CACHE
                 if os.access(path, os.R_OK):
-                    with lopen(path, 'rb') as f:
+                    with open(path, 'rb') as f:
                         raw = f.read()
 
             self.roots[source_id] = safe_xml_fromstring(
                 xml_to_unicode(raw, strip_encoding_pats=True, assume_utf8=True, verbose=DEBUG)[0]
             )
             if self.roots[source_id] is None:
-                raise Exception(('The SONY database at %r is corrupted. Try '
-                        ' disconnecting and reconnecting your reader.')%path)
+                raise Exception(f'The SONY database at {path!r} is corrupted. Try '
+                        ' disconnecting and reconnecting your reader.')
 
         self.ext_paths, self.ext_roots = {}, {}
         for source_id, path in ext_paths.items():
             if not os.path.exists(path):
                 try:
-                    with lopen(path, 'wb') as f:
+                    with open(path, 'wb') as f:
                         f.write(EMPTY_EXT_CACHE)
                         fsync(f)
                 except:
                     pass
             if os.access(path, os.W_OK):
                 try:
-                    with lopen(path, 'rb') as f:
+                    with open(path, 'rb') as f:
                         self.ext_roots[source_id] = safe_xml_fromstring(
                             xml_to_unicode(f.read(), strip_encoding_pats=True, assume_utf8=True, verbose=DEBUG)[0]
                         )
@@ -197,8 +195,8 @@ class XMLCache:
                     playlist.set('title', title)
                 if title in seen:
                     for i in range(2, 1000):
-                        if title+unicode_type(i) not in seen:
-                            title = title+unicode_type(i)
+                        if title+str(i) not in seen:
+                            title = title+str(i)
                             playlist.set('title', title)
                             seen.add(title)
                             break
@@ -267,11 +265,11 @@ class XMLCache:
         if title in self._playlist_to_playlist_id_map[bl_idx]:
             return self._playlist_to_playlist_id_map[bl_idx][title]
         debug_print('Creating playlist:', title)
-        ans = root.makeelement('{%s}playlist'%self.namespaces[bl_idx],
+        ans = root.makeelement(f'{{{self.namespaces[bl_idx]}}}playlist',
                 nsmap=root.nsmap, attrib={
                     'uuid' : uuid(),
                     'title': title,
-                    'id'   : unicode_type(self.max_id(root)+1),
+                    'id'   : str(self.max_id(root)+1),
                     'sourceid': '1'
                     })
         root.append(ans)
@@ -305,18 +303,18 @@ class XMLCache:
                     if id_ in idmap:
                         item.set('id', idmap[id_])
                         if DEBUG:
-                            debug_print('Remapping id %s to %s'%(id_, idmap[id_]))
+                            debug_print(f'Remapping id {id_} to {idmap[id_]}')
 
         def ensure_media_xml_base_ids(root):
             for num, tag in enumerate(('library', 'watchSpecial')):
-                for x in root.xpath('//*[local-name()="%s"]'%tag):
-                    x.set('id', unicode_type(num))
+                for x in root.xpath(f'//*[local-name()="{tag}"]'):
+                    x.set('id', str(num))
 
         def rebase_ids(root, base, sourceid, pl_sourceid):
             'Rebase all ids and also make them consecutive'
             for item in root.xpath('//*[@sourceid]'):
                 sid = pl_sourceid if item.tag.endswith('playlist') else sourceid
-                item.set('sourceid', unicode_type(sid))
+                item.set('sourceid', str(sid))
             # Only rebase ids of nodes that are immediate children of the
             # record root (that way playlist/itemnodes are unaffected
             items = root.xpath('child::*[@id]')
@@ -326,8 +324,8 @@ class XMLCache:
                 old = int(item.get('id'))
                 new = base + i
                 if old != new:
-                    item.set('id', unicode_type(new))
-                    idmap[unicode_type(old)] = unicode_type(new)
+                    item.set('id', str(new))
+                    idmap[str(old)] = str(new)
             return idmap
 
         self.prune_empty_playlists()
@@ -356,7 +354,7 @@ class XMLCache:
 
         last_bl = max(self.roots.keys())
         max_id = self.max_id(self.roots[last_bl])
-        self.roots[0].set('nextID', unicode_type(max_id+1))
+        self.roots[0].set('nextID', str(max_id+1))
         debug_print('Finished running fix_ids()')
 
     # }}}
@@ -436,8 +434,7 @@ class XMLCache:
                             book.lpath, book.thumbnail)
                     self.periodicalize_book(book, ext_record)
 
-            debug_print('Timezone votes: %d GMT, %d LTZ, use_tz_var=%s'%
-                                        (gtz_count, ltz_count, use_tz_var))
+            debug_print(f'Timezone votes: {gtz_count} GMT, {ltz_count} LTZ, use_tz_var={use_tz_var}')
             self.update_playlists(i, root, booklist, collections_attributes)
         # Update the device collections because update playlist could have added
         # some new ones.
@@ -462,7 +459,7 @@ class XMLCache:
         if not self.is_sony_periodical(book):
             return
         record.set('conformsTo',
-            "http://xmlns.sony.net/e-book/prs/periodicals/1.0/newspaper/1.0")
+            'http://xmlns.sony.net/e-book/prs/periodicals/1.0/newspaper/1.0')
 
         record.set('description', '')
 
@@ -484,7 +481,7 @@ class XMLCache:
 
         try:
             pubdate = strftime(book.pubdate.utctimetuple(),
-                    zone=lambda x : x)
+                    zone=lambda x: x)
             record.set('publicationDate', pubdate)
         except:
             pass
@@ -513,7 +510,7 @@ class XMLCache:
             # Ensure each book has an ID.
             for rec in records:
                 if rec.get('id', None) is None:
-                    rec.set('id', unicode_type(self.max_id(root)+1))
+                    rec.set('id', str(self.max_id(root)+1))
             ids = [x.get('id', None) for x in records]
             # Given that we set the ids, there shouldn't be any None's. But
             # better to be safe...
@@ -540,7 +537,7 @@ class XMLCache:
             # add the ids that get_collections didn't know about.
             for id_ in ids + extra_ids:
                 item = playlist.makeelement(
-                        '{%s}item'%self.namespaces[bl_index],
+                        f'{{{self.namespaces[bl_index]}}}item',
                         nsmap=playlist.nsmap, attrib={'id':id_})
                 playlist.append(item)
 
@@ -570,15 +567,15 @@ class XMLCache:
         id_ = self.max_id(root)+1
         attrib = {
                 'page':'0', 'part':'0','pageOffset':'0','scale':'0',
-                'id':unicode_type(id_), 'sourceid':'1', 'path':lpath}
-        ans = root.makeelement('{%s}text'%namespace, attrib=attrib, nsmap=root.nsmap)
+                'id':str(id_), 'sourceid':'1', 'path':lpath}
+        ans = root.makeelement(f'{{{namespace}}}text', attrib=attrib, nsmap=root.nsmap)
         root.append(ans)
         return ans
 
     def create_ext_text_record(self, root, bl_id, lpath, thumbnail):
         namespace = root.nsmap[None]
         attrib = {'path': lpath}
-        ans = root.makeelement('{%s}text'%namespace, attrib=attrib,
+        ans = root.makeelement(f'{{{namespace}}}text', attrib=attrib,
                 nsmap=root.nsmap)
         ans.tail = '\n'
         if len(root) > 0:
@@ -588,8 +585,8 @@ class XMLCache:
         root.append(ans)
         if thumbnail and thumbnail[-1]:
             ans.text = '\n' + '\t\t'
-            t = root.makeelement('{%s}thumbnail'%namespace,
-                attrib={'width':unicode_type(thumbnail[0]), 'height':unicode_type(thumbnail[1])},
+            t = root.makeelement(f'{{{namespace}}}thumbnail',
+                attrib={'width':str(thumbnail[0]), 'height':str(thumbnail[1])},
                 nsmap=root.nsmap)
             t.text = 'main_thumbnail.jpg'
             ans.append(t)
@@ -651,14 +648,14 @@ class XMLCache:
                 debug_print("Use localtime TZ and tz='0' for new book", book.lpath)
             elif ltz_count >= gtz_count:
                 tz = time.localtime
-                debug_print("Use localtime TZ for new book", book.lpath)
+                debug_print('Use localtime TZ for new book', book.lpath)
             else:
                 tz = time.gmtime
-                debug_print("Use GMT TZ for new book", book.lpath)
+                debug_print('Use GMT TZ for new book', book.lpath)
             date = strftime(timestamp, zone=tz)
             record.set('date', clean(date))
         try:
-            record.set('size', clean(unicode_type(os.stat(path).st_size)))
+            record.set('size', clean(str(os.stat(path).st_size)))
         except:
             record.set('size', '0')
         title = book.title if book.title else _('Unknown')
@@ -688,8 +685,8 @@ class XMLCache:
             record.set('sourceid', '1')
         if 'id' not in record.attrib:
             num = self.max_id(record.getroottree().getroot())
-            record.set('id', unicode_type(num+1))
-        return (gtz_count, ltz_count, use_tz_var)
+            record.set('id', str(num+1))
+        return gtz_count, ltz_count, use_tz_var
     # }}}
 
     # Writing the XML files {{{
@@ -726,7 +723,7 @@ class XMLCache:
                     xml_declaration=True)
             raw = raw.replace(b"<?xml version='1.0' encoding='UTF-8'?>",
                     b'<?xml version="1.0" encoding="UTF-8"?>')
-            with lopen(path, 'wb') as f:
+            with open(path, 'wb') as f:
                 f.write(raw)
                 fsync(f)
 
@@ -738,7 +735,7 @@ class XMLCache:
                 continue
             raw = raw.replace(b"<?xml version='1.0' encoding='UTF-8'?>",
                     b'<?xml version="1.0" encoding="UTF-8"?>')
-            with lopen(path, 'wb') as f:
+            with open(path, 'wb') as f:
                 f.write(raw)
                 fsync(f)
 
@@ -759,7 +756,7 @@ class XMLCache:
         return m
 
     def book_by_lpath(self, lpath, root):
-        matches = root.xpath(u'//*[local-name()="text" and @path="%s"]'%lpath)
+        matches = root.xpath(f'//*[local-name()="text" and @path="{lpath}"]')
         if matches:
             return matches[0]
 
@@ -784,7 +781,7 @@ class XMLCache:
         for i in self.roots:
             for c in ('library', 'text', 'image', 'playlist', 'thumbnail',
                     'watchSpecial'):
-                matches = self.record_roots[i].xpath('//*[local-name()="%s"]'%c)
+                matches = self.record_roots[i].xpath(f'//*[local-name()="{c}"]')
                 if matches:
                     e = matches[0]
                     self.namespaces[i] = e.nsmap[e.prefix]

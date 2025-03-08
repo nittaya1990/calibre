@@ -1,20 +1,20 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 
 
 __license__ = 'GPL v3'
 __copyright__ = '2013, Kovid Goyal <kovid at kovidgoyal.net>'
 
-import re, string
+import re
+import string
 from collections import Counter, defaultdict
 from functools import partial
 
-from lxml.html.builder import OL, UL, SPAN
+from lxml.html.builder import OL, SPAN, UL
 
 from calibre.ebooks.docx.block_styles import ParagraphStyle
 from calibre.ebooks.docx.char_styles import RunStyle, inherit
 from calibre.ebooks.metadata import roman
-from polyglot.builtins import iteritems, unicode_type
+from polyglot.builtins import iteritems
 
 STYLE_MAP = {
     'aiueo': 'hiragana',
@@ -39,8 +39,8 @@ def alphabet(val, lower=True):
 
 alphabet_map = {
     'lower-alpha':alphabet, 'upper-alpha':partial(alphabet, lower=False),
-    'lower-roman':lambda x:roman(x).lower(), 'upper-roman':roman,
-    'decimal-leading-zero': lambda x: '0%d' % x
+    'lower-roman':lambda x: roman(x).lower(), 'upper-roman':roman,
+    'decimal-leading-zero': lambda x: f'0{x}'
 }
 
 
@@ -73,7 +73,7 @@ class Level:
             if x > ilvl or x not in counter:
                 return ''
             val = counter[x] - (0 if x == ilvl else 1)
-            formatter = alphabet_map.get(self.fmt, lambda x: '%d' % x)
+            formatter = alphabet_map.get(self.fmt, lambda x: f'{x}')
             return formatter(val)
         return re.sub(r'%(\d+)', sub, template).rstrip() + '\xa0'
 
@@ -140,7 +140,7 @@ class Level:
                 except Exception:
                     fname = None
                 else:
-                    ans['list-style-image'] = 'url("images/%s")' % fname
+                    ans['list-style-image'] = f'url("images/{fname}")'
         return ans
 
     def char_css(self):
@@ -290,8 +290,8 @@ class Numbering:
                         counter[ilvl] = self.starts[num_id][ilvl]
                     seen_instances.add(num_id)
                     p.tag = 'li'
-                    p.set('value', '%s' % counter[ilvl])
-                    p.set('list-lvl', unicode_type(ilvl))
+                    p.set('value', f'{counter[ilvl]}')
+                    p.set('list-lvl', str(ilvl))
                     p.set('list-id', num_id)
                     if lvl.num_template is not None:
                         val = lvl.format_template(counter, ilvl, lvl.num_template)
@@ -361,7 +361,7 @@ class Numbering:
                 if child.tag == 'li':
                     if current_run:
                         last = current_run[-1]
-                        if (last.get('list-id') , last.get('list-lvl')) != (child.get('list-id'), child.get('list-lvl')):
+                        if (last.get('list-id'), last.get('list-lvl')) != (child.get('list-id'), child.get('list-lvl')):
                             commit(current_run)
                     current_run.append(child)
                 else:
@@ -381,8 +381,7 @@ class Numbering:
                 obj = object_map[li]
                 bs = styles.para_cache[obj]
                 if i == 0:
-                    wrap.set('style', 'display:table; padding-left:%s' %
-                             bs.css.get('margin-left', '0'))
+                    wrap.set('style', 'display:table; padding-left:{}'.format(bs.css.get('margin-left', '0')))
                 bs.css.pop('margin-left', None)
                 for child in li:
                     child.set('style', 'display:table-cell')

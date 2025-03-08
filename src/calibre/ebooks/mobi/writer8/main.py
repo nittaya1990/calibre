@@ -1,14 +1,14 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
 
 
 __license__   = 'GPL v3'
 __copyright__ = '2012, Kovid Goyal <kovid@kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
 
-import copy, logging
-from functools import partial
+import copy
+import logging
 from collections import defaultdict, namedtuple
+from functools import partial
 from io import BytesIO
 from struct import pack
 
@@ -16,21 +16,18 @@ import css_parser
 from css_parser.css import CSSRule
 from lxml import etree
 
-from calibre import isbytestring, force_unicode
-from calibre.ebooks.mobi.utils import (create_text_record, to_base,
-        is_guide_ref_start)
+from calibre import force_unicode, isbytestring
 from calibre.ebooks.compression.palmdoc import compress_doc
-from calibre.ebooks.oeb.base import (OEB_DOCS, OEB_STYLES, SVG_MIME, XPath,
-        extract, XHTML, urlnormalize)
-from calibre.ebooks.oeb.normalize_css import condense_sheet
-from calibre.ebooks.oeb.parse_utils import barename
-from calibre.ebooks.mobi.writer8.skeleton import Chunker, aid_able_tags, to_href
-from calibre.ebooks.mobi.writer8.index import (NCXIndex, SkelIndex,
-        ChunkIndex, GuideIndex, NonLinearNCXIndex)
+from calibre.ebooks.mobi.utils import create_text_record, is_guide_ref_start, to_base
+from calibre.ebooks.mobi.writer8.index import ChunkIndex, GuideIndex, NCXIndex, NonLinearNCXIndex, SkelIndex
 from calibre.ebooks.mobi.writer8.mobi import KF8Book
+from calibre.ebooks.mobi.writer8.skeleton import Chunker, aid_able_tags, to_href
 from calibre.ebooks.mobi.writer8.tbs import apply_trailing_byte_sequences
 from calibre.ebooks.mobi.writer8.toc import TOCAdder
-from polyglot.builtins import iteritems, unicode_type
+from calibre.ebooks.oeb.base import OEB_DOCS, OEB_STYLES, SVG_MIME, XHTML, XPath, extract, urlnormalize
+from calibre.ebooks.oeb.normalize_css import condense_sheet
+from calibre.ebooks.oeb.parse_utils import barename
+from polyglot.builtins import iteritems
 
 XML_DOCS = OEB_DOCS | {SVG_MIME}
 
@@ -43,7 +40,10 @@ class KF8Writer:
 
     def __init__(self, oeb, opts, resources):
         self.oeb, self.opts, self.log = oeb, opts, oeb.log
-        self.compress = not self.opts.dont_compress
+        try:
+            self.compress = not self.opts.dont_compress
+        except Exception:
+            self.compress = True
         self.has_tbs = False
         self.log.info('Creating KF8 output')
 
@@ -121,10 +121,9 @@ class KF8Writer:
                 idx = to_ref(idx)
                 if is_image:
                     self.used_images.add(ref)
-                    return 'kindle:embed:%s?mime=%s'%(idx,
-                            self.resources.mime_map[ref])
+                    return f'kindle:embed:{idx}?mime={self.resources.mime_map[ref]}'
                 else:
-                    return 'kindle:embed:%s'%idx
+                    return f'kindle:embed:{idx}'
             return oref
 
         for item in self.oeb.manifest:
@@ -173,7 +172,7 @@ class KF8Writer:
                     idx = sheets.get(href, None)
                     if idx is not None:
                         idx = to_ref(idx)
-                        rule.href = 'kindle:flow:%s?mime=text/css'%idx
+                        rule.href = f'kindle:flow:{idx}?mime=text/css'
                         changed = True
             return changed
 
@@ -185,7 +184,7 @@ class KF8Writer:
                 idx = sheets.get(href, None)
                 if idx is not None:
                     idx = to_ref(idx)
-                    link.set('href', 'kindle:flow:%s?mime=text/css'%idx)
+                    link.set('href', f'kindle:flow:{idx}?mime=text/css')
 
             for tag in XPath('//h:style')(root):
                 p = tag.getparent()
@@ -209,7 +208,7 @@ class KF8Writer:
             idx = to_ref(len(self.flows))
             self.flows.append(raw)
             for link in elems:
-                link.set('href', 'kindle:flow:%s?mime=text/css'%idx)
+                link.set('href', f'kindle:flow:{idx}?mime=text/css')
 
         for item in self.oeb.manifest:
             if item.media_type in OEB_STYLES:
@@ -241,7 +240,7 @@ class KF8Writer:
                 p = svg.getparent()
                 pos = p.index(svg)
                 img = etree.Element(XHTML('img'),
-                        src="kindle:flow:%s?mime=image/svg+xml"%to_ref(idx))
+                        src=f'kindle:flow:{to_ref(idx)}?mime=image/svg+xml')
                 p.insert(pos, img)
                 extract(svg)
 
@@ -250,8 +249,7 @@ class KF8Writer:
                 abshref = item.abshref(src)
                 idx = images.get(abshref, None)
                 if idx is not None:
-                    img.set('src', 'kindle:flow:%s?mime=image/svg+xml'%
-                            to_ref(idx))
+                    img.set('src', f'kindle:flow:{to_ref(idx)}?mime=image/svg+xml')
 
     def replace_internal_links_with_placeholders(self):
         self.link_map = {}
@@ -270,7 +268,7 @@ class KF8Writer:
                     # a non utf-8 quoted url? Since we cannot interpret it, pass it through.
                     pass
                 if href in hrefs:
-                    placeholder = 'kindle:pos:fid:0000:off:%s'%to_href(count)
+                    placeholder = f'kindle:pos:fid:0000:off:{to_href(count)}'
                     self.link_map[placeholder] = (href, frag)
                     a.set('href', placeholder)
 
@@ -304,7 +302,7 @@ class KF8Writer:
                         # https://bugs.launchpad.net/bugs/1489495
                         if id_:
                             cid += 1
-                            val = 'c%d' % cid
+                            val = f'c{cid}'
                             self.id_map[(item.href, id_)] = val
                             tag.set('cid', val)
                     else:
@@ -333,7 +331,7 @@ class KF8Writer:
         self.flows[0] = chunker.text
 
     def create_text_records(self):
-        self.flows = [x.encode('utf-8') if isinstance(x, unicode_type) else x for x
+        self.flows = [x.encode('utf-8') if isinstance(x, str) else x for x
                 in self.flows]
         text = b''.join(self.flows)
         self.text_length = len(text)

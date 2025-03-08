@@ -1,6 +1,3 @@
-# -*- coding: utf-8 -*-
-
-
 __license__ = 'GPL 3'
 __copyright__ = '2009, John Schember <john@nachtimwald.com>'
 __docformat__ = 'restructuredtext en'
@@ -12,8 +9,8 @@ Transform OEB content into plain text
 import re
 
 from lxml import etree
-from polyglot.builtins import string_or_bytes
 
+from polyglot.builtins import string_or_bytes
 
 BLOCK_TAGS = [
     'div',
@@ -68,10 +65,10 @@ class TXTMLizer:
         from calibre.ebooks.oeb.base import XHTML
         from calibre.ebooks.oeb.stylizer import Stylizer
         from calibre.utils.xml_parse import safe_xml_fromstring
-        output = [u'']
+        output = ['']
         output.append(self.get_toc())
         for item in self.oeb_book.spine:
-            self.log.debug('Converting %s to TXT...' % item.href)
+            self.log.debug(f'Converting {item.href} to TXT...')
             for x in item.data.iterdescendants(etree.Comment):
                 if x.text and '--' in x.text:
                     x.text = x.text.replace('--', '__')
@@ -101,9 +98,9 @@ class TXTMLizer:
         toc = ['']
         if getattr(self.opts, 'inline_toc', None):
             self.log.debug('Generating table of contents...')
-            toc.append('%s\n\n' % _('Table of Contents:'))
+            toc.append('{}\n\n'.format(_('Table of Contents:')))
             for item in self.toc_titles:
-                toc.append('* %s\n\n' % item)
+                toc.append(f'* {item}\n\n')
         return ''.join(toc)
 
     def create_flat_toc(self, nodes):
@@ -118,7 +115,7 @@ class TXTMLizer:
     def cleanup_text(self, text):
         self.log.debug('\tClean up text...')
         # Replace bad characters.
-        text = text.replace(u'\xa0', ' ')
+        text = text.replace('\xa0', ' ')
 
         # Replace tabs, vertical tags and form feeds with single space.
         text = text.replace('\t+', ' ')
@@ -126,25 +123,25 @@ class TXTMLizer:
         text = text.replace('\f+', ' ')
 
         # Single line paragraph.
-        text = re.sub('(?<=.)\n(?=.)', ' ', text)
+        text = re.sub(r'(?<=.)\n(?=.)', ' ', text)
 
         # Remove multiple spaces.
-        text = re.sub('[ ]{2,}', ' ', text)
+        text = re.sub(r'[ ]{2,}', ' ', text)
 
         # Remove excessive newlines.
-        text = re.sub('\n[ ]+\n', '\n\n', text)
+        text = re.sub(r'\n[ ]+\n', '\n\n', text)
         if self.opts.remove_paragraph_spacing:
-            text = re.sub('\n{2,}', '\n', text)
-            text = re.sub(r'(?msu)^(?P<t>[^\t\n]+?)$', lambda mo: u'%s\n\n' % mo.group('t'), text)
-            text = re.sub(r'(?msu)(?P<b>[^\n])\n+(?P<t>[^\t\n]+?)(?=\n)', lambda mo: '%s\n\n\n\n\n\n%s' % (mo.group('b'), mo.group('t')), text)
+            text = re.sub(r'\n{2,}', '\n', text)
+            text = re.sub(r'(?msu)^(?P<t>[^\t\n]+?)$', lambda mo: '{}\n\n'.format(mo.group('t')), text)
+            text = re.sub(r'(?msu)(?P<b>[^\n])\n+(?P<t>[^\t\n]+?)(?=\n)', lambda mo: '{}\n\n\n\n\n\n{}'.format(mo.group('b'), mo.group('t')), text)
         else:
-            text = re.sub('\n{7,}', '\n\n\n\n\n\n', text)
+            text = re.sub(r'\n{7,}', '\n\n\n\n\n\n', text)
 
         # Replace spaces at the beginning and end of lines
         # We don't replace tabs because those are only added
         # when remove paragraph spacing is enabled.
-        text = re.sub('(?imu)^[ ]+', '', text)
-        text = re.sub('(?imu)[ ]+$', '', text)
+        text = re.sub(r'(?imu)^[ ]+', '', text)
+        text = re.sub(r'(?imu)[ ]+$', '', text)
 
         # Remove empty space and newlines at the beginning of the document.
         text = re.sub(r'(?u)^[ \n]+', '', text)
@@ -217,7 +214,7 @@ class TXTMLizer:
 
         # Are we in a heading?
         # This can either be a heading tag or a TOC item.
-        if tag in HEADING_TAGS or '%s#%s' % (page.href, tag_id) in self.toc_ids:
+        if tag in HEADING_TAGS or f'{page.href}#{tag_id}' in self.toc_ids:
             in_heading = True
             if not self.last_was_heading:
                 text.append('\n\n\n\n\n\n')

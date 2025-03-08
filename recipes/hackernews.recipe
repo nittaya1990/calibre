@@ -4,8 +4,9 @@ __license__ = 'GPL v3'
 '''
 Hacker News
 '''
-from calibre.web.feeds.news import BasicNewsRecipe
 from calibre.ptempfile import PersistentTemporaryFile
+from calibre.web.feeds.news import BasicNewsRecipe
+
 try:
     from urllib.parse import urlparse
 except ImportError:
@@ -14,13 +15,14 @@ import re
 
 
 class HNWithCommentsLink(BasicNewsRecipe):
-    title = 'HN With Comments Link'
+    title = 'HN With Actual Comments'
     __author__ = 'Tom Scholl & David Kerschner'
     description = u'Hacker News, run by Y Combinator. Anything that good hackers would find interesting, with a focus on programming and startups.'
     publisher = 'Y Combinator'
     category = 'news, programming, it, technology'
     delay = 1
-    max_articles_per_feed = 30
+    max_articles_per_feed = 20
+    oldest_article = 3
     use_embedded_content = False
     no_stylesheets = True
     encoding = 'utf-8'
@@ -28,7 +30,8 @@ class HNWithCommentsLink(BasicNewsRecipe):
     requires_version = (0, 8, 16)
 
     feeds = [
-        (u'Hacker News', 'https://news.ycombinator.com/rss')
+        (u'Hacker News Frontpage', 'https://hnrss.org/frontpage'),
+        (u'Ask Hacker News', 'https://hnrss.org/ask')
     ]
 
     temp_files = []
@@ -48,8 +51,10 @@ class HNWithCommentsLink(BasicNewsRecipe):
         soup = self.index_to_soup(url)
         main = soup.find('tr').findNextSiblings('tr', limit=2)[1].td
 
-        title = self.tag_to_string(main.find('td', 'title'))
-        link = main.find('td', 'title').find('a')['href']
+        title_element = main.select('td.title .titleline a')[0]
+        title = self.tag_to_string(title_element)
+        link = title_element['href']
+        # link = main.find('td', 'title').find('a')['href']
         if link.startswith('item?'):
             link = 'https://news.ycombinator.com/' + link
         readable_link = link.rpartition('http://')[2].rpartition('https://')[2]
@@ -66,14 +71,12 @@ class HNWithCommentsLink(BasicNewsRecipe):
         for td in main.findAll('td', 'default'):
             comhead = td.find('span', 'comhead')
             if comhead:
-                com_title = u'<h4>' + \
-                    self.tag_to_string(comhead).replace(
-                        ' | link', '') + u'</h4>'
+                com_title = u'<h4>' + self.tag_to_string(comhead).replace(' | link', '') + u'</h4>'
                 comhead.parent.extract()
                 br = td.find('br')
                 if br:
                     br.extract()
-                reply = td.find('a', attrs={'href': re.compile('^reply?')})
+                reply = td.find('a', attrs={'href': re.compile(r'^reply?')})
                 if reply:
                     reply.parent.extract()
                 td.name = 'div'
@@ -81,17 +84,18 @@ class HNWithCommentsLink(BasicNewsRecipe):
                 td['style'] = 'padding-left: ' + str(indent_width) + 'px'
                 comments = comments + com_title + td.prettify()
 
-        body = u'<h3>' + title + u'</h3><p><a href="' + link + u'">' + readable_link + \
-            u'</a><br/><strong>' + subtext + u'</strong></p>' + title_content + u'<br/>'
+        body = (u'<h3>' + title + u'</h3><p><a href="' + link + u'">' + readable_link +
+                u'</a><br/><strong>' + subtext + u'</strong></p>' + title_content + u'<br/>')
         body = body + comments
         return u'<html><title>' + title + u'</title><body>' + body + '</body></html>'
 
     def parse_feeds(self):
-        a = super(HNWithCommentsLink, self).parse_feeds()
+        a = super().parse_feeds()
         self.hn_articles = a[0].articles
         return a
 
     def get_obfuscated_article(self, url):
+        self.log('get_obfuscated_article with url=' + url)
         if url.startswith('https://news.ycombinator.com'):
             content = self.get_hn_content(url)
         else:
@@ -108,13 +112,7 @@ class HNWithCommentsLink(BasicNewsRecipe):
             else:
                 content = self.get_readable_content(url)
 
-            article = 0
-            for a in self.hn_articles:
-                if a.url == url:
-                    article = a
-
-        content = re.sub(r'</body>\s*</html>\s*$', '', content) + \
-            article.summary + '</body></html>'
+        # content = re.sub(r'</body>\s*</html>\s*$', '', content) + article.summary + '</body></html>'
 
         if not isinstance(content, bytes):
             content = content.encode('utf-8')
@@ -135,7 +133,7 @@ class HNWithCommentsLink(BasicNewsRecipe):
         article.text_summary = self.prettyify_url(article.url)
         article.summary = article.text_summary
 
-#    def parse_index(self):
-#        feeds = []
-#        feeds.append((u'Hacker News',[{'title': 'Testing', 'url': 'https://news.ycombinator.com/item?id=2935944'}]))
-#        return feeds
+    # def parse_index(self):
+    #     feeds = []
+    #     feeds.append((u'Hacker News',[{'title': 'Testing', 'url': 'https://news.ycombinator.com/item?id=2935944'}]))
+    #     return feeds

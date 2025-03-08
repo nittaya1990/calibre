@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-__license__ = 'GPL v3'
+__license__   = 'GPL v3'
 __copyright__ = 'Copyright 2011 Starson17'
 '''
 engadget.com
@@ -9,51 +9,88 @@ engadget.com
 from calibre.web.feeds.news import BasicNewsRecipe
 
 
+def classes(classes):
+    q = frozenset(classes.split(' '))
+    return dict(attrs={'class': lambda x: x and frozenset(x.split()).intersection(q)})
+
+
 class Engadget(BasicNewsRecipe):
-    title = u'Engadget'
-    __author__ = 'Starson17, modified by epubli'
-    __version__ = 'v1.00'
-    __date__ = '08, Feb 2021'
-    description = 'Tech news'
-    language = 'en'
-    oldest_article = 7
+    title                 = u'Engadget'
+    __author__            = 'Starson17, modified by epubli'
+    __version__           = 'v2.2'
+    __date__              = '2024-09-15'
+    description           = 'Tech news'
+    language              = 'en'
+    oldest_article        = 7
     max_articles_per_feed = 100
-    no_stylesheets = True
-    use_embedded_content = False
-    remove_javascript = True
-    remove_empty_feeds = True
+    no_stylesheets        = True
+    use_embedded_content  = False
+    remove_javascript     = True
+    remove_empty_feeds    = True
     compress_news_images = True
     scale_news_images_to_device = True
-    remove_attributes = ['class']
+    cover_url = 'https://upload.wikimedia.org/wikipedia/commons/b/bb/Engadget-logo.svg'
 
     keep_only_tags = [
-        dict(name='figure'),
-        dict(name='div', attrs={'data-component': 'ArticleHeader'}),
-        dict(
-            name='div',
-            attrs={'class': ['article-text', 'article-text c-gray-1 no-review']}
-        )
+        classes('caas-content-wrapper caas-title-wrapper'),
+        dict(name='figure')
     ]
     remove_tags = [
-        dict(name='div', attrs={'data-component': 'ArticleAuthorInfo'}),
-        dict(name='span', attrs={'class': 'c-gray-7'})
+        dict(name='div', attrs={'class':'caas-content-byline-wrapper'}),
+        dict(name='div', attrs={'data-component':'ArticleAuthorInfo'}),
+        classes('commerce-module caas-header caas-prestige-bottom-share caas-share-buttons caas-da caas-3p-blocked commerce-disclaimer notification-upsell-push article-slideshow athena-button email-form')  # noqa: E501
     ]
 
     feeds = [(u'Posts', u'https://www.engadget.com/rss.xml')]
 
-    extra_css = '''
-                    h1{font-family:Arial,Helvetica,sans-serif; font-weight:bold;font-size:large;}
-                    h2{font-family:Arial,Helvetica,sans-serif; font-weight:bold;font-size:small;}
-                    p{font-family:Arial,Helvetica,sans-serif;font-size:small;}
-                    body{font-family:Helvetica,Arial,sans-serif;font-size:small;}
-    '''
+    def parse_feeds(self):
+        # Call parent's method.
+        feeds = BasicNewsRecipe.parse_feeds(self)
+        # Loop through all feeds.
+        for feed in feeds:
+            # Loop through all articles in feed.
+            for article in feed.articles[:]:
+                # Remove articles with '...' in the url.
+                if '/deals/' in article.url:
+                    print('Removing:',article.title)
+                    feed.articles.remove(article)
+                # Remove articles with '...' in the title.
+                elif 'best tech deals' in article.title:
+                    print('Removing:',article.title)
+                    feed.articles.remove(article)
+                elif 'Podcast' in article.title:
+                    print('Removing:',article.title)
+                    feed.articles.remove(article)
+                elif 'The Morning After' in article.title:
+                    print('Removing:',article.title)
+                    feed.articles.remove(article)
+        return feeds
 
-    def preprocess_raw_html(self, raw, url):
-        # remove sponsored articles and daily article with summaries of previous articles
-        unwanted_article_keywords = [
-            'made possible by our sponsor', 'The Morning After'
-        ]
-        for keyword in unwanted_article_keywords:
-            if keyword in raw:
-                self.abort_article('Skipping unwanted article')
-        return raw
+    def preprocess_html(self, soup):
+        for attr in 'data-src data-src-mobile'.split():
+            for img in soup.findAll('img'):
+                try:
+                    ds = img[attr].split()[0]
+                    del img[attr]
+                except KeyError:
+                    continue
+                if ds:
+                    index = ds.rfind('https://')
+                    if index != -1:
+                        imgsrc = ds[index:]
+                        img['src'] = imgsrc
+        for divs in soup.findAll('div'):
+            try:
+                if divs['style'].split()[0].startswith('padding'):
+                    print('Removing padding')
+                    del divs['style']
+            except KeyError:
+                continue
+        # Reorder the "title" and "content" elements
+        title_div = soup.find('div', {'class': 'caas-title-wrapper'})
+        content_div = soup.find('div', {'class': 'caas-content-wrapper'})
+        if title_div and content_div:
+            soup.body.clear()
+            soup.body.append(title_div)
+            soup.body.append(content_div)
+        return soup

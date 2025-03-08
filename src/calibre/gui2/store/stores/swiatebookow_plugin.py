@@ -9,13 +9,13 @@ __docformat__ = 'restructuredtext en'
 
 from base64 import b64encode
 from contextlib import closing
+
 try:
     from urllib.parse import quote
 except ImportError:
     from urllib import quote
 
 from lxml import html
-
 from qt.core import QUrl
 
 from calibre import browser, url_slash_cleaner
@@ -54,7 +54,7 @@ class SwiatEbookowStore(BasicStoreConfig, StorePlugin):
             d = WebStoreDialog(self.gui, url, parent, detail_url if detail_url else aff_url)
             d.setWindowTitle(self.name)
             d.set_tags(self.config.get('tags', ''))
-            d.exec_()
+            d.exec()
 
     def search(self, query, max_results=10, timeout=60):
 
@@ -81,7 +81,7 @@ class SwiatEbookowStore(BasicStoreConfig, StorePlugin):
                     counter -= 1
 
                     s = SearchResult()
-                    s.cover_url =  'https://www.swiatebookow.pl' + cover_url
+                    s.cover_url = 'https://www.swiatebookow.pl' + cover_url
                     s.title = title.strip()
                     s.author = author.strip()
                     s.price = price

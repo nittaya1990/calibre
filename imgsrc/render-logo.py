@@ -1,9 +1,11 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 # License: GPLv3 Copyright: 2016, Kovid Goyal <kovid at kovidgoyal.net>
 
 
-import os, subprocess, sys, shutil
+import os
+import shutil
+import subprocess
+import sys
 
 j = os.path.join
 base = os.path.dirname(os.path.abspath(__file__))

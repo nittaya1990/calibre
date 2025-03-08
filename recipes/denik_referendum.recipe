@@ -1,5 +1,6 @@
 # vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
 from __future__ import unicode_literals
+
 from calibre.web.feeds.recipes import BasicNewsRecipe
 
 
@@ -24,4 +25,4 @@ class denikReferendumRecipe(BasicNewsRecipe):
     remove_tags = [dict(name='div', attrs={'class': ['box boxLine', 'box noprint', 'box']}),
                    dict(name='h3', attrs={'class': 'head alt'})]
 
-    keep_only_tags = [dict(name='div',   attrs={'id': ['content']})]
+    keep_only_tags = [dict(name='div', attrs={'id': ['content']})]

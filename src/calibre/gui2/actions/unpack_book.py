@@ -1,31 +1,29 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
 
 
 __license__   = 'GPL v3'
 __copyright__ = '2010, Kovid Goyal <kovid@kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
 
-import os, weakref, shutil
+import os
+import shutil
+import weakref
 
-from qt.core import (QDialog, QVBoxLayout, QHBoxLayout, QRadioButton, QFrame,
-        QPushButton, QLabel, QGroupBox, QGridLayout, QIcon, QSize, QTimer)
+from qt.core import QDialog, QFrame, QGridLayout, QGroupBox, QHBoxLayout, QIcon, QLabel, QPushButton, QRadioButton, QSize, QTimer, QVBoxLayout
 
 from calibre import as_unicode
 from calibre.constants import ismacos
-from calibre.gui2 import error_dialog, question_dialog, open_local_file, gprefs
-from calibre.gui2.actions import InterfaceAction
-from calibre.ptempfile import (PersistentTemporaryDirectory,
-        PersistentTemporaryFile)
+from calibre.gui2 import error_dialog, gprefs, open_local_file, question_dialog
+from calibre.gui2.actions import InterfaceActionWithLibraryDrop
+from calibre.ptempfile import PersistentTemporaryDirectory, PersistentTemporaryFile
 from calibre.utils.config import prefs, tweaks
-from polyglot.builtins import unicode_type
 
 
 class UnpackBook(QDialog):
 
     def __init__(self, parent, book_id, fmts, db):
         QDialog.__init__(self, parent)
-        self.setWindowIcon(QIcon(I('unpack-book.png')))
+        self.setWindowIcon(QIcon.ic('unpack-book.png'))
         self.book_id, self.fmts, self.db_ref = book_id, fmts, weakref.ref(db)
         self._exploded = None
         self._cleanup_dirs = []
@@ -36,7 +34,7 @@ class UnpackBook(QDialog):
             index_is_id=True))
 
         button = self.fmt_choice_buttons[0]
-        button_map = {unicode_type(x.text()):x for x in self.fmt_choice_buttons}
+        button_map = {str(x.text()):x for x in self.fmt_choice_buttons}
         of = prefs['output_format'].upper()
         df = tweaks.get('default_tweak_format', None)
         lf = gprefs.get('last_tweak_format', None)
@@ -104,10 +102,10 @@ class UnpackBook(QDialog):
         b.setContentsMargins(left, top, right, bottom)
         l.addLayout(b, stretch=10)
 
-        self.explode_button = QPushButton(QIcon(I('wizard.png')), _('&Explode book'))
-        self.preview_button = QPushButton(QIcon(I('view.png')), _('&Preview book'))
-        self.cancel_button  = QPushButton(QIcon(I('window-close.png')), _('&Cancel'))
-        self.rebuild_button = QPushButton(QIcon(I('exec.png')), _('&Rebuild book'))
+        self.explode_button = QPushButton(QIcon.ic('wizard.png'), _('&Explode book'))
+        self.preview_button = QPushButton(QIcon.ic('view.png'), _('&Preview book'))
+        self.cancel_button  = QPushButton(QIcon.ic('window-close.png'), _('&Cancel'))
+        self.rebuild_button = QPushButton(QIcon.ic('exec.png'), _('&Rebuild book'))
 
         self.explode_button.setToolTip(
                 _('Explode the book to edit its components'))
@@ -165,7 +163,7 @@ class UnpackBook(QDialog):
         return question_dialog(self, _('Are you sure?'), msg)
 
     def do_explode(self):
-        from calibre.ebooks.tweak import get_tools, Error, WorkerError
+        from calibre.ebooks.tweak import Error, WorkerError, get_tools
         tdir = PersistentTemporaryDirectory('_tweak_explode')
         self._cleanup_dirs.append(tdir)
         det_msg = None
@@ -203,7 +201,7 @@ class UnpackBook(QDialog):
         open_local_file(tdir)
 
     def rebuild_it(self):
-        from calibre.ebooks.tweak import get_tools, WorkerError
+        from calibre.ebooks.tweak import WorkerError, get_tools
         src_dir = self._exploded
         det_msg = None
         of = PersistentTemporaryFile('_tweak_rebuild.'+self.current_format.lower())
@@ -283,36 +281,16 @@ class UnpackBook(QDialog):
     def current_format(self):
         for b in self.fmt_choice_buttons:
             if b.isChecked():
-                return unicode_type(b.text())
+                return str(b.text())
 
 
-class UnpackBookAction(InterfaceAction):
+class UnpackBookAction(InterfaceActionWithLibraryDrop):
 
     name = 'Unpack Book'
     action_spec = (_('Unpack book'), 'unpack-book.png',
             _('Unpack books in the EPUB, AZW3, HTMLZ formats into their individual components'), 'U')
     dont_add_to = frozenset(['context-menu-device'])
     action_type = 'current'
-
-    accepts_drops = True
-
-    def accept_enter_event(self, event, mime_data):
-        if mime_data.hasFormat("application/calibre+from_library"):
-            return True
-        return False
-
-    def accept_drag_move_event(self, event, mime_data):
-        if mime_data.hasFormat("application/calibre+from_library"):
-            return True
-        return False
-
-    def drop_event(self, event, mime_data):
-        mime = 'application/calibre+from_library'
-        if mime_data.hasFormat(mime):
-            self.dropped_ids = tuple(map(int, mime_data.data(mime).data().split()))
-            QTimer.singleShot(1, self.do_drop)
-            return True
-        return False
 
     def do_drop(self):
         book_ids = self.dropped_ids
@@ -340,9 +318,9 @@ class UnpackBookAction(InterfaceAction):
             'mobi', 'azw'})
         if not tweakable_fmts:
             return error_dialog(self.gui, _('Cannot unpack book'),
-                    _('The book must be in ePub, HTMLZ or AZW3 formats to unpack.'
+                    _('The book must be in EPUB, HTMLZ or AZW3 formats to unpack.'
                         '\n\nFirst convert the book to one of these formats.'),
                     show=True)
         dlg = UnpackBook(self.gui, book_id, tweakable_fmts, db)
-        dlg.exec_()
+        dlg.exec()
         dlg.cleanup()

@@ -1,9 +1,8 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 # License: GPLv3 Copyright: 2016, Kovid Goyal <kovid at kovidgoyal.net>
 
 
-from calibre.utils.img import image_from_data, scale_image, image_to_data, blend_on_canvas
+from calibre.utils.img import blend_on_canvas, image_from_data, image_to_data, scale_image
 
 
 def rescale_image(data, scale_news_images, compress_news_images_max_size, compress_news_images_auto_size):
@@ -40,10 +39,10 @@ def rescale_image(data, scale_news_images, compress_news_images_max_size, compre
 
 
 def prepare_masthead_image(path_to_image, out_path, mi_width, mi_height):
-    with lopen(path_to_image, 'rb') as f:
+    with open(path_to_image, 'rb') as f:
         img = image_from_data(f.read())
     img = blend_on_canvas(img, mi_width, mi_height)
-    with lopen(out_path, 'wb') as f:
+    with open(out_path, 'wb') as f:
         f.write(image_to_data(img))
 
 

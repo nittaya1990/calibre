@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 
 
 __license__ = 'GPL v3'
@@ -8,10 +7,10 @@ __copyright__ = '2014, Kovid Goyal <kovid at kovidgoyal.net>'
 from lxml import etree
 
 from calibre import prepare_string_for_xml as xml
-from calibre.ebooks.oeb.polish.check.base import BaseError, WARN
+from calibre.ebooks.oeb.base import DC, DC11_NS, OPF, OPF2_NS, XHTML_MIME
+from calibre.ebooks.oeb.polish.check.base import WARN, BaseError
 from calibre.ebooks.oeb.polish.toc import find_existing_nav_toc, parse_nav
 from calibre.ebooks.oeb.polish.utils import guess_type
-from calibre.ebooks.oeb.base import OPF, OPF2_NS, DC, DC11_NS, XHTML_MIME
 from polyglot.builtins import iteritems
 
 
@@ -215,7 +214,7 @@ class MultipleCovers(BaseError):
         self.all_locations = [(name, lnum, None) for lnum in sorted(locs)]
 
     def __call__(self, container):
-        items = [e for e in container.opf_xpath('/opf:package/opf:metadata/opf:meta[@name="cover"]')]
+        items = list(container.opf_xpath('/opf:package/opf:metadata/opf:meta[@name="cover"]'))
         [container.remove_from_xml(e) for e in items[1:]]
         container.dirty(self.name)
         return True
@@ -224,7 +223,7 @@ class MultipleCovers(BaseError):
 class NoUID(BaseError):
 
     HELP = xml(_(
-        'The OPF must have a unique identifier, i.e. a <dc:identifier> element whose id is referenced'
+        'The OPF must have an unique identifier, i.e. a <dc:identifier> element whose id is referenced'
         ' by the <package> element'))
     INDIVIDUAL_FIX = _('Auto-generate a unique identifier')
 
@@ -252,9 +251,17 @@ class NoUID(BaseError):
 class EmptyIdentifier(BaseError):
 
     HELP = xml(_('The <dc:identifier> element must not be empty.'))
+    INDIVIDUAL_FIX = _('Remove empty identifiers')
 
     def __init__(self, name, lnum):
         BaseError.__init__(self, _('Empty identifier element'), name, lnum)
+
+    def __call__(self, container):
+        for dcid in container.opf_xpath('/opf:package/opf:metadata/dc:identifier'):
+            if not dcid.text or not dcid.text.strip():
+                container.remove_from_xml(dcid)
+        container.dirty(container.opf_name)
+        return True
 
 
 class BadSpineMime(BaseError):
@@ -272,7 +279,7 @@ class BadSpineMime(BaseError):
             self.iid = iid
 
     def __call__(self, container):
-        container.opf_xpath('/opf:package/opf:manifest/opf:item[@id=%r]' % self.iid)[0].set(
+        container.opf_xpath(f'/opf:package/opf:manifest/opf:item[@id={self.iid!r}]')[0].set(
             'media-type', XHTML_MIME)
         container.dirty(container.opf_name)
         container.refresh_mime_map()
@@ -286,7 +293,7 @@ def check_opf(container):
     if container.opf.tag != OPF('package'):
         err = BaseError(_('The OPF does not have the correct root element'), container.opf_name, container.opf.sourceline)
         err.HELP = xml(_(
-            'The opf must have the root element <package> in namespace {0}, like this: <package xmlns="{0}">')).format(OPF2_NS)
+            'The OPF must have the root element <package> in namespace {0}, like this: <package xmlns="{0}">')).format(OPF2_NS)
         errors.append(err)
 
     elif container.opf.get('version') is None and container.book_type == 'epub':
@@ -388,8 +395,12 @@ def check_opf(container):
                 errors.append(NookCover(container.opf_name, cover.sourceline))
 
     uid = container.opf.get('unique-identifier', None)
-    if uid is None or not container.opf_xpath('/opf:package/opf:metadata/dc:identifier[@id=%r]' % uid):
+    if uid is None:
         errors.append(NoUID(container.opf_name))
+    else:
+        dcid = container.opf_xpath(f'/opf:package/opf:metadata/dc:identifier[@id={uid!r}]')
+        if not dcid or not dcid[0].text or not dcid[0].text.strip():
+            errors.append(NoUID(container.opf_name))
     for elem in container.opf_xpath('/opf:package/opf:metadata/dc:identifier'):
         if not elem.text or not elem.text.strip():
             errors.append(EmptyIdentifier(container.opf_name, elem.sourceline))
@@ -400,7 +411,7 @@ def check_opf(container):
             iid = item.get('idref', None)
             lnum = None
             if iid:
-                mitem = container.opf_xpath('/opf:package/opf:manifest/opf:item[@id=%r]' % iid)
+                mitem = container.opf_xpath(f'/opf:package/opf:manifest/opf:item[@id={iid!r}]')
                 if mitem:
                     lnum = mitem[0].sourceline
                 else:

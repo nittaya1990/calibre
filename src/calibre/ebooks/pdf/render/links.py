@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:fdm=marker:ai
 
 
 __license__   = 'GPL v3'
@@ -8,7 +7,7 @@ __docformat__ = 'restructuredtext en'
 
 import os
 
-from calibre.ebooks.pdf.render.common import Array, Name, Dictionary, String, UTF16String, current_log
+from calibre.ebooks.pdf.render.common import Array, Dictionary, Name, String, UTF16String, current_log
 from polyglot.builtins import iteritems
 from polyglot.urllib import unquote, urlparse
 
@@ -26,8 +25,8 @@ class Destination(Array):
                 pos['left'] = pos['top'] = 0
                 q -= 1
         if q != pnum:
-            current_log().warn('Could not find page {} for link destination, using page {} instead'.format(pnum, q))
-        super(Destination, self).__init__([
+            current_log().warn(f'Could not find page {pnum} for link destination, using page {q} instead')
+        super().__init__([
             pref, Name('XYZ'), pos['left'], pos['top'], None
         ])
 
@@ -56,9 +55,9 @@ class Links:
                 try:
                     pref = self.pdf.get_pageref(page-1).obj
                 except IndexError:
-                    self.pdf.debug('Unable to find page for link: %r, ignoring it' % link)
+                    self.pdf.debug(f'Unable to find page for link: {link!r}, ignoring it')
                     continue
-                self.pdf.debug('The link %s points to non-existent page, moving it one page back' % href)
+                self.pdf.debug(f'The link {href} points to non-existent page, moving it one page back')
             self.links.append(((path, p, frag or None), pref, Array(rect)))
 
     def add_links(self):
@@ -88,7 +87,7 @@ class Links:
                 try:
                     purl = urlparse(url)
                 except Exception:
-                    self.pdf.debug('Ignoring unparsable URL: %r' % url)
+                    self.pdf.debug(f'Ignoring unparsable URL: {url!r}')
                     continue
                 if purl.scheme and purl.scheme != 'file':
                     action = Dictionary({
@@ -103,8 +102,7 @@ class Links:
                     page['Annots'] = Array()
                 page['Annots'].append(self.pdf.objects.add(annot))
             else:
-                self.pdf.debug('Could not find destination for link: %s in file %s'%
-                               (href, path))
+                self.pdf.debug(f'Could not find destination for link: {href} in file {path}')
 
     def add_outline(self, toc):
         parent = Dictionary({'Type':Name('Outlines')})

@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 
 
 __license__ = 'GPL v3'
@@ -10,7 +9,7 @@ from operator import itemgetter
 from lxml import etree
 
 from calibre.utils.icu import partition_by_first_letter, sort_key
-from polyglot.builtins import iteritems, filter
+from polyglot.builtins import iteritems
 
 
 def get_applicable_xe_fields(index, xe_fields, XPath, expand):
@@ -70,7 +69,7 @@ def add_xe(xe, t, expand):
         p.append(r)
         t2 = r.makeelement(expand('w:t'))
         t2.set(expand('xml:space'), 'preserve')
-        t2.text = ' [%s]' % pt
+        t2.text = f' [{pt}]'
         r.append(t2)
     # put separate entries on separate lines
     run.insert(idx + 1, run.makeelement(expand('w:br')))
@@ -107,7 +106,7 @@ def process_index(field, index, xe_fields, log, XPath, expand):
         if styles:
             heading_style = styles[0]
     else:
-        items = sorted(xe_fields, key=lambda x:sort_key(x['text']))
+        items = sorted(xe_fields, key=lambda x: sort_key(x['text']))
 
     hyperlinks = []
     blocks = []
@@ -144,7 +143,7 @@ def split_up_block(block, a, text, parts, ldict):
     ldict[span]    = len(prefix)
 
 
-"""
+'''
 The merge algorithm is a little tricky.
 We start with a list of elementary blocks. Each is an HtmlElement, a p node
 with a list of child nodes. The last child may be a link, and the earlier ones are
@@ -176,7 +175,7 @@ If we find such a matching entry, go back to the start with (p ... pk+1) and (n 
 
 If there is no matching entry, then because of the original reversed order we want
 to insert nk+1 and all following entries from n into p immediately following pk.
-"""
+'''
 
 
 def find_match(prev_block, pind, nextent, ldict):
@@ -209,7 +208,7 @@ def add_link(pent, nent, ldict):
         p.insert(p.index(pa) + 1, na)
     else:
         # substitute link na for plain text in pent
-        pent.text = ""
+        pent.text = ''
         pent.append(na)
 
 

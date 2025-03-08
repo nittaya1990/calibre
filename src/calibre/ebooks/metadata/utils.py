@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 # License: GPLv3 Copyright: 2016, Kovid Goyal <kovid at kovidgoyal.net>
 
 from collections import namedtuple
@@ -11,7 +10,6 @@ from calibre.spell import parse_lang_code
 from calibre.utils.cleantext import clean_xml_chars
 from calibre.utils.localization import lang_as_iso639_1
 from calibre.utils.xml_parse import safe_xml_fromstring
-from polyglot.builtins import filter, map
 
 OPFVersion = namedtuple('OPFVersion', 'major minor patch')
 
@@ -34,9 +32,14 @@ def parse_opf_version(raw):
 
 def parse_opf(stream_or_path):
     stream = stream_or_path
-    if not hasattr(stream, 'read'):
+    needs_close = not hasattr(stream, 'read')
+    if needs_close:
         stream = open(stream, 'rb')
-    raw = stream.read()
+    try:
+        raw = stream.read()
+    finally:
+        if needs_close:
+            stream.close()
     if not raw:
         raise ValueError('Empty file: '+getattr(stream, 'name', 'stream'))
     raw, encoding = xml_to_unicode(raw, strip_encoding_pats=True, resolve_entities=True, assume_utf8=True)
@@ -78,7 +81,7 @@ def ensure_unique(template, existing):
     c = 0
     while q in existing:
         c += 1
-        q = '%s-%d%s' % (b, c, e)
+        q = f'{b}-{c}{e}'
     return q
 
 

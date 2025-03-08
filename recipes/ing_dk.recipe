@@ -1,8 +1,10 @@
 #!/usr/bin/env python
 # vim:fileencoding=utf-8
 # https://manual.calibre-ebook.com/news_recipe.html
-from __future__ import unicode_literals, division, absolute_import, print_function
+from __future__ import absolute_import, division, print_function, unicode_literals
+
 from calibre.web.feeds.news import BasicNewsRecipe
+
 '''
 Ingeniøren.dk
 '''
@@ -19,9 +21,9 @@ class Ing_dk(BasicNewsRecipe):
     auto_cleanup = True
 
     keep_only_tags = [
-        dict(name="div", attrs={'class': 'menu-article-current-title'}),
-        dict(name="section", attrs={'class': 'byline'}),
-        dict(name="section", attrs={'class': 'body'}),
+        dict(name='div', attrs={'class': 'menu-article-current-title'}),
+        dict(name='section', attrs={'class': 'byline'}),
+        dict(name='section', attrs={'class': 'body'}),
     ]
 
     feeds          = [

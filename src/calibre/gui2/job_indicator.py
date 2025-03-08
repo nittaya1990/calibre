@@ -1,18 +1,13 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:fdm=marker:ai
 
 
 __license__   = 'GPL v3'
 __copyright__ = '2012, Kovid Goyal <kovid at kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
 
-from qt.core import (
-    QAbstractAnimation, QBrush, QColor, QEasingCurve, QPainter, QPainterPath,
-    QPalette, QPoint, QPointF, QPropertyAnimation, QRect, Qt, QWidget
-)
+from qt.core import QAbstractAnimation, QBrush, QColor, QEasingCurve, QPainter, QPainterPath, QPalette, QPoint, QPointF, QPropertyAnimation, QRect, Qt, QWidget
 
 from calibre.gui2 import config
-from polyglot.builtins import range
 
 
 class Pointer(QWidget):
@@ -22,7 +17,7 @@ class Pointer(QWidget):
         self.setObjectName('jobs_pointer')
         self.setVisible(False)
         self.resize(100, 80)
-        self.animation = QPropertyAnimation(self, b"geometry", self)
+        self.animation = QPropertyAnimation(self, b'geometry', self)
         self.animation.setDuration(750)
         self.animation.setLoopCount(2)
         self.animation.setEasingCurve(QEasingCurve.Type.Linear)

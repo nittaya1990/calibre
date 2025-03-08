@@ -17,6 +17,7 @@ from read_book.prefs.layout import commit_layout, create_layout_panel
 from read_book.prefs.misc import commit_misc, create_misc_panel
 from read_book.prefs.scrolling import commit_scrolling, create_scrolling_panel
 from read_book.prefs.selection import commit_selection, create_selection_panel
+from read_book.prefs.touch import commit_touch, create_touch_panel
 from read_book.prefs.user_stylesheet import (
     commit_user_stylesheet, create_user_stylesheet_panel
 )
@@ -30,6 +31,13 @@ class Prefs:
         self.main_title = _('Configure book reader')
         container.appendChild(E.div(
             style='contain: paint; width: 100%; height: 100%; display: flex; flex-direction: column',
+            tabindex='-1',
+            onkeydown=def(ev):
+                if ev.key is 'Escape':
+                    ev.stopPropagation(), ev.preventDefault()
+                    if not self.cancel():
+                        self.close_func()
+            ,
             E.div(), E.div(style='flex-grow: 100; overflow: auto')
         ))
         container = container.firstChild
@@ -48,6 +56,7 @@ class Prefs:
         if self.stack.length > 1:
             self.stack.pop()
             self.display_panel(self.stack[-1])
+            return True
 
     def onclose(self):
         if self.stack.length > 1:
@@ -74,6 +83,8 @@ class Prefs:
         container = self.container
         clear(container)
         getattr(self, 'display_' + which)(container)
+        container.setAttribute('tabindex', '-1')
+        container.focus()
 
     def show_panel(self, which):
         self.stack.push(which)
@@ -96,6 +107,7 @@ class Prefs:
         ci(_('Headers and footers'), 'head_foot', _('Customize the headers and footers'))
         ci(_('Scrolling behavior'), 'scrolling', _('Control how the viewer scrolls'))
         ci(_('Selection behavior'), 'selection', _('Control how the viewer selects text'))
+        ci(_('Touch behavior'), 'touch', _('Customize what various touchscreen gestures do'))
         ci(_('Keyboard shortcuts'), 'keyboard', _('Customize the keyboard shortcuts'))
         if runtime.is_standalone_viewer:
             ci(_('Fonts'), 'fonts', _('Font choices'))
@@ -155,6 +167,13 @@ class Prefs:
 
     def close_selection(self):
         commit_selection(self.onchange, self.container)
+
+    def display_touch(self, container):
+        self.create_panel(container, 'touch', create_touch_panel)
+
+    def close_touch(self):
+        commit_touch(self.onchange, self.container)
+
 
 
 def create_prefs_panel(container, close_func, on_change):

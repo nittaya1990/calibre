@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+# vim:fileencoding=utf-8
 __license__ = 'GPL v3'
 __author__ = 'Ricardo Jurado'
 __copyright__ = 'Ricardo Jurado'
@@ -22,7 +24,7 @@ class AdvancedUserRecipe1296604369(BasicNewsRecipe):
     description = 'Noticias de Spain y el mundo'
     category = 'News,Spain,National,International,Economy'
     oldest_article = 2
-    max_articles_per_feed = 10
+    max_articles_per_feed = 25
 
     no_stylesheets = True
     use_embedded_content = False
@@ -31,13 +33,27 @@ class AdvancedUserRecipe1296604369(BasicNewsRecipe):
     remove_javascript = True
     language = 'es'
 
-    extra_css             = """
+    recipe_specific_options = {
+        'days': {
+            'short': 'Oldest article to download from this news source. In days ',
+            'long': 'For example, 0.5, gives you articles from the past 12 hours',
+            'default': str(oldest_article)
+        }
+    }
+
+    def __init__(self, *args, **kwargs):
+        BasicNewsRecipe.__init__(self, *args, **kwargs)
+        d = self.recipe_specific_options.get('days')
+        if d and isinstance(d, str):
+            self.oldest_article = float(d)
+
+    extra_css             = '''
                                p{text-align: justify; font-size: 100%}
                                body{ text-align: left; font-size:100% }
                                h3{font-family: sans-serif; font-size:120%; font-weight:bold; text-align: justify; }
                                h2{font-family: sans-serif; font-size:100%; font-weight:bold; text-align: justify; }
                                h1{font-family: sans-serif; font-size:150%; font-weight:bold; text-align: justify; }
-                                 """
+                                 '''
 
     feeds = [
 

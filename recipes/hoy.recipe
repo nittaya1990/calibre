@@ -7,8 +7,8 @@ __copyright__ = '2010, Francisco Javier Nieto <frjanibo at gmail.com>'
 www.hoy.es
 '''
 
-from calibre.web.feeds.news import BasicNewsRecipe
 from calibre.ebooks.BeautifulSoup import Tag
+from calibre.web.feeds.news import BasicNewsRecipe
 
 
 def new_tag(soup, name, attrs=()):
@@ -69,7 +69,7 @@ class Hoy(BasicNewsRecipe):
     def preprocess_html(self, soup):
         soup.html['dir'] = self.direction
         mcharset = new_tag(soup, 'meta', [
-                       ("http-equiv", "Content-Type"), ("content", "text/html; charset=utf-8")])
+                       ('http-equiv', 'Content-Type'), ('content', 'text/html; charset=utf-8')])
         soup.head.insert(0, mcharset)
         for item in soup.findAll(style=True):
             del item['style']

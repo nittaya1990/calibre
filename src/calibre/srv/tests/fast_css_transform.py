@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 # License: GPL v3 Copyright: 2021, Kovid Goyal <kovid at kovidgoyal.net>
 
 
@@ -10,6 +9,21 @@ from calibre_extensions.fast_css_transform import parse_css_number, transform_pr
 
 
 class TestTransform(SimpleTest):
+
+    def test_counting_chars_in_elems(self):
+        from lxml import etree
+
+        from calibre.ebooks.oeb.polish.parsing import parse
+        from calibre.srv.render_book import get_length
+        def t(html, expected):
+            root = parse(html, force_html5_parse=True)
+            self.assertEqual(expected, get_length(root), etree.tostring(root, encoding=str))
+        t('<p>abc<span>def</span>x yz<svg>howdy', 1014)
+        t('<p>abc<span>def</span>x yz', 9)
+        t('<p>abc<span>def</span><script>x yz', 6)
+        t('<p>abc<span>def</span><style>x yz', 6)
+        t('<p>abc<span>def</span>x yz<img>howdy', 1014)
+        t('<p>abc<span>def</span>x yz<img><!-- howdy -->howdy', 1014)
 
     def test_number_parsing(self):
         for x in '.314 -.314 0.314 0 2 +2 -1 1e2 -3.14E+2 2e-2'.split():

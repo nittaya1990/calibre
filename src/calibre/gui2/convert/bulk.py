@@ -1,27 +1,24 @@
-# -*- coding: utf-8 -*-
-
-
 __license__ = 'GPL 3'
 __copyright__ = '2009, John Schember <john@nachtimwald.com>'
 __docformat__ = 'restructuredtext en'
 
 import shutil
 
-from qt.core import QModelIndex, QDialog, QApplication, QDialogButtonBox
+from qt.core import QDialog, QDialogButtonBox, QModelIndex
 
-from calibre.gui2.convert.single import Config, GroupModel, gprefs
-from calibre.gui2.convert.look_and_feel import LookAndFeelWidget
+from calibre.ebooks.conversion.config import get_output_formats, sort_formats_by_preference
+from calibre.ebooks.conversion.plumber import Plumber
+from calibre.gui2.convert import GuiRecommendations
 from calibre.gui2.convert.heuristics import HeuristicsWidget
-from calibre.gui2.convert.search_and_replace import SearchAndReplaceWidget
+from calibre.gui2.convert.look_and_feel import LookAndFeelWidget
 from calibre.gui2.convert.page_setup import PageSetupWidget
+from calibre.gui2.convert.search_and_replace import SearchAndReplaceWidget
+from calibre.gui2.convert.single import Config, GroupModel, gprefs
 from calibre.gui2.convert.structure_detection import StructureDetectionWidget
 from calibre.gui2.convert.toc import TOCWidget
-from calibre.gui2.convert import GuiRecommendations
-from calibre.ebooks.conversion.plumber import Plumber
-from calibre.ebooks.conversion.config import sort_formats_by_preference, get_output_formats
 from calibre.utils.config import prefs
+from calibre.utils.localization import ngettext
 from calibre.utils.logging import Log
-from polyglot.builtins import unicode_type, native_string_type
 
 
 class BulkConfig(Config):
@@ -50,7 +47,7 @@ class BulkConfig(Config):
             'values saved in a previous conversion (if they exist) instead '
             'of using the defaults specified in the Preferences'))
 
-        self.output_formats.currentIndexChanged[native_string_type].connect(self.setup_pipeline)
+        self.output_formats.currentIndexChanged.connect(self.setup_pipeline)
         self.groups.setSpacing(5)
         self.groups.activated[(QModelIndex)].connect(self.show_pane)
         self.groups.clicked[(QModelIndex)].connect(self.show_pane)
@@ -65,11 +62,7 @@ class BulkConfig(Config):
                 'settings.'))
             o.setChecked(False)
 
-        geom = gprefs.get('convert_bulk_dialog_geom', None)
-        if geom:
-            QApplication.instance().safe_restore_geometry(self, geom)
-        else:
-            self.resize(self.sizeHint())
+        self.restore_geometry(gprefs, 'convert_bulk_dialog_geom')
 
     def setup_pipeline(self, *args):
         oidx = self.groups.currentIndex().row()
@@ -108,6 +101,7 @@ class BulkConfig(Config):
         for w in widgets:
             w.set_help_signal.connect(self.help.setPlainText)
             w.setVisible(False)
+            w.layout().setContentsMargins(0, 0, 0, 0)
 
         self._groups_model = GroupModel(widgets)
         self.groups.setModel(self._groups_model)
@@ -128,7 +122,7 @@ class BulkConfig(Config):
             preferred_output_format and preferred_output_format \
             in output_formats else sort_formats_by_preference(output_formats,
                     [prefs['output_format']])[0]
-        self.output_formats.addItems((unicode_type(x.upper()) for x in output_formats))
+        self.output_formats.addItems(str(x.upper()) for x in output_formats)
         self.output_formats.setCurrentIndex(output_formats.index(preferred_output_format))
 
     def accept(self):
@@ -143,6 +137,5 @@ class BulkConfig(Config):
 
     def done(self, r):
         if self.isVisible():
-            gprefs['convert_bulk_dialog_geom'] = \
-                bytearray(self.saveGeometry())
+            self.save_geometry(gprefs, 'convert_bulk_dialog_geom')
         return QDialog.done(self, r)

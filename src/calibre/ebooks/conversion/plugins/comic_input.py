@@ -1,5 +1,3 @@
-
-
 __license__   = 'GPL v3'
 __copyright__ = '2008, Kovid Goyal kovid@kovidgoyal.net'
 __docformat__ = 'restructuredtext en'
@@ -8,19 +6,21 @@ __docformat__ = 'restructuredtext en'
 Based on ideas from comiclrf created by FangornUK.
 '''
 
-import shutil, textwrap, codecs, os
+import codecs
+import os
+import shutil
+import textwrap
 
-from calibre.customize.conversion import InputFormatPlugin, OptionRecommendation
 from calibre import CurrentDir
+from calibre.customize.conversion import InputFormatPlugin, OptionRecommendation
 from calibre.ptempfile import PersistentTemporaryDirectory
-from polyglot.builtins import getcwd, map
 
 
 class ComicInput(InputFormatPlugin):
 
     name        = 'Comic Input'
     author      = 'Kovid Goyal'
-    description = _('Optimize comic files (.cbz, .cbr, .cbc) for viewing on portable devices')
+    description = _('Optimize comic files (.cbz, .cbr, .cb7, .cbc) for viewing on portable devices')
     file_types  = {'cbz', 'cbr', 'cb7', 'cbc'}
     is_image_collection = True
     commit_name = 'comic_input'
@@ -44,8 +44,8 @@ class ComicInput(InputFormatPlugin):
         OptionRecommendation(name='landscape', recommended_value=False,
             help=_("Don't split landscape images into two portrait images")),
         OptionRecommendation(name='wide', recommended_value=False,
-            help=_("Keep aspect ratio and scale image using screen height as "
-            "image width for viewing in landscape mode.")),
+            help=_('Keep aspect ratio and scale image using screen height as '
+            'image width for viewing in landscape mode.')),
         OptionRecommendation(name='right2left', recommended_value=False,
               help=_('Used for right-to-left publications like manga. '
               'Causes landscape pages to be split into portrait pages '
@@ -62,11 +62,11 @@ class ComicInput(InputFormatPlugin):
                 'are converted to. You can experiment to see which format gives '
                 'you optimal size and look on your device.')),
         OptionRecommendation(name='no_process', recommended_value=False,
-              help=_("Apply no processing to the image")),
+              help=_('Apply no processing to the image')),
         OptionRecommendation(name='dont_grayscale', recommended_value=False,
             help=_('Do not convert the image to grayscale (black and white)')),
         OptionRecommendation(name='comic_image_size', recommended_value=None,
-            help=_('Specify the image size as widthxheight pixels. Normally,'
+            help=_('Specify the image size as width x height pixels, for example: 123x321. Normally,'
                 ' an image size is automatically calculated from the output '
                 'profile, this option overrides it.')),
         OptionRecommendation(name='dont_add_comic_pages_to_toc', recommended_value=False,
@@ -77,11 +77,11 @@ class ComicInput(InputFormatPlugin):
 
     recommendations = {
         ('margin_left', 0, OptionRecommendation.HIGH),
-        ('margin_top',  0, OptionRecommendation.HIGH),
+        ('margin_top', 0, OptionRecommendation.HIGH),
         ('margin_right', 0, OptionRecommendation.HIGH),
         ('margin_bottom', 0, OptionRecommendation.HIGH),
         ('insert_blank_line', False, OptionRecommendation.HIGH),
-        ('remove_paragraph_spacing',  False, OptionRecommendation.HIGH),
+        ('remove_paragraph_spacing', False, OptionRecommendation.HIGH),
         ('change_justification', 'left', OptionRecommendation.HIGH),
         ('dont_split_on_pagebreaks', True, OptionRecommendation.HIGH),
         ('chapter', None, OptionRecommendation.HIGH),
@@ -99,10 +99,9 @@ class ComicInput(InputFormatPlugin):
         comics = []
         with CurrentDir(tdir):
             if not os.path.exists('comics.txt'):
-                raise ValueError((
-                    '%s is not a valid comic collection'
+                raise ValueError(
+                    f'{stream.name} is not a valid comic collection'
                     ' no comics.txt was found in the file')
-                        %stream.name)
             with open('comics.txt', 'rb') as f:
                 raw = f.read()
             if raw.startswith(codecs.BOM_UTF16_BE):
@@ -125,23 +124,21 @@ class ComicInput(InputFormatPlugin):
                 if os.access(fname, os.R_OK):
                     comics.append([title, fname])
         if not comics:
-            raise ValueError('%s has no comics'%stream.name)
+            raise ValueError(f'{stream.name} has no comics')
         return comics
 
     def get_pages(self, comic, tdir2):
-        from calibre.ebooks.comic.input import (extract_comic,  process_pages,
-                find_pages)
+        from calibre.ebooks.comic.input import extract_comic, find_pages, process_pages
         tdir  = extract_comic(comic)
         new_pages = find_pages(tdir, sort_on_mtime=self.opts.no_sort,
                 verbose=self.opts.verbose)
         thumbnail = None
         if not new_pages:
-            raise ValueError('Could not find any pages in the comic: %s'
-                    %comic)
+            raise ValueError(f'Could not find any pages in the comic: {comic}')
         if self.opts.no_process:
             n2 = []
             for i, page in enumerate(new_pages):
-                n2.append(os.path.join(tdir2, '{} - {}' .format(i, os.path.basename(page))))
+                n2.append(os.path.join(tdir2, f'{i} - {os.path.basename(page)}'))
                 shutil.copyfile(page, n2[-1])
             new_pages = n2
         else:
@@ -153,8 +150,7 @@ class ComicInput(InputFormatPlugin):
                 for f in failures:
                     self.log.warning('\t', f)
             if not new_pages:
-                raise ValueError('Could not find any valid pages in comic: %s'
-                        % comic)
+                raise ValueError(f'Could not find any valid pages in comic: {comic}')
             thumbnail = os.path.join(tdir2,
                     'thumbnail.'+self.opts.output_format.lower())
             if not os.access(thumbnail, os.R_OK):
@@ -179,7 +175,7 @@ class ComicInput(InputFormatPlugin):
         num_pages_per_comic = []
         for i, x in enumerate(comics_):
             title, fname = x
-            cdir = 'comic_%d'%(i+1) if len(comics_) > 1 else '.'
+            cdir = f'comic_{i + 1}' if len(comics_) > 1 else '.'
             cdir = os.path.abspath(cdir)
             if not os.path.exists(cdir):
                 os.makedirs(cdir)
@@ -194,11 +190,11 @@ class ComicInput(InputFormatPlugin):
                 comics.append((title, pages, wrappers))
 
         if not comics:
-            raise ValueError('No comic pages found in %s'%stream.name)
+            raise ValueError(f'No comic pages found in {stream.name}')
 
         mi  = MetaInformation(os.path.basename(stream.name).rpartition('.')[0],
             [_('Unknown')])
-        opf = OPFCreator(getcwd(), mi)
+        opf = OPFCreator(os.getcwd(), mi)
         entries = []
 
         def href(x):
@@ -231,12 +227,12 @@ class ComicInput(InputFormatPlugin):
             if self.for_viewer:
                 wrapper_page_href = href(wrappers[0])
                 for i in range(num_pages_per_comic[0]):
-                    toc.add_item('{}#page_{}'.format(wrapper_page_href, i+1), None,
-                        _('Page')+' %d'%(i+1), play_order=i)
+                    toc.add_item(f'{wrapper_page_href}#page_{i+1}', None,
+                        _('Page')+f' {i + 1}', play_order=i)
 
             else:
                 for i, x in enumerate(wrappers):
-                    toc.add_item(href(x), None, _('Page')+' %d'%(i+1),
+                    toc.add_item(href(x), None, _('Page')+f' {i + 1}',
                             play_order=i)
         else:
             po = 0
@@ -249,13 +245,13 @@ class ComicInput(InputFormatPlugin):
                     if self.for_viewer:
                         wrapper_page_href = href(wrappers[0])
                         for i in range(num_pages):
-                            stoc.add_item('{}#page_{}'.format(wrapper_page_href, i+1), None,
-                                    _('Page')+' %d'%(i+1), play_order=po)
+                            stoc.add_item(f'{wrapper_page_href}#page_{i+1}', None,
+                                    _('Page')+f' {i + 1}', play_order=po)
                             po += 1
                     else:
                         for i, x in enumerate(wrappers):
                             stoc.add_item(href(x), None,
-                                    _('Page')+' %d'%(i+1), play_order=po)
+                                    _('Page')+f' {i + 1}', play_order=po)
                             po += 1
         opf.set_toc(toc)
         with open('metadata.opf', 'wb') as m, open('toc.ncx', 'wb') as n:
@@ -286,7 +282,7 @@ class ComicInput(InputFormatPlugin):
         dir = os.path.dirname(pages[0])
         for i, page in enumerate(pages):
             wrapper = WRAPPER%(XHTML_NS, i+1, os.path.basename(page), i+1)
-            page = os.path.join(dir, 'page_%d.xhtml'%(i+1))
+            page = os.path.join(dir, f'page_{i + 1}.xhtml')
             with open(page, 'wb') as f:
                 f.write(wrapper.encode('utf-8'))
             wrappers.append(page)
@@ -296,32 +292,32 @@ class ComicInput(InputFormatPlugin):
         from calibre.ebooks.oeb.base import XHTML_NS
 
         def page(pnum, src):
-            return '<img id="page_{}" src="{}"></img>'.format(pnum + 1, os.path.basename(src))
+            return f'<img id="page_{pnum + 1}" src="{os.path.basename(src)}"></img>'
 
         pages = '\n'.join(page(i, src) for i, src in enumerate(pages))
         base = os.path.dirname(pages[0])
-        wrapper = '''
-        <html xmlns="%s">
+        wrapper = f'''
+        <html xmlns="{XHTML_NS}">
             <head>
                 <meta charset="utf-8"/>
                 <style type="text/css">
-                html, body, img { height: 100vh; display: block; margin: 0; padding: 0; border-width: 0; }
-                img {
-                    width: 100%%; height: 100%%;
+                html, body, img {{ height: 100vh; display: block; margin: 0; padding: 0; border-width: 0; }}
+                img {{
+                    width: 100%; height: 100%;
                     object-fit: contain;
                     margin-left: auto; margin-right: auto;
                     max-width: 100vw; max-height: 100vh;
-                    top: 50vh; transform: translateY(-50%%);
+                    top: 50vh; transform: translateY(-50%);
                     position: relative;
                     page-break-after: always;
-                }
+                }}
                 </style>
             </head>
             <body>
-            %s
+            {pages}
             </body>
         </html>
-        ''' % (XHTML_NS, pages)
+        '''
         path = os.path.join(base, cdir, 'wrapper.xhtml')
         with open(path, 'wb') as f:
             f.write(wrapper.encode('utf-8'))

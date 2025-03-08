@@ -1,23 +1,23 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 # License: GPL v3 Copyright: 2018, Kovid Goyal <kovid at kovidgoyal.net>
 
 
 import json
 import os
 import sys
-from qt.core import QIcon, QObject, Qt, QTimer, pyqtSignal
-from qt.webengine import QWebEngineUrlScheme
 from contextlib import closing
 
-from calibre.constants import FAKE_PROTOCOL, VIEWER_APP_UID, islinux
+from qt.core import QIcon, QObject, Qt, QTimer, pyqtSignal
+
+from calibre.constants import VIEWER_APP_UID, islinux
 from calibre.gui2 import Application, error_dialog, setup_gui_option_parser
+from calibre.gui2.listener import send_message_in_process
 from calibre.gui2.viewer.config import get_session_pref, vprefs
 from calibre.gui2.viewer.ui import EbookViewer, is_float
-from calibre.gui2.listener import send_message_in_process
 from calibre.ptempfile import reset_base_dir
 from calibre.utils.config import JSONConfig
 from calibre.utils.ipc import viewer_socket_address
+from calibre.utils.localization import _
 
 singleinstance_name = 'calibre_viewer'
 
@@ -130,11 +130,16 @@ View an e-book.
         'Alternately, you can use the form toc:something and it will open '
         'at the location of the first Table of Contents entry that contains '
         'the string "something". The form toc-href:something will match the '
-        'href (internal link destination) of toc nodes. The matching is exact, '
+        'href (internal link destination) of toc nodes. The matching is exact. '
         'If you want to match a substring, use the form toc-href-contains:something. '
-        'The form ref:something will use Reference mode references.'))
+        'The form ref:something will use Reference mode references. The form search:something will'
+        ' search for something after opening the book. The form regex:something will search'
+        ' for the regular expression something after opening the book.'
+    ))
     a('--continue', default=False, action='store_true', dest='continue_reading',
         help=_('Continue reading the last opened book'))
+    a('--new-instance', default=False, action='store_true', help=_(
+        'Open a new viewer window even when the option to use only a single viewer window is set'))
 
     setup_gui_option_parser(parser)
     return parser
@@ -144,12 +149,13 @@ def run_gui(app, opts, args, internal_book_data, listener=None):
     acc = EventAccumulator(app)
     app.file_event_hook = acc
     app.load_builtin_fonts()
-    app.setWindowIcon(QIcon(I('viewer.png')))
+    app.setWindowIcon(QIcon.ic('viewer.png'))
     migrate_previous_viewer_prefs()
     main = EbookViewer(
         open_at=opts.open_at, continue_reading=opts.continue_reading, force_reload=opts.force_reload,
         calibre_book_data=internal_book_data)
     main.set_exception_handler()
+    app.shutdown_signal_received.connect(main.request_close)
     if len(args) > 1:
         acc.events.append(os.path.abspath(args[-1]))
     acc.got_file.connect(main.handle_commandline_arg)
@@ -158,21 +164,20 @@ def run_gui(app, opts, args, internal_book_data, listener=None):
         listener.message_received.connect(main.message_from_other_instance, type=Qt.ConnectionType.QueuedConnection)
     QTimer.singleShot(0, acc.flush)
     if opts.raise_window:
-        main.raise_()
+        main.raise_and_focus()
     if opts.full_screen:
         main.set_full_screen(True)
 
-    app.exec_()
+    app.exec()
 
 
 def main(args=sys.argv):
+    from calibre.utils.webengine import setup_fake_protocol
+
     # Ensure viewer can continue to function if GUI is closed
     os.environ.pop('CALIBRE_WORKER_TEMP_DIR', None)
     reset_base_dir()
-    scheme = QWebEngineUrlScheme(FAKE_PROTOCOL.encode('ascii'))
-    scheme.setSyntax(QWebEngineUrlScheme.Syntax.Host)
-    scheme.setFlags(QWebEngineUrlScheme.Flag.SecureScheme)
-    QWebEngineUrlScheme.registerScheme(scheme)
+    setup_fake_protocol()
     override = 'calibre-ebook-viewer' if islinux else None
     processed_args = []
     internal_book_data = internal_book_data_path = None
@@ -183,27 +188,27 @@ def main(args=sys.argv):
         processed_args.append(arg)
     if internal_book_data_path:
         try:
-            with lopen(internal_book_data_path, 'rb') as f:
+            with open(internal_book_data_path, 'rb') as f:
                 internal_book_data = json.load(f)
         finally:
             try:
                 os.remove(internal_book_data_path)
-            except EnvironmentError:
+            except OSError:
                 pass
     args = processed_args
     app = Application(args, override_program_name=override, windows_app_uid=VIEWER_APP_UID)
+    from calibre.utils.webengine import setup_default_profile
+    setup_default_profile()
 
     parser = option_parser()
     opts, args = parser.parse_args(args)
     oat = opts.open_at
-    if oat and not (
-            oat.startswith('toc:') or oat.startswith('toc-href:') or oat.startswith('toc-href-contains:') or
-            oat.startswith('epubcfi(/') or is_float(oat) or oat.startswith('ref:')):
-        raise SystemExit('Not a valid --open-at value: {}'.format(opts.open_at))
+    if oat and not (oat.startswith(('toc:', 'toc-href:', 'toc-href-contains:', 'epubcfi(/', 'ref:', 'search:', 'regex:')) or is_float(oat)):
+        raise SystemExit(f'Not a valid --open-at value: {opts.open_at}')
 
-    if get_session_pref('singleinstance', False):
-        from calibre.utils.lock import SingleInstance
+    if not opts.new_instance and get_session_pref('singleinstance', False):
         from calibre.gui2.listener import Listener
+        from calibre.utils.lock import SingleInstance
         with SingleInstance(singleinstance_name) as si:
             if si:
                 try:

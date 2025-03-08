@@ -1,6 +1,3 @@
-# -*- coding: utf-8 -*-
-
-
 __license__   = 'GPL v3'
 __copyright__ = '2009, John Schember <john@nachtimwald.com>'
 __docformat__ = 'restructuredtext en'
@@ -16,11 +13,11 @@ FORMAT_READERS = None
 def _import_readers():
     global FORMAT_READERS
     from calibre.ebooks.pdb.ereader.reader import Reader as ereader_reader
+    from calibre.ebooks.pdb.haodoo.reader import Reader as haodoo_reader
     from calibre.ebooks.pdb.palmdoc.reader import Reader as palmdoc_reader
-    from calibre.ebooks.pdb.ztxt.reader import Reader as ztxt_reader
     from calibre.ebooks.pdb.pdf.reader import Reader as pdf_reader
     from calibre.ebooks.pdb.plucker.reader import Reader as plucker_reader
-    from calibre.ebooks.pdb.haodoo.reader import Reader as haodoo_reader
+    from calibre.ebooks.pdb.ztxt.reader import Reader as ztxt_reader
 
     FORMAT_READERS = {
         'PNPdPPrs': ereader_reader,
@@ -34,15 +31,15 @@ def _import_readers():
     }
 
 
-ALL_FORMAT_WRITERS = {'doc', 'ztxt', 'ereader'}
+ALL_FORMAT_WRITERS = 'doc', 'ereader', 'ztxt'  # keep sorted alphabetically
 FORMAT_WRITERS = None
 
 
 def _import_writers():
     global FORMAT_WRITERS
+    from calibre.ebooks.pdb.ereader.writer import Writer as ereader_writer
     from calibre.ebooks.pdb.palmdoc.writer import Writer as palmdoc_writer
     from calibre.ebooks.pdb.ztxt.writer import Writer as ztxt_writer
-    from calibre.ebooks.pdb.ereader.writer import Writer as ereader_writer
 
     FORMAT_WRITERS = {
         'doc': palmdoc_writer,

@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 # License: GPL v3 Copyright: 2019, Kovid Goyal <kovid at kovidgoyal.net>
 
 
@@ -38,7 +37,6 @@ class PDFMetadata:  # {{{
 
 # Page layout {{{
 
-
 def parse_pdf_page_size(spec, unit='inch', dpi=72.0):
     width, sep, height = spec.lower().partition('x')
     if height:
@@ -74,7 +72,7 @@ def get_page_size(opts, for_comic=False):
         if opts.custom_size is not None:
             page_size = parse_pdf_page_size(opts.custom_size, opts.unit, opts.output_profile.dpi)
         if page_size is None:
-            page_size = QPageSize(getattr(QPageSize, opts.paper_size.capitalize()))
+            page_size = QPageSize(getattr(QPageSize.PageSizeId, opts.paper_size.capitalize()))
     return page_size
 
 
@@ -99,20 +97,15 @@ class Image:  # {{{
                 path_or_bytes = f.read()
         self.img_data = path_or_bytes
         fmt, width, height = identify(path_or_bytes)
-        if width > 0 and height > 0 and fmt == 'jpeg':
-            self.fmt = fmt
-            self.width, self.height = width, height
-            self.cache_key = None
-        else:
-            self.img, self.fmt = image_and_format_from_data(path_or_bytes)
-            self.width, self.height = self.img.width(), self.img.height()
-            self.cache_key = self.img.cacheKey()
+        self.img, self.fmt = image_and_format_from_data(path_or_bytes)
+        self.width, self.height = self.img.width(), self.img.height()
+        self.cache_key = self.img.cacheKey()
 # }}}
 
 
 def draw_image_page(writer, img, preserve_aspect_ratio=True):
     if img.fmt == 'jpeg':
-        ref = writer.add_jpeg_image(img.img_data, img.width, img.height, img.cache_key)
+        ref = writer.add_jpeg_image(img.img_data, img.width, img.height, img.cache_key, depth=img.img.depth())
     else:
         ref = writer.add_image(img.img, img.cache_key)
     page_size = tuple(writer.page_size)
@@ -140,7 +133,8 @@ def convert(images, output_path, opts, metadata, report_progress):
         writer.set_metadata(pdf_metadata.title, pdf_metadata.author, pdf_metadata.tags, pdf_metadata.mi)
         for i, path in enumerate(images):
             img = Image(as_unicode(path, filesystem_encoding))
-            draw_image_page(writer, img)
+            preserve_aspect_ratio = opts.preserve_cover_aspect_ratio if i == 0 else True
+            draw_image_page(writer, img, preserve_aspect_ratio=preserve_aspect_ratio)
             writer.end_page()
             report_progress((i + 1) / len(images), _('Rendered {0} of {1} pages').format(i + 1, len(images)))
         writer.end()

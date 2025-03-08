@@ -1,21 +1,21 @@
-
-
 __license__   = 'GPL v3'
 __copyright__ = '2008, Kovid Goyal <kovid at kovidgoyal.net>'
 
-import os, regex, collections
+import collections
+import os
 
-from calibre.utils.config import prefs
-from calibre.constants import filesystem_encoding
-from calibre.ebooks.metadata.opf2 import OPF
+import regex
+
 from calibre import isbytestring
+from calibre.constants import filesystem_encoding
 from calibre.customize.ui import get_file_type_metadata, set_file_type_metadata
 from calibre.ebooks.metadata import MetaInformation, string_to_authors
-from polyglot.builtins import getcwd, unicode_type
+from calibre.ebooks.metadata.opf2 import OPF
+from calibre.utils.config import prefs
 
 # The priorities for loading metadata from different file types
 # Higher values should be used to update metadata from lower values
-METADATA_PRIORITIES = collections.defaultdict(lambda:0)
+METADATA_PRIORITIES = collections.defaultdict(int)
 for i, ext in enumerate((
     'html', 'htm', 'xhtml', 'xhtm',
     'rtf', 'fb2', 'pdf', 'prc', 'odt',
@@ -50,7 +50,7 @@ def _metadata_from_formats(formats, force_read_metadata=False, pattern=None):
             return mi2
 
     for path, ext in zip(formats, extensions):
-        with lopen(path, 'rb') as stream:
+        with open(path, 'rb') as stream:
             try:
                 newmi = get_metadata(stream, stream_type=ext,
                                      use_libprs_metadata=True,
@@ -139,7 +139,7 @@ def metadata_from_filename(name, pat=None, fallback_pat=None):
             try:
                 pat = regex.compile(prefs.get('filename_pattern'), flags=regex.UNICODE | regex.VERSION0 | regex.FULLCASE)
             except Exception:
-                pat = regex.compile('(?P<title>.+) - (?P<author>[^_]+)', flags=regex.UNICODE | regex.VERSION0 | regex.FULLCASE)
+                pat = regex.compile(r'(?P<title>.+) - (?P<author>[^_]+)', flags=regex.UNICODE | regex.VERSION0 | regex.FULLCASE)
 
     name = name.replace('_', ' ')
     match = pat.search(name)
@@ -209,7 +209,7 @@ def metadata_from_filename(name, pat=None, fallback_pat=None):
 def opf_metadata(opfpath):
     if hasattr(opfpath, 'read'):
         f = opfpath
-        opfpath = getattr(f, 'name', getcwd())
+        opfpath = getattr(f, 'name', os.getcwd())
     else:
         f = open(opfpath, 'rb')
     try:
@@ -227,26 +227,30 @@ def opf_metadata(opfpath):
     except Exception:
         import traceback
         traceback.print_exc()
-        pass
 
 
-def forked_read_metadata(path, tdir):
+def forked_read_metadata(original_path, tdir):
     from calibre.ebooks.metadata.opf2 import metadata_to_opf
     from calibre.ebooks.metadata.worker import run_import_plugins
-    path = run_import_plugins((path,), os.getpid(), tdir)[0]
-    with lopen(path, 'rb') as f:
+    from calibre.utils.filenames import make_long_path_useable
+
+    path = run_import_plugins((original_path,), os.getpid(), tdir)[0]
+    if path != original_path:
+        with open(os.path.join(tdir, 'file_changed_by_plugins'), 'w') as f:
+            f.write(os.path.abspath(path))
+    with open(make_long_path_useable(path), 'rb') as f:
         fmt = os.path.splitext(path)[1][1:].lower()
         f.seek(0, 2)
         sz = f.tell()
-        with lopen(os.path.join(tdir, 'size.txt'), 'wb') as s:
-            s.write(unicode_type(sz).encode('ascii'))
+        with open(os.path.join(tdir, 'size.txt'), 'wb') as s:
+            s.write(str(sz).encode('ascii'))
         f.seek(0)
         mi = get_metadata(f, fmt)
     if mi.cover_data and mi.cover_data[1]:
-        with lopen(os.path.join(tdir, 'cover.jpg'), 'wb') as f:
+        with open(os.path.join(tdir, 'cover.jpg'), 'wb') as f:
             f.write(mi.cover_data[1])
         mi.cover_data = (None, None)
         mi.cover = 'cover.jpg'
     opf = metadata_to_opf(mi, default_lang='und')
-    with lopen(os.path.join(tdir, 'metadata.opf'), 'wb') as f:
+    with open(os.path.join(tdir, 'metadata.opf'), 'wb') as f:
         f.write(opf)

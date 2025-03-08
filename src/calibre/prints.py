@@ -1,9 +1,9 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 # License: GPL v3 Copyright: 2019, Kovid Goyal <kovid at kovidgoyal.net>
 
 import io
 import sys
+import time
 
 from polyglot.builtins import as_bytes, as_unicode
 
@@ -45,3 +45,38 @@ def prints(*a, **kw):
             stream.flush()
         except Exception:
             pass
+
+
+def debug_print(*args, **kw):
+    '''
+    Prints debug information to the console if debugging is enabled.
+
+    This function prints a message prefixed with a timestamp showing the elapsed time
+    since the first call to this function. The message is printed only if debugging is enabled.
+
+    Parameters:
+    *args : tuple
+        Variable length argument list to be printed.
+    **kw : dict
+        Arbitrary keyword arguments to be passed to the `print` function.
+
+    Attributes:
+    base_time : float
+        The timestamp of the first call to this function. Stored as an attribute of the function.
+
+    Behavior:
+    - On the first call, initializes `base_time` to the current time using `time.monotonic()`.
+    - If `is_debugging()` returns True, prints the elapsed time since `base_time` along with the provided arguments.
+    '''
+    from calibre.constants import is_debugging
+
+    # Get the base_time attribute, initializing it on the first call
+    base_time = getattr(debug_print, 'base_time', None)
+    if base_time is None:
+        # Set base_time to the current monotonic time if it hasn't been set
+        debug_print.base_time = base_time = time.monotonic()
+
+    # Check if debugging is enabled
+    if is_debugging():
+        # Print the elapsed time and the provided arguments if debugging is enabled
+        prints(f'DEBUG: {time.monotonic()-base_time:6.1f}', *args, **kw)

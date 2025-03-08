@@ -1,0 +1,312 @@
+#!/usr/bin/env  python
+# License: GPLv3 Copyright: 2008, Kovid Goyal <kovid at kovidgoyal.net>
+
+import json
+import time
+from datetime import datetime, timedelta
+
+from html5_parser import parse
+from lxml import etree
+
+from calibre.ebooks.BeautifulSoup import NavigableString, Tag
+from calibre.web.feeds.news import BasicNewsRecipe
+
+
+def process_node(node):
+    ntype = node.get('type', '')
+    if ntype == 'CROSSHEAD':
+        if node.get('textHtml'):
+            return f'<h4>{node.get("textHtml")}</h4>'
+        return f'<h4>{node.get("text", "")}</h4>'
+    elif ntype == 'PARAGRAPH':
+        if node.get('textHtml'):
+            return f'<p>{node.get("textHtml")}</p>'
+        return f'<p>{node.get("text", "")}</p>'
+    elif ntype == 'IMAGE':
+        alt = '' if node.get('altText') is None else node.get('altText')
+        cap = ''
+        if node.get('caption'):
+            if node['caption'].get('textHtml') is not None:
+                cap = node['caption']['textHtml']
+        return f'<div><img src="{node["url"]}" title="{alt}"></div><div style="text-align:center; font-size:small;">{cap}</div>'
+    elif ntype == 'PULL_QUOTE':
+        if node.get('textHtml'):
+            return f'<blockquote>{node.get("textHtml")}</blockquote>'
+        return f'<blockquote>{node.get("text", "")}</blockquote>'
+    elif ntype == 'DIVIDER':
+        return '<hr>'
+    elif ntype == 'INFOBOX':
+        for x in safe_dict(node, 'components'):
+            return f'<blockquote>{process_node(x)}</blockquote>'
+    elif ntype:
+        print('** ', ntype)
+        return ''
+
+
+def safe_dict(data, *names):
+    ans = data
+    for x in names:
+        ans = ans.get(x) or {}
+    return ans
+
+
+class JSONHasNoContent(ValueError):
+    pass
+
+
+def load_article_from_json(raw):
+    # open('/t/raw.json', 'w').write(raw)
+    body = ''
+    data = json.loads(raw)['props']['pageProps']['cp2Content']
+    body += f'<div style="color: red; font-size:small; font-weight:bold;">{data.get("flyTitle", "")}</div>'
+    body += f'<h1>{data["headline"]}</h1>'
+    body += f'<div style="font-style: italic; color:#202020;">{data.get("rubric", "")}</div>'
+    try:
+        date = data['dateModified']
+    except Exception:
+        date = data['datePublished']
+    dt = datetime.fromisoformat(date[:-1]) + timedelta(seconds=time.timezone)
+    dt = dt.strftime('%b %d, %Y %I:%M %p')
+    if data.get('dateline') is None:
+        body += f'<p style="color: gray; font-size: small;">{dt}</p>'
+    else:
+        body += f'<p style="color: gray; font-size: small;">{dt + " | " + (data["dateline"])}</p>'
+    main_image_url = safe_dict(data, 'leadComponent') or ''
+    if main_image_url:
+        body += process_node(data['leadComponent'])
+    for node in data.get('body'):
+        body += process_node(node)
+    return '<html><body><article>' + body + '</article></body></html>'
+
+
+def cleanup_html_article(root):
+    main = root.xpath('//main')[0]
+    body = root.xpath('//body')[0]
+    for child in tuple(body):
+        body.remove(child)
+    body.append(main)
+    main.set('id', '')
+    main.tag = 'article'
+    for x in root.xpath('//*[@style]'):
+        x.set('style', '')
+    for x in root.xpath('//button'):
+        x.getparent().remove(x)
+
+
+def classes(classes):
+    q = frozenset(classes.split(' '))
+    return dict(attrs={
+        'class': lambda x: x and frozenset(x.split()).intersection(q)})
+
+
+def new_tag(soup, name, attrs=()):
+    impl = getattr(soup, 'new_tag', None)
+    if impl is not None:
+        return impl(name, attrs=dict(attrs))
+    return Tag(soup, name, attrs=attrs or None)
+
+
+class NoArticles(Exception):
+    pass
+
+
+def process_url(url):
+    if url.startswith('/'):
+        url = 'https://www.economist.com' + url
+    return url
+
+
+class EconomistWorld(BasicNewsRecipe):
+    title = 'The Economist World Ahead'
+    language = 'en'
+    encoding = 'utf-8'
+    masthead_url = 'https://www.livemint.com/lm-img/dev/economist-logo-oneline.png'
+
+    __author__ = 'unkn0wn'
+    description = (
+        'The World Ahead is The Economist’s future-gazing publication. It prepares audiences for what is to '
+        'come with mind-stretching insights and expert analysis—all in The Economist’s clear, elegant style.'
+        ' Best downloaded in late November.'
+    )
+    extra_css = '''
+        em { color:#202020; }
+        img {display:block; margin:0 auto;}
+    '''
+
+    resolve_internal_links = True
+    remove_tags = [
+        dict(name=['script', 'noscript', 'title', 'iframe', 'cf_floatingcontent', 'aside', 'footer', 'svg']),
+        dict(attrs={'aria-label': 'Article Teaser'}),
+        dict(attrs={'id': 'player'}),
+        dict(attrs={
+                'class': [
+                    'dblClkTrk', 'ec-article-info', 'share_inline_header',
+                    'related-items', 'main-content-container', 'ec-topic-widget',
+                    'teaser', 'blog-post__bottom-panel-bottom', 'blog-post__comments-label',
+                    'blog-post__foot-note', 'blog-post__sharebar', 'blog-post__bottom-panel',
+                    'newsletter-form', 'share-links-header', 'teaser--wrapped', 'latest-updates-panel__container',
+                    'latest-updates-panel__article-link', 'blog-post__section'
+                ]
+            }
+        ),
+        dict(attrs={
+                'class': lambda x: x and 'blog-post__siblings-list-aside' in x.split()}),
+        dict(attrs={'id': lambda x: x and 'gpt-ad-slot' in x}),
+        classes(
+            'share-links-header teaser--wrapped latest-updates-panel__container'
+            ' latest-updates-panel__article-link blog-post__section newsletter-form blog-post__bottom-panel'
+        )
+    ]
+    keep_only_tags = [dict(name='article', id=lambda x: not x)]
+    no_stylesheets = True
+    remove_attributes = ['data-reactid', 'width', 'height']
+    # economist.com has started throttling after about 60% of the total has
+    # downloaded with connection reset by peer (104) errors.
+    delay = 3
+    remove_empty_feeds = True
+    ignore_duplicate_articles = {'title'}
+
+    needs_subscription = False
+
+    recipe_specific_options = {
+        'res': {
+            'short': 'For hi-res images, select a resolution from the\nfollowing options: 834, 960, 1096, 1280, 1424',
+            'long': 'This is useful for non e-ink devices, and for a lower file size\nthan the default, use from 480, 384, 360, 256.',
+            'default': '600',
+        },
+    }
+
+    def get_browser(self, *args, **kwargs):
+        kwargs['user_agent'] = (
+            'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.6533.103 Mobile Safari/537.36 Lamarr'
+        )
+        br = BasicNewsRecipe.get_browser(self, *args, **kwargs)
+        return br
+
+    def economist_test_article(self):
+        return [('Articles', [{'title':'test',
+            'url':'https://www.economist.com/the-world-ahead/2024/11/20/ten-business-trends-for-2025-and-forecasts-for-15-industries'
+        }])]
+
+    def economist_return_index(self, ans):
+        if not ans:
+            raise NoArticles(
+                'Could not find any articles, either the '
+                'economist.com server is having trouble and you should '
+                'try later or the website format has changed and the '
+                'recipe needs to be updated.'
+            )
+        return ans
+
+    def parse_index(self):
+        # return self.economist_test_article()
+        raw = self.index_to_soup('https://www.economist.com/the-world-ahead')
+        ans = self.economist_parse_index(raw)
+        return self.economist_return_index(ans)
+
+    def economist_parse_index(self, soup):
+        script_tag = soup.find('script', id='__NEXT_DATA__')
+        if script_tag is not None:
+            data = json.loads(script_tag.string)
+            # open('/t/raw.json', 'w').write(json.dumps(data, indent=2, sort_keys=True))
+            self.title = safe_dict(data, 'props', 'pageProps', 'content', 'headline')
+            self.cover_url = 'https://mma.prnewswire.com/media/2561745/The_Economist_World_Ahead_2025_cover.jpg?w=600'
+
+            feeds = []
+
+            for coll in safe_dict(data, 'props', 'pageProps', 'content', 'components'):
+                section = safe_dict(coll, 'headline') or ''
+                self.log(section)
+                articles = []
+                for part in safe_dict(coll, 'items'):
+                    title = safe_dict(part, 'headline') or ''
+                    url = process_url(safe_dict(part, 'url') or '')
+                    desc = safe_dict(part, 'rubric') or ''
+                    sub = safe_dict(part, 'flyTitle') or ''
+                    if sub and section != sub:
+                        desc = sub + ' :: ' + desc
+                    self.log('\t', title, '\n\t', desc, '\n\t\t', url)
+                    articles.append({'title': title, 'description':desc, 'url': url})
+                if articles:
+                    feeds.append((section, articles))
+            return feeds
+
+    def preprocess_html(self, soup):
+        width = '600'
+        w = self.recipe_specific_options.get('res')
+        if w and isinstance(w, str):
+            width = w
+        for img in soup.findAll('img', src=True):
+            qua = 'economist.com/cdn-cgi/image/width=' + width + ',quality=80,format=auto/'
+            img['src'] = img['src'].replace('economist.com/', qua)
+        return soup
+
+    def preprocess_raw_html(self, raw, url):
+        # open('/t/raw.html', 'wb').write(raw.encode('utf-8'))
+        root_ = parse(raw)
+        if '/interactive/' in url:
+            return ('<html><body><article><h1>' + root_.xpath('//h1')[0].text + '</h1><em>'
+                    'This article is supposed to be read in a browser.'
+                    '</em></article></body></html>')
+
+        script = root_.xpath('//script[@id="__NEXT_DATA__"]')
+
+        html = load_article_from_json(script[0].text)
+
+        root = parse(html)
+        for div in root.xpath('//div[@class="lazy-image"]'):
+            noscript = list(div.iter('noscript'))
+            if noscript and noscript[0].text:
+                img = list(parse(noscript[0].text).iter('img'))
+                if img:
+                    p = noscript[0].getparent()
+                    idx = p.index(noscript[0])
+                    p.insert(idx, p.makeelement('img', src=img[0].get('src')))
+                    p.remove(noscript[0])
+        for x in root.xpath('//*[name()="script" or name()="style" or name()="source" or name()="meta"]'):
+            x.getparent().remove(x)
+        # the economist uses <small> for small caps with a custom font
+        for init in root.xpath('//span[@data-caps="initial"]'):
+            init.set('style', 'font-weight:bold;')
+        for x in root.xpath('//small'):
+            if x.text and len(x) == 0:
+                x.text = x.text.upper()
+                x.tag = 'span'
+                x.set('style', 'font-variant: small-caps')
+        for h2 in root.xpath('//h2'):
+            h2.tag = 'h4'
+        for x in root.xpath('//figcaption'):
+            x.set('style', 'text-align:center; font-size:small;')
+        for x in root.xpath('//cite'):
+            x.tag = 'blockquote'
+            x.set('style', 'color:#404040;')
+        raw = etree.tostring(root, encoding='unicode')
+        return raw
+
+    def eco_find_image_tables(self, soup):
+        for x in soup.findAll('table', align=['right', 'center']):
+            if len(x.findAll('font')) in (1, 2) and len(x.findAll('img')) == 1:
+                yield x
+
+    def postprocess_html(self, soup, first):
+        for img in soup.findAll('img', srcset=True):
+            del img['srcset']
+        for table in list(self.eco_find_image_tables(soup)):
+            caption = table.find('font')
+            img = table.find('img')
+            div = new_tag(soup, 'div')
+            div['style'] = 'text-align:left;font-size:70%'
+            ns = NavigableString(self.tag_to_string(caption))
+            div.insert(0, ns)
+            div.insert(1, new_tag(soup, 'br'))
+            del img['width']
+            del img['height']
+            img.extract()
+            div.insert(2, img)
+            table.replaceWith(div)
+        return soup
+
+    def canonicalize_internal_url(self, url, is_link=True):
+        if url.endswith('/print'):
+            url = url.rpartition('/')[0]
+        return BasicNewsRecipe.canonicalize_internal_url(self, url, is_link=is_link)

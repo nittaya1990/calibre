@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 
 
 __license__ = 'GPL v3'
@@ -8,19 +7,24 @@ __copyright__ = '2013, Kovid Goyal <kovid at kovidgoyal.net>'
 import re
 from collections import namedtuple
 from functools import partial
-from qt.core import QFont, QTextBlockUserData, QTextCharFormat
+
+from qt.core import QFont, QTextBlockUserData, QTextCharFormat, QVariant
 
 from calibre.ebooks.oeb.polish.spell import html_spell_tags, patterns, xml_spell_tags
 from calibre.gui2.tweak_book import dictionaries, tprefs, verify_link
 from calibre.gui2.tweak_book.editor import (
-    CLASS_ATTRIBUTE_PROPERTY, LINK_PROPERTY, SPELL_LOCALE_PROPERTY, SPELL_PROPERTY,
-    TAG_NAME_PROPERTY, store_locale, syntax_text_char_format
+    CLASS_ATTRIBUTE_PROPERTY,
+    LINK_PROPERTY,
+    SPELL_LOCALE_PROPERTY,
+    SPELL_PROPERTY,
+    TAG_NAME_PROPERTY,
+    store_locale,
+    syntax_text_char_format,
 )
 from calibre.gui2.tweak_book.editor.syntax.base import SyntaxHighlighter, run_loop
-from calibre.gui2.tweak_book.editor.syntax.css import (
-    CSSState, CSSUserData, create_formats as create_css_formats,
-    state_map as css_state_map
-)
+from calibre.gui2.tweak_book.editor.syntax.css import CSSState, CSSUserData
+from calibre.gui2.tweak_book.editor.syntax.css import create_formats as create_css_formats
+from calibre.gui2.tweak_book.editor.syntax.css import state_map as css_state_map
 from calibre.spell.break_iterator import split_into_words_and_positions
 from calibre.spell.dictionary import parse_lang_code
 from calibre_extensions import html_syntax_highlighter as _speedup
@@ -31,11 +35,11 @@ normal_pat = re.compile(r'[^<>&]+')
 entity_pat = re.compile(r'&#{0,1}[a-zA-Z0-9]{1,8};')
 tag_name_pat = re.compile(r'/{0,1}[a-zA-Z0-9:-]+')
 space_chars = ' \t\r\n\u000c'
-attribute_name_pat = re.compile(r'''[^%s"'/><=]+''' % space_chars)
+attribute_name_pat = re.compile(rf'''[^{space_chars}"'/><=]+''')
 self_closing_pat = re.compile(r'/\s*>')
-unquoted_val_pat = re.compile(r'''[^%s'"=<>`]+''' % space_chars)
-cdata_close_pats = {x:re.compile(r'</%s' % x, flags=re.I) for x in cdata_tags}
-nbsp_pat = re.compile('[\xa0\u2000-\u200A\u202F\u205F\u3000\u2011-\u2015\uFE58\uFE63\uFF0D]+')  # special spaces and hyphens
+unquoted_val_pat = re.compile(rf'''[^{space_chars}'"=<>`]+''')
+cdata_close_pats = {x:re.compile(rf'</{x}', flags=re.I) for x in cdata_tags}
+nbsp_pat = re.compile(r'[\xa0\u2000-\u200A\u202F\u205F\u3000\u2011-\u2015\uFE58\uFE63\uFF0D]+')  # special spaces and hyphens
 
 NORMAL = 0
 IN_OPENING_TAG = 1
@@ -72,7 +76,7 @@ State = _speedup.State
 
 def spell_property(sfmt, locale):
     s = QTextCharFormat(sfmt)
-    s.setProperty(SPELL_LOCALE_PROPERTY, locale)
+    s.setProperty(SPELL_LOCALE_PROPERTY, QVariant(locale))
     return s
 
 
@@ -522,6 +526,7 @@ class XMLHighlighter(Highlighter):
 
 def profile():
     import sys
+
     from qt.core import QTextDocument
 
     from calibre.gui2 import Application

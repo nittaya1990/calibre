@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:fdm=marker:ai
 
 
 __license__   = 'GPL v3'
@@ -29,7 +28,7 @@ def synchronous(func):
 class MTPDeviceBase(DevicePlugin):
     name = 'MTP Device Interface'
     gui_name = _('MTP device')
-    icon = I('devices/tablet.png')
+    icon = 'devices/tablet.png'
     description = _('Communicate with MTP devices')
     author = 'Kovid Goyal'
     version = (1, 0, 0)

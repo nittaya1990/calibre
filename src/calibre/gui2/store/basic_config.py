@@ -1,6 +1,3 @@
-# -*- coding: utf-8 -*-
-
-
 __license__ = 'GPL 3'
 __copyright__ = '2011, John Schember <john@nachtimwald.com>'
 __docformat__ = 'restructuredtext en'
@@ -8,7 +5,6 @@ __docformat__ = 'restructuredtext en'
 from qt.core import QWidget
 
 from calibre.gui2.store.basic_config_widget_ui import Ui_Form
-from polyglot.builtins import unicode_type
 
 
 class BasicStoreConfigWidget(QWidget, Ui_Form):
@@ -38,5 +34,5 @@ class BasicStoreConfig:
 
     def save_settings(self, config_widget):
         self.config['open_external'] = config_widget.open_external.isChecked()
-        tags = unicode_type(config_widget.tags.text())
+        tags = str(config_widget.tags.text())
         self.config['tags'] = tags

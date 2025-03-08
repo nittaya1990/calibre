@@ -1,6 +1,3 @@
-# -*- coding: utf-8 -*-
-
-
 __license__ = 'GPL 3'
 __copyright__ = '2006, Ed Summers <ehs@pobox.com>'
 __docformat__ = 'restructuredtext en'
@@ -59,7 +56,7 @@ class Query:
                 query_string[name] = [getattr(self, macro)]
             else:
                 # remove the name/value pair
-                del(query_string[name])
+                del query_string[name]
 
         # copy the url parts and substitute in our new query string
         url_parts = list(self.url_parts)

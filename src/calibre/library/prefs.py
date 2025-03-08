@@ -1,17 +1,17 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
 
 
 __license__   = 'GPL v3'
 __copyright__ = '2010, Kovid Goyal <kovid@kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
 
-import json, os
+import json
+import os
 
-from calibre.constants import preferred_encoding
-from calibre.utils.config import to_json, from_json
 from calibre import prints
-from polyglot.builtins import iteritems, unicode_type
+from calibre.constants import preferred_encoding
+from calibre.utils.config import from_json, to_json
+from polyglot.builtins import iteritems
 
 
 class DBPrefs(dict):
@@ -30,7 +30,7 @@ class DBPrefs(dict):
             dict.__setitem__(self, key, val)
 
     def raw_to_object(self, raw):
-        if not isinstance(raw, unicode_type):
+        if not isinstance(raw, str):
             raw = raw.decode(preferred_encoding)
         return json.loads(raw, object_hook=from_json)
 
@@ -64,7 +64,7 @@ class DBPrefs(dict):
         self.__setitem__(key, val)
 
     def get_namespaced(self, namespace, key, default=None):
-        key = 'namespaced:%s:%s'%(namespace, key)
+        key = f'namespaced:{namespace}:{key}'
         try:
             return dict.__getitem__(self, key)
         except KeyError:
@@ -76,7 +76,7 @@ class DBPrefs(dict):
         if ':' in namespace:
             raise KeyError('Colons are not allowed in'
                 ' the namespace')
-        key = 'namespaced:%s:%s'%(namespace, key)
+        key = f'namespaced:{namespace}:{key}'
         self[key] = val
 
     def write_serialized(self, library_path):
@@ -85,7 +85,7 @@ class DBPrefs(dict):
             data = json.dumps(self, indent=2, default=to_json)
             if not isinstance(data, bytes):
                 data = data.encode('utf-8')
-            with open(to_filename, "wb") as f:
+            with open(to_filename, 'wb') as f:
                 f.write(data)
         except:
             import traceback
@@ -96,7 +96,7 @@ class DBPrefs(dict):
         try:
             from_filename = os.path.join(library_path,
                     'metadata_db_prefs_backup.json')
-            with open(from_filename, "rb") as f:
+            with open(from_filename, 'rb') as f:
                 d = json.load(f, object_hook=from_json)
                 if not recreate_prefs:
                     return d

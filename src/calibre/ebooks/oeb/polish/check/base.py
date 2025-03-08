@@ -1,16 +1,14 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 
 
 __license__ = 'GPL v3'
 __copyright__ = '2013, Kovid Goyal <kovid at kovidgoyal.net>'
 
-from multiprocessing.pool import ThreadPool
-from functools import partial
 from contextlib import closing
+from functools import partial
+from multiprocessing.pool import ThreadPool
 
 from calibre import detect_ncpus as cpu_count
-from polyglot.builtins import range
 
 DEBUG, INFO, WARN, ERROR, CRITICAL = range(5)
 
@@ -29,7 +27,7 @@ class BaseError:
         self.all_locations = None
 
     def __str__(self):
-        return '%s:%s (%s, %s):%s' % (self.__class__.__name__, self.name, self.line, self.col, self.msg)
+        return f'{self.__class__.__name__}:{self.name} ({self.line}, {self.col}):{self.msg}'
 
     __repr__ = __str__
 
@@ -52,6 +50,6 @@ def run_checkers(func, args_list):
     with closing(pool):
         for result, tb in pool.map(partial(worker, func), args_list):
             if tb is not None:
-                raise Exception('Failed to run worker: \n%s' % tb)
+                raise Exception(f'Failed to run worker: \n{tb}')
             ans.extend(result)
     return ans

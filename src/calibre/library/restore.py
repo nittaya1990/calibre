@@ -1,23 +1,26 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
 
 
 __license__   = 'GPL v3'
 __copyright__ = '2010, Kovid Goyal <kovid@kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
 
-import re, os, traceback, shutil
-from threading import Thread
+import os
+import re
+import shutil
+import traceback
 from operator import itemgetter
+from threading import Thread
 
-from calibre.ptempfile import TemporaryDirectory
+from calibre import isbytestring
+from calibre.constants import filesystem_encoding
 from calibre.ebooks.metadata.opf2 import OPF
 from calibre.library.database2 import LibraryDatabase2
 from calibre.library.prefs import DBPrefs
-from calibre.constants import filesystem_encoding
+from calibre.ptempfile import TemporaryDirectory
 from calibre.utils.date import utcfromtimestamp
-from calibre import isbytestring
-from polyglot.builtins import iteritems, filter
+from calibre.utils.localization import _
+from polyglot.builtins import iteritems
 
 NON_EBOOK_EXTENSIONS = frozenset([
         'jpg', 'jpeg', 'gif', 'png', 'bmp',
@@ -40,7 +43,7 @@ class RestoreDatabase(LibraryDatabase2):
 class Restore(Thread):
 
     def __init__(self, library_path, progress_callback=None):
-        super(Restore, self).__init__()
+        super().__init__()
         if isbytestring(library_path):
             library_path = library_path.decode(filesystem_encoding)
         self.src_library_path = os.path.abspath(library_path)
@@ -79,17 +82,13 @@ class Restore(Thread):
 
         if self.conflicting_custom_cols:
             ans += '\n\n'
-            ans += 'The following custom columns have conflicting definitions ' \
-                    'and were not fully restored:\n'
+            ans += ('The following custom columns have conflicting definitions '
+                    'and were not fully restored:\n')
             for x in self.conflicting_custom_cols:
                 ans += '\t#'+x+'\n'
-                ans += '\tused:\t%s, %s, %s, %s\n'%(self.custom_columns[x][1],
-                                                    self.custom_columns[x][2],
-                                                    self.custom_columns[x][3],
-                                                    self.custom_columns[x][5])
+                ans += f'\tused:\t{self.custom_columns[x][1]}, {self.custom_columns[x][2]}, {self.custom_columns[x][3]}, {self.custom_columns[x][5]}\n'
                 for coldef in self.conflicting_custom_cols[x]:
-                    ans += '\tother:\t%s, %s, %s, %s\n'%(coldef[1], coldef[2],
-                                                         coldef[3], coldef[5])
+                    ans += f'\tother:\t{coldef[1]}, {coldef[2]}, {coldef[3]}, {coldef[5]}\n'
 
         if self.mismatched_dirs:
             ans += '\n\n'
@@ -114,7 +113,7 @@ class Restore(Thread):
                     self.create_cc_metadata()
                 self.restore_books()
                 if self.successes == 0 and len(self.dirs) > 0:
-                    raise Exception(('Something bad happened'))
+                    raise Exception('Something bad happened')
                 self.replace_db()
         except:
             self.tb = traceback.format_exc()
@@ -200,7 +199,7 @@ class Restore(Thread):
         alm = mi.get('author_link_map', {})
         for author, link in iteritems(alm):
             existing_link, timestamp = self.authors_links.get(author, (None, None))
-            if existing_link is None or existing_link != link and timestamp < mi.timestamp:
+            if existing_link is None or (existing_link != link and timestamp < mi.timestamp):
                 self.authors_links[author] = (link, mi.timestamp)
 
     def create_cc_metadata(self):

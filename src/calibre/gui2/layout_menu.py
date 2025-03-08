@@ -1,27 +1,28 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 # License: GPLv3 Copyright: 2017, Kovid Goyal <kovid at kovidgoyal.net>
 
 
-from qt.core import (
-    QFontMetrics, QHBoxLayout, QIcon, QMenu, QPainter, QPushButton, QSize,
-    QSizePolicy, Qt, QWidget, QStyleOption, QStyle, QEvent)
-
+from qt.core import QFontMetrics, QHBoxLayout, QIcon, QMenu, QPushButton, QSize, QSizePolicy, QStyle, QStyleOption, QStylePainter, Qt, QWidget
 
 ICON_SZ = 64
 
 
 class LayoutItem(QWidget):
 
+    mouse_over = False
+
     def __init__(self, button, parent=None):
         QWidget.__init__(self, parent)
-        self.mouse_over = False
         self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         self.button = button
         self.text = button.label
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.fm = QFontMetrics(self.font())
         self._bi = self._di = None
+
+    def update_tips(self):
+        self.setToolTip(self.button.toolTip())
+        self.setStatusTip(self.button.statusTip())
 
     @property
     def bright_icon(self):
@@ -35,17 +36,17 @@ class LayoutItem(QWidget):
             self._di = self.button.icon().pixmap(ICON_SZ, ICON_SZ, mode=QIcon.Mode.Disabled)
         return self._di
 
-    def event(self, ev):
-        m = None
-        et = ev.type()
-        if et == QEvent.Type.Enter:
-            m = True
-        elif et == QEvent.Type.Leave:
-            m = False
-        if m is not None and m != self.mouse_over:
-            self.mouse_over = m
+    def enterEvent(self, ev):
+        super().enterEvent(ev)
+        if not self.mouse_over:
+            self.mouse_over = True
             self.update()
-        return QWidget.event(self, ev)
+
+    def leaveEvent(self, ev):
+        super().leaveEvent(ev)
+        if self.mouse_over:
+            self.mouse_over = False
+            self.update()
 
     def sizeHint(self):
         br = self.fm.boundingRect(self.text)
@@ -56,13 +57,13 @@ class LayoutItem(QWidget):
     def paintEvent(self, ev):
         shown = self.button.isChecked()
         ls = self.fm.lineSpacing()
-        painter = QPainter(self)
+        painter = QStylePainter(self)
         if self.mouse_over:
             tool = QStyleOption()
+            tool.initFrom(self)
             tool.rect = self.rect()
             tool.state = QStyle.StateFlag.State_Raised | QStyle.StateFlag.State_Active | QStyle.StateFlag.State_MouseOver
-            s = self.style()
-            s.drawPrimitive(QStyle.PrimitiveElement.PE_PanelButtonTool, tool, painter, self)
+            painter.drawPrimitive(QStyle.PrimitiveElement.PE_PanelButtonTool, tool)
         painter.drawText(
             0, 0,
             self.width(),
@@ -91,7 +92,7 @@ class LayoutMenu(QMenu):
         self.items = []
         if parent is None:
             buttons = [
-                QPushButton(QIcon(I(i + '.png')), i, self)
+                QPushButton(QIcon.ic(i + '.png'), i, self)
                 for i in 'search tags cover_flow grid book'.split()]
             for b in buttons:
                 b.setVisible(False), b.setCheckable(True), b.setChecked(b.text() in 'tags grid')
@@ -101,7 +102,12 @@ class LayoutMenu(QMenu):
         for b in buttons:
             self.items.append(LayoutItem(b, self))
             l.addWidget(self.items[-1])
+            self.aboutToShow.connect(self.about_to_show)
         self.current_item = None
+
+    def about_to_show(self):
+        for x in self.items:
+            x.update_tips()
 
     def sizeHint(self):
         return QWidget.sizeHint(self)
@@ -142,4 +148,4 @@ if __name__ == '__main__':
     app = Application([])
     w = LayoutMenu()
     w.show()
-    w.exec_()
+    w.exec()

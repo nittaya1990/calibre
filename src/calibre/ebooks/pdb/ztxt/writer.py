@@ -1,6 +1,3 @@
-# -*- coding: utf-8 -*-
-
-
 '''
 Writer content to ztxt pdb file.
 '''
@@ -9,12 +6,13 @@ __license__   = 'GPL v3'
 __copyright__ = '2009, John Schember <john@nachtimwald.com>'
 __docformat__ = 'restructuredtext en'
 
-import struct, zlib
+import struct
+import zlib
 
 from calibre.ebooks.pdb.formatwriter import FormatWriter
 from calibre.ebooks.pdb.header import PdbHeaderBuilder
-from calibre.ebooks.txt.txtml import TXTMLizer
 from calibre.ebooks.txt.newlines import TxtNewlines, specified_newlines
+from calibre.ebooks.txt.txtml import TXTMLizer
 
 MAX_RECORD_SIZE = 8192
 
@@ -34,8 +32,8 @@ class Writer(FormatWriter):
         section_lengths = []
         compressor = zlib.compressobj(9)
         self.log.info('Compressing data...')
-        for i in range(0, len(txt_records)):
-            self.log.debug('\tCompressing record %i' % i)
+        for i in range(len(txt_records)):
+            self.log.debug(f'\tCompressing record {i}')
             txt_records[i] = compressor.compress(txt_records[i])
             txt_records[i] = txt_records[i] + compressor.flush(zlib.Z_FULL_FLUSH)
             section_lengths.append(len(txt_records[i]))
@@ -62,7 +60,7 @@ class Writer(FormatWriter):
         txt_length = len(txt)
 
         txt_records = []
-        for i in range(0, (len(txt) / MAX_RECORD_SIZE) + 1):
+        for i in range((len(txt) / MAX_RECORD_SIZE) + 1):
             txt_records.append(txt[i * MAX_RECORD_SIZE : (i * MAX_RECORD_SIZE) + MAX_RECORD_SIZE])
 
         return txt_records, txt_length

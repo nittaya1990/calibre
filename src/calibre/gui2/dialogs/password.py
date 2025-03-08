@@ -1,14 +1,12 @@
-
-
 __license__   = 'GPL v3'
 __copyright__ = '2008, Kovid Goyal <kovid at kovidgoyal.net>'
 
 import re
+
 from qt.core import QDialog, QLineEdit, Qt
 
-from calibre.gui2.dialogs.password_ui import Ui_Dialog
 from calibre.gui2 import dynamic
-from polyglot.builtins import unicode_type
+from calibre.gui2.dialogs.password_ui import Ui_Dialog
 
 
 class PasswordDialog(QDialog, Ui_Dialog):
@@ -29,21 +27,21 @@ class PasswordDialog(QDialog, Ui_Dialog):
         self.gui_password.setText(pw)
         self.sname = name
         self.msg.setText(msg)
-        self.show_password.stateChanged[(int)].connect(self.toggle_password)
+        self.show_password.stateChanged.connect(self.toggle_password)
 
     def toggle_password(self, state):
-        if state == Qt.CheckState.Unchecked:
+        if Qt.CheckState(state) == Qt.CheckState.Unchecked:
             self.gui_password.setEchoMode(QLineEdit.EchoMode.Password)
         else:
             self.gui_password.setEchoMode(QLineEdit.EchoMode.Normal)
 
     def username(self):
-        return unicode_type(self.gui_username.text())
+        return str(self.gui_username.text())
 
     def password(self):
-        return unicode_type(self.gui_password.text())
+        return str(self.gui_password.text())
 
     def accept(self):
-        dynamic.set(self.cfg_key+'__un', unicode_type(self.gui_username.text()))
-        dynamic.set(self.cfg_key+'__pw', unicode_type(self.gui_password.text()))
+        dynamic.set(self.cfg_key+'__un', str(self.gui_username.text()))
+        dynamic.set(self.cfg_key+'__pw', str(self.gui_password.text()))
         QDialog.accept(self)

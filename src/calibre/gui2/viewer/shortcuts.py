@@ -1,9 +1,17 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 # License: GPL v3 Copyright: 2019, Kovid Goyal <kovid at kovidgoyal.net>
 
 
 from qt.core import QKeySequence, QMainWindow, Qt
+
+key_name_to_qt_name = {
+    'ArrowRight': 'Right',
+    'ArrowLeft': 'Left',
+    'ArrowUp': 'Up',
+    'ArrowDown': 'Down',
+    'PageUp': 'PgUp',
+    'PageDown': 'PgDown',
+}
 
 
 def get_main_window_for(widget):
@@ -19,7 +27,8 @@ def index_to_key_sequence(idx):
     for i, x in enumerate(('ALT', 'CTRL', 'META', 'SHIFT')):
         if idx[i] == 'y':
             mods.append(x.capitalize())
-    mods.append(idx[4:])
+    key = idx[4:]
+    mods.append(key_name_to_qt_name.get(key, key))
     return QKeySequence('+'.join(mods))
 
 
@@ -30,8 +39,10 @@ def key_to_text(key):
 def ev_to_index(ev):
     m = ev.modifiers()
     mods = []
-    for x in ('ALT', 'CTRL', 'META', 'SHIFT'):
-        mods.append('y' if m & getattr(Qt, x) else 'n')
+    for x in (
+            Qt.KeyboardModifier.AltModifier, Qt.KeyboardModifier.ControlModifier,
+            Qt.KeyboardModifier.MetaModifier, Qt.KeyboardModifier.ShiftModifier):
+        mods.append('y' if m & x else 'n')
     return ''.join(mods) + key_to_text(ev.key())
 
 

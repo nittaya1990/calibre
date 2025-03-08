@@ -1,24 +1,28 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 
 
 __license__ = 'GPL v3'
 __copyright__ = '2013, Kovid Goyal <kovid at kovidgoyal.net>'
 
-import os, errno, sys, re
-from locale import localeconv
+import errno
+import os
+import re
+import shutil
+import sys
 from collections import OrderedDict, namedtuple
-from polyglot.builtins import iteritems, itervalues, map, unicode_type, string_or_bytes, filter
+from contextlib import suppress
+from locale import localeconv
 from threading import Lock
 
 from calibre import as_unicode, prints
 from calibre.constants import cache_dir, get_windows_number_formats, iswindows, preferred_encoding
-
+from calibre.utils.icu import lower as icu_lower
 from calibre.utils.localization import canonicalize_lang
+from polyglot.builtins import iteritems, itervalues, string_or_bytes
 
 
 def force_to_bool(val):
-    if isinstance(val, (bytes, unicode_type)):
+    if isinstance(val, (bytes, str)):
         if isinstance(val, bytes):
             val = val.decode(preferred_encoding, 'replace')
         try:
@@ -66,7 +70,7 @@ def find_identical_books(mi, data):
     author_map, aid_map, title_map, lang_map = data
     found_books = None
     for a in mi.authors:
-        author_ids = author_map.get(icu_lower(a))
+        author_ids = author_map.get(icu_lower(str(a)))
         if author_ids is None:
             return set()
         books_by_author = {book_id for aid in author_ids for book_id in aid_map.get(aid, ())}
@@ -103,7 +107,6 @@ class CacheError(Exception):
 
 
 class ThumbnailCache:
-
     ' This is a persistent disk cache to speed up loading and resizing of covers '
 
     def __init__(self,
@@ -112,7 +115,10 @@ class ThumbnailCache:
                  thumbnail_size=(100, 100),   # The size of the thumbnails, can be changed
                  location=None,   # The location for this cache, if None cache_dir() is used
                  test_mode=False,  # Used for testing
-                 min_disk_cache=0):  # If the size is set less than or equal to this value, the cache is disabled.
+                 min_disk_cache=0,  # If the size is set less than or equal to this value, the cache is disabled.
+                 version=0  # Increase this if the cache content format might have changed.
+                 ):
+        self.version = version
         self.location = os.path.join(location or cache_dir(), name)
         if max_size <= min_disk_cache:
             max_size = 0
@@ -136,13 +142,31 @@ class ThumbnailCache:
     def _do_delete(self, path):
         try:
             os.remove(path)
-        except EnvironmentError as err:
+        except OSError as err:
             self.log('Failed to delete cached thumbnail file:', as_unicode(err))
 
     def _load_index(self):
-        'Load the index, automatically removing incorrectly sized thumbnails and pruning to fit max_size'
+        '''
+        Load the index, automatically removing incorrectly sized thumbnails and
+        pruning to fit max_size
+        '''
+
+        # Remove the cache if it isn't the current version
+        version_path = os.path.join(self.location, 'version')
+        current_version = 0
+        with suppress(Exception), open(version_path) as f:
+            current_version = int(f.read())
+        if current_version != self.version:
+            # The version number changed. Delete the cover cache. Can't delete
+            # it if it isn't there (first time). Note that this will not work
+            # well if the same cover cache name is used with different versions.
+            if os.path.exists(self.location):
+                shutil.rmtree(self.location)
+
         try:
             os.makedirs(self.location)
+            with open(version_path, 'w') as f:
+                f.write(str(self.version))
         except OSError as err:
             if err.errno != errno.EEXIST:
                 self.log('Failed to make thumbnail cache dir:', as_unicode(err))
@@ -153,7 +177,7 @@ class ThumbnailCache:
         def listdir(*args):
             try:
                 return os.listdir(os.path.join(*args))
-            except EnvironmentError:
+            except OSError:
                 return ()  # not a directory or no permission or whatever
         entries = ('/'.join((parent, subdir, entry))
                    for parent in listdir(self.location)
@@ -164,20 +188,20 @@ class ThumbnailCache:
         try:
             with open(os.path.join(self.location, 'invalidate'), 'rb') as f:
                 raw = f.read().decode('utf-8')
-        except EnvironmentError as err:
+        except OSError as err:
             if getattr(err, 'errno', None) != errno.ENOENT:
                 self.log('Failed to read thumbnail invalidate data:', as_unicode(err))
         else:
             try:
                 os.remove(os.path.join(self.location, 'invalidate'))
-            except EnvironmentError as err:
+            except OSError as err:
                 self.log('Failed to remove thumbnail invalidate data:', as_unicode(err))
             else:
                 def record(line):
                     try:
                         uuid, book_id = line.partition(' ')[0::2]
                         book_id = int(book_id)
-                        return (uuid, book_id)
+                        return uuid, book_id
                     except Exception:
                         return None
                 invalidate = {record(x) for x in raw.splitlines()}
@@ -198,10 +222,10 @@ class ThumbnailCache:
                     self.total_size += size
                 else:
                     self._do_delete(path)
-        except EnvironmentError as err:
+        except OSError as err:
             self.log('Failed to read thumbnail cache dir:', as_unicode(err))
 
-        self.items = OrderedDict(sorted(items, key=lambda x:order.get(x[0], 0)))
+        self.items = OrderedDict(sorted(items, key=lambda x: order.get(x[0], 0)))
         self._apply_size()
 
     def _invalidate_sizes(self):
@@ -227,16 +251,16 @@ class ThumbnailCache:
     def _write_order(self):
         if hasattr(self, 'items'):
             try:
-                data = '\n'.join(group_id + ' ' + unicode_type(book_id) for (group_id, book_id) in self.items)
-                with lopen(os.path.join(self.location, 'order'), 'wb') as f:
+                data = '\n'.join(group_id + ' ' + str(book_id) for (group_id, book_id) in self.items)
+                with open(os.path.join(self.location, 'order'), 'wb') as f:
                     f.write(data.encode('utf-8'))
-            except EnvironmentError as err:
+            except OSError as err:
                 self.log('Failed to save thumbnail cache order:', as_unicode(err))
 
     def _read_order(self):
         order = {}
         try:
-            with lopen(os.path.join(self.location, 'order'), 'rb') as f:
+            with open(os.path.join(self.location, 'order'), 'rb') as f:
                 for line in f.read().decode('utf-8').splitlines():
                     parts = line.split(' ', 1)
                     if len(parts) == 2:
@@ -270,10 +294,8 @@ class ThumbnailCache:
             if not hasattr(self, 'total_size'):
                 self._load_index()
             self._invalidate_sizes()
-            ts = ('%.2f' % timestamp).replace('.00', '')
-            path = '%s%s%s%s%d-%s-%d-%dx%d' % (
-                self.group_id, os.sep, book_id % 100, os.sep,
-                book_id, ts, len(data), self.thumbnail_size[0], self.thumbnail_size[1])
+            ts = (f'{timestamp:.2f}').replace('.00', '')
+            path = f'{self.group_id}{os.sep}{book_id % 100}{os.sep}{book_id}-{ts}-{len(data)}-{self.thumbnail_size[0]}x{self.thumbnail_size[1]}'
             path = os.path.join(self.location, path)
             key = (self.group_id, book_id)
             e = self.items.pop(key, None)
@@ -281,14 +303,14 @@ class ThumbnailCache:
             try:
                 with open(path, 'wb') as f:
                     f.write(data)
-            except EnvironmentError as err:
+            except OSError as err:
                 d = os.path.dirname(path)
                 if not os.path.exists(d):
                     try:
                         os.makedirs(d)
                         with open(path, 'wb') as f:
                             f.write(data)
-                    except EnvironmentError as err:
+                    except OSError as err:
                         self.log('Failed to write cached thumbnail:', path, as_unicode(err))
                         return self._apply_size()
                 else:
@@ -326,7 +348,7 @@ class ThumbnailCache:
             if entry.thumbnail_size != self.thumbnail_size:
                 try:
                     os.remove(entry.path)
-                except EnvironmentError as err:
+                except OSError as err:
                     if getattr(err, 'errno', None) != errno.ENOENT:
                         self.log('Failed to remove cached thumbnail:', entry.path, as_unicode(err))
                 self.total_size -= entry.size
@@ -335,7 +357,7 @@ class ThumbnailCache:
             try:
                 with open(entry.path, 'rb') as f:
                     data = f.read()
-            except EnvironmentError as err:
+            except OSError as err:
                 self.log('Failed to read cached thumbnail:', entry.path, as_unicode(err))
                 return None, None
             return data, entry.timestamp
@@ -347,10 +369,10 @@ class ThumbnailCache:
                     self._remove((self.group_id, book_id))
             elif os.path.exists(self.location):
                 try:
-                    raw = '\n'.join('%s %d' % (self.group_id, book_id) for book_id in book_ids)
+                    raw = '\n'.join(f'{self.group_id} {book_id}' for book_id in book_ids)
                     with open(os.path.join(self.location, 'invalidate'), 'ab') as f:
                         f.write(raw.encode('ascii'))
-                except EnvironmentError as err:
+                except OSError as err:
                     self.log('Failed to write invalidate thumbnail record:', as_unicode(err))
 
     @property
@@ -364,7 +386,7 @@ class ThumbnailCache:
         with self.lock:
             try:
                 os.remove(os.path.join(self.location, 'order'))
-            except EnvironmentError:
+            except OSError:
                 pass
             if not hasattr(self, 'total_size'):
                 self._load_index()
@@ -409,7 +431,8 @@ def atof(string):
 
 def type_safe_sort_key_function(keyfunc=None):
     if keyfunc is None:
-        keyfunc = lambda x: x
+        def keyfunc(x):
+            return x
     sentinel = object()
     first_value = sentinel
 
@@ -427,3 +450,70 @@ def type_safe_sort_key_function(keyfunc=None):
         return ans
 
     return key
+
+
+def human_readable_interval(secs):
+    secs = int(secs)
+    days = secs // 86400
+    hours = secs // 3600 % 24
+    minutes = secs // 60 % 60
+    seconds = secs % 60
+    parts = []
+    if days > 0:
+        parts.append(_('{} days').format(days))
+        if hours > 0:
+            parts.append(_('{} hours').format(hours))
+    elif hours > 0:
+        parts.append(_('{} hours').format(hours))
+        if minutes > 0:
+            parts.append(_('{} minutes').format(minutes))
+    elif minutes > 0:
+        parts.append(_('{} minutes').format(minutes))
+        if secs > 0:
+            parts.append(_('{} seconds').format(seconds))
+    elif secs > 0:
+        parts.append(_('{} seconds').format(seconds))
+    return ' '.join(parts)
+
+
+class IndexingProgress:
+
+    def __init__(self):
+        self.reset()
+
+    def __repr__(self):
+        return f'IndexingProgress(left={self.left}, total={self.total}, rate={self.indexing_rate})'
+
+    def reset(self):
+        self.left = self.total = -1
+        self.indexing_rate = None
+
+    def update(self, left, total, indexing_rate):
+        changed = (left, total, indexing_rate) != (self.left, self.total, self.indexing_rate)
+        self.indexing_rate = indexing_rate
+        self.left, self.total = left, total
+        return changed
+
+    @property
+    def complete(self):
+        return not self.left or not self.total
+
+    @property
+    def almost_complete(self):
+        return self.complete or (self.left / self.total) < 0.1
+
+    @property
+    def time_left(self):
+        if self.left < 0:
+            return _('calculating time left')
+        if self.left < 2:
+            return _('almost done')
+        if self.indexing_rate is None:
+            return _('calculating time left')
+        try:
+            seconds_left = self.left / self.indexing_rate
+            if seconds_left < 2:
+                return _('almost done')
+            return _('~{} left').format(human_readable_interval(seconds_left))
+        except Exception:
+            return _('calculating time left')

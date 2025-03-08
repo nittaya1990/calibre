@@ -1,16 +1,16 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:fdm=marker:ai
 
 
 __license__   = 'GPL v3'
 __copyright__ = '2012, Kovid Goyal <kovid at kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
 
-import os, time, re
+import os
+import re
+import time
 from functools import partial
 
-from calibre.devices.errors import DeviceError, WrongDestinationError, FreeSpaceError
-from polyglot.builtins import unicode_type
+from calibre.devices.errors import DeviceError, FreeSpaceError, WrongDestinationError
 
 
 def sanity_check(on_card, files, card_prefixes, free_space):
@@ -34,11 +34,11 @@ def sanity_check(on_card, files, card_prefixes, free_space):
         size += os.path.getsize(getattr(f, 'name', f))
 
     if not on_card and size > free_space[0] - 2*1024*1024:
-        raise FreeSpaceError(_("There is insufficient free space in main memory"))
+        raise FreeSpaceError(_('There is insufficient free space in main memory'))
     if on_card == 'carda' and size > free_space[1] - 1024*1024:
-        raise FreeSpaceError(_("There is insufficient free space on the storage card"))
+        raise FreeSpaceError(_('There is insufficient free space on the storage card'))
     if on_card == 'cardb' and size > free_space[2] - 1024*1024:
-        raise FreeSpaceError(_("There is insufficient free space on the storage card"))
+        raise FreeSpaceError(_('There is insufficient free space on the storage card'))
 
 
 def build_template_regexp(template):
@@ -58,11 +58,11 @@ def build_template_regexp(template):
 
     try:
         template = template.rpartition('/')[2]
-        return re.compile(re.sub('{([^}]*)}', f, template) + r'([_\d]*$)')
+        return re.compile(re.sub(r'{([^}]*)}', f, template) + r'([_\d]*$)')
     except:
-        prints(u'Failed to parse template: %r'%template)
-        template = u'{title} - {authors}'
-        return re.compile(re.sub('{([^}]*)}', f, template) + r'([_\d]*$)')
+        prints(f'Failed to parse template: {template!r}')
+        template = '{title} - {authors}'
+        return re.compile(re.sub(r'{([^}]*)}', f, template) + r'([_\d]*$)')
 
 
 def create_upload_path(mdata, fname, template, sanitize,
@@ -74,13 +74,13 @@ def create_upload_path(mdata, fname, template, sanitize,
         filename_callback=lambda x, y:x,
         sanitize_path_components=lambda x: x
         ):
-    from calibre.library.save_to_disk import get_components, config
+    from calibre.library.save_to_disk import config, get_components
     from calibre.utils.filenames import shorten_components_to
 
     special_tag = None
     if mdata.tags:
         for t in mdata.tags:
-            if t.startswith(_('News')) or t.startswith('/'):
+            if t.startswith((_('News'), '/')):
                 special_tag = t
                 break
 
@@ -91,15 +91,15 @@ def create_upload_path(mdata, fname, template, sanitize,
         except:
             today = time.localtime()
             date = (today[0], today[1], today[2])
-        template = u"{title}_%d-%d-%d" % date
+        template = f'{{title}}_{date[0]}-{date[1]}-{date[2]}'
 
     fname = sanitize(fname)
     ext = path_type.splitext(fname)[1]
 
     opts = config().parse()
-    if not isinstance(template, unicode_type):
+    if not isinstance(template, str):
         template = template.decode('utf-8')
-    app_id = unicode_type(getattr(mdata, 'application_id', ''))
+    app_id = str(getattr(mdata, 'application_id', ''))
     id_ = mdata.get('id', fname)
     extra_components = get_components(template, mdata, id_,
             timefmt=opts.send_timefmt, length=maxlen-len(app_id)-1,

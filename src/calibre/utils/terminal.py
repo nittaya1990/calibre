@@ -1,15 +1,16 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:fdm=marker:ai
 
 __license__   = 'GPL v3'
 __copyright__ = '2012, Kovid Goyal <kovid at kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
 
-import os, sys, re
+import os
+import re
+import sys
 
-from calibre.prints import is_binary
 from calibre.constants import iswindows
-from polyglot.builtins import iteritems, range, zip
+from calibre.prints import is_binary
+from polyglot.builtins import iteritems
 
 if iswindows:
     import ctypes.wintypes
@@ -25,7 +26,7 @@ if iswindows:
 
 
 def fmt(code):
-    return '\033[%dm' % code
+    return f'\x1b[{code}m'
 
 
 def polyglot_write(stream, is_binary, encoding, text):
@@ -107,7 +108,7 @@ class Detect:
     def __init__(self, stream):
         self.stream = stream or sys.stdout
         self.is_binary = is_binary(self.stream)
-        self.isatty = getattr(self.stream, 'isatty', lambda : False)()
+        self.isatty = getattr(self.stream, 'isatty', lambda: False)()
         force_ansi = 'CALIBRE_FORCE_ANSI' in os.environ
         if not self.isatty and force_ansi:
             self.isatty = True
@@ -156,7 +157,7 @@ class ANSIStream(Detect):
     ANSI_RE = r'\033\[((?:\d|;)*)([a-zA-Z])'
 
     def __init__(self, stream=None):
-        super(ANSIStream, self).__init__(stream)
+        super().__init__(stream)
         self.encoding = getattr(self.stream, 'encoding', None) or 'utf-8'
         self._ansi_re_bin = self._ansi_re_unicode = None
 
@@ -195,32 +196,29 @@ def windows_terminfo():
     from ctypes.wintypes import SHORT, WORD
 
     class COORD(Structure):
-
-        """struct in wincon.h"""
+        '''struct in wincon.h'''
         _fields_ = [
             ('X', SHORT),
             ('Y', SHORT),
         ]
 
     class SMALL_RECT(Structure):
-
-        """struct in wincon.h."""
+        '''struct in wincon.h.'''
         _fields_ = [
-            ("Left", SHORT),
-            ("Top", SHORT),
-            ("Right", SHORT),
-            ("Bottom", SHORT),
+            ('Left', SHORT),
+            ('Top', SHORT),
+            ('Right', SHORT),
+            ('Bottom', SHORT),
         ]
 
     class CONSOLE_SCREEN_BUFFER_INFO(Structure):
-
-        """struct in wincon.h."""
+        '''struct in wincon.h.'''
         _fields_ = [
-            ("dwSize", COORD),
-            ("dwCursorPosition", COORD),
-            ("wAttributes", WORD),
-            ("srWindow", SMALL_RECT),
-            ("dwMaximumWindowSize", COORD),
+            ('dwSize', COORD),
+            ('dwCursorPosition', COORD),
+            ('wAttributes', WORD),
+            ('srWindow', SMALL_RECT),
+            ('dwMaximumWindowSize', COORD),
         ]
     csbi = CONSOLE_SCREEN_BUFFER_INFO()
     import msvcrt
@@ -234,7 +232,9 @@ def windows_terminfo():
 
 
 def get_term_geometry():
-    import fcntl, termios, struct
+    import fcntl
+    import struct
+    import termios
 
     def ioctl_GWINSZ(fd):
         try:
@@ -283,7 +283,7 @@ def test():
     text = [colored(t, fg=t)+'. '+colored(t, fg=t, bold=True)+'.' for t in
             ('red', 'yellow', 'green', 'white', 'cyan', 'magenta', 'blue',)]
     s.write('\n'.join(text))
-    u = '\u041c\u0438\u0445\u0430\u0438\u043b fällen'
+    u = 'Михаил fällen'
     print()
     s.write(u)
     print()

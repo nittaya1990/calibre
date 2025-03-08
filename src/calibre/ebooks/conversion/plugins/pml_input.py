@@ -1,6 +1,3 @@
-# -*- coding: utf-8 -*-
-
-
 __license__   = 'GPL v3'
 __copyright__ = '2009, John Schember <john@nachtimwald.com>'
 __docformat__ = 'restructuredtext en'
@@ -11,7 +8,6 @@ import shutil
 
 from calibre.customize.conversion import InputFormatPlugin
 from calibre.ptempfile import TemporaryDirectory
-from polyglot.builtins import getcwd
 
 
 class PMLInput(InputFormatPlugin):
@@ -30,14 +26,14 @@ class PMLInput(InputFormatPlugin):
         hclose = False
 
         if not hasattr(pml_path, 'read'):
-            pml_stream = lopen(pml_path, 'rb')
+            pml_stream = open(pml_path, 'rb')
             pclose = True
         else:
             pml_stream = pml_path
             pml_stream.seek(0)
 
         if not hasattr(html_path, 'write'):
-            html_stream = lopen(html_path, 'wb')
+            html_stream = open(html_path, 'wb')
             hclose = True
         else:
             html_stream = html_path
@@ -51,7 +47,7 @@ class PMLInput(InputFormatPlugin):
         self.log.debug('Converting PML to HTML...')
         hizer = PML_HTMLizer()
         html = hizer.parse_pml(pml_stream.read().decode(ienc), html_path)
-        html = '<html><head><title></title></head><body>%s</body></html>'%html
+        html = f'<html><head><title></title></head><body>{html}</body></html>'
         html_stream.write(html.encode('utf-8', 'replace'))
 
         if pclose:
@@ -76,10 +72,10 @@ class PMLInput(InputFormatPlugin):
         if not imgs:
             imgs = glob.glob(os.path.join(os.path.join(tdir, 'images'), '*.png'))
         if imgs:
-            os.makedirs(os.path.join(getcwd(), 'images'))
+            os.makedirs(os.path.join(os.getcwd(), 'images'))
         for img in imgs:
             pimg_name = os.path.basename(img)
-            pimg_path = os.path.join(getcwd(), 'images', pimg_name)
+            pimg_path = os.path.join(os.getcwd(), 'images', pimg_name)
 
             images.append('images/' + pimg_name)
 
@@ -89,8 +85,8 @@ class PMLInput(InputFormatPlugin):
 
     def convert(self, stream, options, file_ext, log,
                 accelerators):
-        from calibre.ebooks.metadata.toc import TOC
         from calibre.ebooks.metadata.opf2 import OPFCreator
+        from calibre.ebooks.metadata.toc import TOC
         from calibre.utils.zipfile import ZipFile
 
         self.options = options
@@ -107,10 +103,10 @@ class PMLInput(InputFormatPlugin):
                 pmls = glob.glob(os.path.join(tdir, '*.pml'))
                 for pml in pmls:
                     html_name = os.path.splitext(os.path.basename(pml))[0]+'.html'
-                    html_path = os.path.join(getcwd(), html_name)
+                    html_path = os.path.join(os.getcwd(), html_name)
 
                     pages.append(html_name)
-                    log.debug('Processing PML item %s...' % pml)
+                    log.debug(f'Processing PML item {pml}...')
                     ttoc = self.process_pml(pml, html_path)
                     toc += ttoc
                 images = self.get_images(stream, tdir, True)
@@ -133,16 +129,16 @@ class PMLInput(InputFormatPlugin):
         mi = get_metadata(stream, 'pml')
         if 'images/cover.png' in images:
             mi.cover = 'images/cover.png'
-        opf = OPFCreator(getcwd(), mi)
+        opf = OPFCreator(os.getcwd(), mi)
         log.debug('Generating manifest...')
         opf.create_manifest(manifest_items)
         opf.create_spine(pages)
         opf.set_toc(toc)
-        with lopen('metadata.opf', 'wb') as opffile:
-            with lopen('toc.ncx', 'wb') as tocfile:
+        with open('metadata.opf', 'wb') as opffile:
+            with open('toc.ncx', 'wb') as tocfile:
                 opf.render(opffile, tocfile, 'toc.ncx')
 
-        return os.path.join(getcwd(), 'metadata.opf')
+        return os.path.join(os.getcwd(), 'metadata.opf')
 
     def postprocess_book(self, oeb, opts, log):
         from calibre.ebooks.oeb.base import XHTML, barename

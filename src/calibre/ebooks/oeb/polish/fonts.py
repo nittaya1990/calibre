@@ -1,15 +1,15 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 
 
 __license__ = 'GPL v3'
 __copyright__ = '2014, Kovid Goyal <kovid at kovidgoyal.net>'
 
+from tinycss.fonts3 import parse_font, parse_font_family, serialize_font, serialize_font_family
+
 from calibre.ebooks.oeb.base import css_text
-from calibre.ebooks.oeb.polish.container import OEB_STYLES, OEB_DOCS
 from calibre.ebooks.oeb.normalize_css import normalize_font
-from tinycss.fonts3 import parse_font_family, parse_font, serialize_font_family, serialize_font
-from polyglot.builtins import iteritems, filter
+from calibre.ebooks.oeb.polish.container import OEB_DOCS, OEB_STYLES
+from polyglot.builtins import iteritems
 
 
 def unquote(x):
@@ -112,7 +112,7 @@ def change_font_in_sheet(container, sheet, old_name, new_name, sheet_name):
         elif rule.type == rule.FONT_FACE_RULE:
             ff = rule.style.getProperty('font-family')
             if ff is not None:
-                families = {x for x in parse_font_family(css_text(ff.propertyValue))}
+                families = set(parse_font_family(css_text(ff.propertyValue)))
                 if old_name in families:
                     changed = True
                     removals.append(rule)

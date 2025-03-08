@@ -4,6 +4,7 @@ __copyright__ = '2008, Kovid Goyal kovid@kovidgoyal.net'
 __docformat__ = 'restructuredtext en'
 
 import re
+
 from calibre.web.feeds.news import BasicNewsRecipe
 
 
@@ -11,7 +12,7 @@ class WashingtonTimes(BasicNewsRecipe):
 
     title = 'Washington Times'
     max_articles_per_feed = 15
-    language = 'en'
+    language = 'en_US'
     __author__ = 'Kos Semonski'
 
     preprocess_regexps = [(re.compile(i[0], re.IGNORECASE | re.DOTALL), i[1]) for i in

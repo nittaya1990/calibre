@@ -1,21 +1,21 @@
 # -*- coding: utf-8 -*-
 from __future__ import absolute_import, division, print_function, unicode_literals
 
-store_version = 9  # Needed for dynamic plugin loading
+store_version = 10  # Needed for dynamic plugin loading
 
 __license__ = 'GPL 3'
-__copyright__ = '2011-2019, Tomasz Długosz <tomek3d@gmail.com>'
+__copyright__ = '2011-2023, Tomasz Długosz <tomek3d@gmail.com>'
 __docformat__ = 'restructuredtext en'
 
 from base64 import b64encode
 from contextlib import closing
+
 try:
     from urllib.parse import quote
 except ImportError:
     from urllib import quote
 
 from lxml import html
-
 from qt.core import QUrl
 
 from calibre import browser, url_slash_cleaner
@@ -54,7 +54,7 @@ class EmpikStore(BasicStoreConfig, StorePlugin):
             d = WebStoreDialog(self.gui, url, parent, detail_url if detail_url else aff_url)
             d.setWindowTitle(self.name)
             d.set_tags(self.config.get('tags', ''))
-            d.exec_()
+            d.exec()
 
     def search(self, query, max_results=10, timeout=60):
         url = 'https://www.empik.com/ebooki/ebooki,3501,s?sort=scoreDesc&resultsPP={}&q={}'.format(max_results, quote(query))
@@ -68,19 +68,19 @@ class EmpikStore(BasicStoreConfig, StorePlugin):
                 if counter <= 0:
                     break
 
-                id = ''.join(data.xpath('.//div[@class="name"]/a/@href'))
+                id = ''.join(data.xpath('.//a[@class="img seoImage"]/@href'))
                 if not id:
                     continue
 
+                title = ''.join(data.xpath('.//h2[@class="product-title"]/a/strong/text()'))
+                author = ', '.join(data.xpath('.//a[@class="smartAuthor "]/text()'))
                 cover_url = ''.join(data.xpath('.//a/img[@class="lazy"]/@lazy-img'))
-                author = ', '.join(data.xpath('.//a[@class="smartAuthor"]/text()'))
-                title = ''.join(data.xpath('.//div[@class="name"]/a/@title'))
                 price = ''.join(data.xpath('.//div[@class="price ta-price-tile "]/text()'))
 
                 # with closing(br.open('https://empik.com' + id.strip(), timeout=timeout/4)) as nf:
-                #    idata = html.fromstring(nf.read())
-                #    crawled = idata.xpath('.//a[(@class="chosen hrefstyle") or (@class="connectionsLink hrefstyle")]/text()')
-                #    formats = ','.join([re.sub('ebook, ','', x.strip()) for x in crawled if 'ebook' in x])
+                #     idata = html.fromstring(nf.read())
+                #     crawled = idata.xpath('.//a[(@class="chosen hrefstyle") or (@class="connectionsLink hrefstyle")]/text()')
+                #     formats = ','.join([re.sub(r'ebook, ','', x.strip()) for x in crawled if 'ebook' in x])
 
                 counter -= 1
 

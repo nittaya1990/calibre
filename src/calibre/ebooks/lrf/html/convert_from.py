@@ -1,4 +1,3 @@
-# vim:fileencoding=utf-8
 # License: GPLv3 Copyright: 2008, Kovid Goyal <kovid at kovidgoyal.net>
 
 
@@ -9,38 +8,50 @@ import re
 import sys
 import tempfile
 from collections import deque
-from functools import partial
 from itertools import chain
 from math import ceil, floor
 
-from calibre import (
-    __appname__, entity_to_unicode, fit_image, force_unicode, preferred_encoding
-)
+from calibre import __appname__, entity_regex, entity_to_unicode, fit_image, force_unicode, preferred_encoding
 from calibre.constants import filesystem_encoding
 from calibre.devices.interface import DevicePlugin as Device
 from calibre.ebooks import ConversionError
-from calibre.ebooks.BeautifulSoup import (
-    BeautifulSoup, Comment, Declaration, NavigableString, ProcessingInstruction, Tag
-)
+from calibre.ebooks.BeautifulSoup import BeautifulSoup, Comment, Declaration, NavigableString, ProcessingInstruction, Tag
 from calibre.ebooks.chardet import xml_to_unicode
 from calibre.ebooks.lrf import Book
 from calibre.ebooks.lrf.html.color_map import lrs_color
 from calibre.ebooks.lrf.html.table import Table
 from calibre.ebooks.lrf.pylrs.pylrs import (
-    CR, BlockSpace, BookSetting, Canvas, CharButton, DropCaps, EmpLine, Image,
-    ImageBlock, ImageStream, Italic, JumpButton, LrsError, Paragraph, Plot,
-    RuledLine, Span, Sub, Sup, TextBlock
+    CR,
+    BlockSpace,
+    BookSetting,
+    Canvas,
+    CharButton,
+    DropCaps,
+    EmpLine,
+    Image,
+    ImageBlock,
+    ImageStream,
+    Italic,
+    JumpButton,
+    LrsError,
+    Paragraph,
+    Plot,
+    RuledLine,
+    Span,
+    Sub,
+    Sup,
+    TextBlock,
 )
 from calibre.ptempfile import PersistentTemporaryFile
-from polyglot.builtins import getcwd, itervalues, string_or_bytes, unicode_type
+from polyglot.builtins import itervalues, string_or_bytes
 from polyglot.urllib import unquote, urlparse
 
-"""
+'''
 Code to convert HTML ebooks into LRF ebooks.
 
 I am indebted to esperanc for the initial CSS->Xylog Style conversion code
 and to Falstaff for pylrs.
-"""
+'''
 
 from PIL import Image as PILImage
 
@@ -82,12 +93,12 @@ def strip_style_comments(match):
 
 def tag_regex(tagname):
     '''Return non-grouping regular expressions that match the opening and closing tags for tagname'''
-    return dict(open=r'(?:<\s*%(t)s\s+[^<>]*?>|<\s*%(t)s\s*>)'%dict(t=tagname),
-                close=r'</\s*%(t)s\s*>'%dict(t=tagname))
+    return dict(open=r'(?:<\s*{t}\s+[^<>]*?>|<\s*{t}\s*>)'.format(**dict(t=tagname)),
+                close=r'</\s*{t}\s*>'.format(**dict(t=tagname)))
 
 
 class HTMLConverter:
-    SELECTOR_PAT   = re.compile(r"([A-Za-z0-9\-\_\:\.]+[A-Za-z0-9\-\_\:\.\s\,]*)\s*\{([^\}]*)\}")
+    SELECTOR_PAT   = re.compile(r'([A-Za-z0-9\-\_\:\.]+[A-Za-z0-9\-\_\:\.\s\,]*)\s*\{([^\}]*)\}')
     PAGE_BREAK_PAT = re.compile(r'page-break-(?:after|before)\s*:\s*(\w+)', re.IGNORECASE)
     IGNORED_TAGS   = (Comment, Declaration, ProcessingInstruction)
 
@@ -97,11 +108,11 @@ class HTMLConverter:
                          lambda match: '<a'+match.group(1)+'></a>'),
                         # Strip comments from <style> tags. This is needed as
                         # sometimes there are unterminated comments
-                        (re.compile(r"<\s*style.*?>(.*?)<\/\s*style\s*>", re.DOTALL|re.IGNORECASE),
+                        (re.compile(r'<\s*style.*?>(.*?)</\s*style\s*>', re.DOTALL|re.IGNORECASE),
                          lambda match: match.group().replace('<!--', '').replace('-->', '')),
                         # remove <p> tags from within <a href> tags
                         (re.compile(r'<\s*a\s+[^<>]*href\s*=[^<>]*>(.*?)<\s*/\s*a\s*>', re.DOTALL|re.IGNORECASE),
-                         lambda match: re.compile(r'%(open)s|%(close)s'%tag_regex('p'), re.IGNORECASE).sub('', match.group())),
+                         lambda match: re.compile(r'{open}|{close}'.format(**tag_regex('p')), re.IGNORECASE).sub('', match.group())),
 
                         # Replace common line break patterns with line breaks
                         (re.compile(r'<p>(&nbsp;|\s)*</p>', re.IGNORECASE), lambda m: '<br />'),
@@ -111,8 +122,7 @@ class HTMLConverter:
                                     re.IGNORECASE), lambda m: '<br />'),
 
                         # Replace entities
-                        (re.compile(r'&(\S+?);'), partial(entity_to_unicode,
-                                                           exceptions=['lt', 'gt', 'amp', 'quot'])),
+                        (entity_regex(), entity_to_unicode),
                         # Remove comments from within style tags as they can mess up BeatifulSoup
                         (re.compile(r'(<style.*?</style>)', re.IGNORECASE|re.DOTALL),
                          strip_style_comments),
@@ -122,7 +132,7 @@ class HTMLConverter:
 
                         # BeautifulSoup treats self closing <div> tags as open <div> tags
                         (re.compile(r'(?i)<\s*div([^>]*)/\s*>'),
-                         lambda match: '<div%s></div>'%match.group(1))
+                         lambda match: f'<div{match.group(1)}></div>')
 
                         ]
     # Fix Baen markup
@@ -143,7 +153,7 @@ class HTMLConverter:
                   # Remove <br> and replace <br><br> with <p>
                   (re.compile(r'<br.*?>\s*<br.*?>', re.IGNORECASE), lambda match: '<p>'),
                   (re.compile(r'(.*)<br.*?>', re.IGNORECASE),
-                   lambda match: match.group() if re.match('<', match.group(1).lstrip()) or len(match.group(1)) < 40
+                   lambda match: match.group() if match.group(1).lstrip().startswith('<') or len(match.group(1)) < 40
                                 else match.group(1)),
                   # Remove hyphenation
                   (re.compile(r'-\n\r?'), lambda match: ''),
@@ -153,17 +163,17 @@ class HTMLConverter:
     # Fix Book Designer markup
     BOOK_DESIGNER = [
                      # HR
-                     (re.compile('<hr>', re.IGNORECASE),
+                     (re.compile(r'<hr>', re.IGNORECASE),
                       lambda match : '<span style="page-break-after:always"> </span>'),
                      # Create header tags
                      (re.compile(r'<h2[^><]*?id=BookTitle[^><]*?(align=)*(?(1)(\w+))*[^><]*?>[^><]*?</h2>', re.IGNORECASE),
-                      lambda match : '<h1 id="BookTitle" align="%s">%s</h1>'%(match.group(2) if match.group(2) else 'center', match.group(3))),
+                      lambda match : '<h1 id="BookTitle" align="{}">{}</h1>'.format(match.group(2) if match.group(2) else 'center', match.group(3))),
                      (re.compile(r'<h2[^><]*?id=BookAuthor[^><]*?(align=)*(?(1)(\w+))*[^><]*?>[^><]*?</h2>', re.IGNORECASE),
-                      lambda match : '<h2 id="BookAuthor" align="%s">%s</h2>'%(match.group(2) if match.group(2) else 'center', match.group(3))),
+                      lambda match : '<h2 id="BookAuthor" align="{}">{}</h2>'.format(match.group(2) if match.group(2) else 'center', match.group(3))),
                      (re.compile(r'<span[^><]*?id=title[^><]*?>(.*?)</span>', re.IGNORECASE|re.DOTALL),
-                      lambda match : '<h2 class="title">%s</h2>'%(match.group(1),)),
+                      lambda match : f'<h2 class="title">{match.group(1)}</h2>'),
                      (re.compile(r'<span[^><]*?id=subtitle[^><]*?>(.*?)</span>', re.IGNORECASE|re.DOTALL),
-                      lambda match : '<h3 class="subtitle">%s</h3>'%(match.group(1),)),
+                      lambda match : f'<h3 class="subtitle">{match.group(1)}</h3>'),
                      # Blank lines
                      (re.compile(r'<div[^><]*?>(&nbsp;){4}</div>', re.IGNORECASE),
                       lambda match : '<p></p>'),
@@ -186,28 +196,28 @@ class HTMLConverter:
             object.__setattr__(self, attr, val)
 
     CSS = {
-           'h1'     : {"font-size"   : "xx-large", "font-weight":"bold", 'text-indent':'0pt'},
-           'h2'     : {"font-size"   : "x-large", "font-weight":"bold", 'text-indent':'0pt'},
-           'h3'     : {"font-size"   : "large", "font-weight":"bold", 'text-indent':'0pt'},
-           'h4'     : {"font-size"   : "large", 'text-indent':'0pt'},
-           'h5'     : {"font-weight" : "bold", 'text-indent':'0pt'},
-           'b'      : {"font-weight" : "bold"},
-           'strong' : {"font-weight" : "bold"},
-           'i'      : {"font-style"  : "italic"},
-           'cite'   : {'font-style'  : 'italic'},
-           'em'     : {"font-style"  : "italic"},
-           'small'  : {'font-size'   : 'small'},
-           'pre'    : {'font-family' : 'monospace', 'white-space': 'pre'},
-           'code'   : {'font-family' : 'monospace'},
-           'tt'     : {'font-family' : 'monospace'},
-           'center' : {'text-align'  : 'center'},
-           'th'     : {'font-size'   : 'large', 'font-weight':'bold'},
-           'big'    : {'font-size'   : 'large', 'font-weight':'bold'},
-           '.libprs500_dropcaps' : {'font-size': 'xx-large'},
-           'u'      : {'text-decoration': 'underline'},
-           'sup'    : {'vertical-align': 'super', 'font-size': '60%'},
-           'sub'    : {'vertical-align': 'sub', 'font-size': '60%'},
-           }
+            'h1'     : {'font-size'   : 'xx-large', 'font-weight':'bold', 'text-indent':'0pt'},
+            'h2'     : {'font-size'   : 'x-large', 'font-weight':'bold', 'text-indent':'0pt'},
+            'h3'     : {'font-size'   : 'large', 'font-weight':'bold', 'text-indent':'0pt'},
+            'h4'     : {'font-size'   : 'large', 'text-indent':'0pt'},
+            'h5'     : {'font-weight' : 'bold', 'text-indent':'0pt'},
+            'b'      : {'font-weight' : 'bold'},
+            'strong' : {'font-weight' : 'bold'},
+            'i'      : {'font-style'  : 'italic'},
+            'cite'   : {'font-style'  : 'italic'},
+            'em'     : {'font-style'  : 'italic'},
+            'small'  : {'font-size'   : 'small'},
+            'pre'    : {'font-family' : 'monospace', 'white-space': 'pre'},
+            'code'   : {'font-family' : 'monospace'},
+            'tt'     : {'font-family' : 'monospace'},
+            'center' : {'text-align'  : 'center'},
+            'th'     : {'font-size'   : 'large', 'font-weight':'bold'},
+            'big'    : {'font-size'   : 'large', 'font-weight':'bold'},
+            '.libprs500_dropcaps' : {'font-size': 'xx-large'},
+            'u'      : {'text-decoration': 'underline'},
+            'sup'    : {'vertical-align': 'super', 'font-size': '60%'},
+            'sub'    : {'vertical-align': 'sub', 'font-size': '60%'},
+    }
 
     def __init__(self, book, fonts, options, logger, paths):
         '''
@@ -269,7 +279,7 @@ class HTMLConverter:
             if isinstance(src, bytes):
                 src = src.decode('utf-8', 'replace')
             match = self.PAGE_BREAK_PAT.search(src)
-            if match and not re.match('avoid', match.group(1), re.IGNORECASE):
+            if match and not re.match(r'avoid', match.group(1), re.IGNORECASE):
                 self.page_break_found = True
             ncss, npcss = self.parse_css(src)
             if ncss:
@@ -278,7 +288,7 @@ class HTMLConverter:
                 update_css(npcss, self.override_pcss)
 
         paths = [os.path.abspath(path) for path in paths]
-        paths = [path.decode(sys.getfilesystemencoding()) if not isinstance(path, unicode_type) else path for path in paths]
+        paths = [path.decode(sys.getfilesystemencoding()) if not isinstance(path, str) else path for path in paths]
 
         while len(paths) > 0 and self.link_level <= self.link_levels:
             for path in paths:
@@ -314,10 +324,10 @@ class HTMLConverter:
 
     def is_baen(self, soup):
         return bool(soup.find('meta', attrs={'name':'Publisher',
-                        'content':re.compile('Baen', re.IGNORECASE)}))
+                        'content':re.compile(r'Baen', re.IGNORECASE)}))
 
     def is_book_designer(self, raw):
-        return bool(re.search('<H2[^><]*id=BookTitle', raw))
+        return bool(re.search(r'<H2[^><]*id=BookTitle', raw))
 
     def preprocess(self, raw):
         nmassage = []
@@ -358,7 +368,7 @@ class HTMLConverter:
                 os.makedirs(tdir)
             try:
                 with open(os.path.join(tdir, 'html2lrf-verbose.html'), 'wb') as f:
-                    f.write(unicode_type(soup).encode('utf-8'))
+                    f.write(str(soup).encode('utf-8'))
                     self.log.info(_('Written preprocessed HTML to ')+f.name)
             except:
                 pass
@@ -391,7 +401,7 @@ class HTMLConverter:
         self.log.info(_('\tConverting to BBeB...'))
         self.current_style = {}
         self.page_break_found = False
-        if not isinstance(path, unicode_type):
+        if not isinstance(path, str):
             path = path.decode(sys.getfilesystemencoding())
         self.target_prefix = path
         self.previous_text = '\n'
@@ -399,12 +409,12 @@ class HTMLConverter:
         self.processed_files.append(path)
 
     def parse_css(self, style):
-        """
+        '''
         Parse the contents of a <style> tag or .css file.
-        @param style: C{unicode_type(style)} should be the CSS to parse.
+        @param style: C{str(style)} should be the CSS to parse.
         @return: A dictionary with one entry per selector where the key is the
         selector name and the value is a dictionary of properties
-        """
+        '''
         sdict, pdict = {}, {}
         style = re.sub(r'/\*.*?\*/', '', style)  # Remove /*...*/ comments
         for sel in re.findall(HTMLConverter.SELECTOR_PAT, style):
@@ -430,13 +440,13 @@ class HTMLConverter:
         return sdict, pdict
 
     def parse_style_properties(self, props):
-        """
+        '''
         Parses a style attribute. The code within a CSS selector block or in
         the style attribute of an HTML element.
         @return: A dictionary with one entry for each property where the key
                 is the property name and the value is the property value.
-        """
-        prop = dict()
+        '''
+        prop = {}
         for s in props.split(';'):
             l = s.split(':',1)
             if len(l)==2:
@@ -446,9 +456,9 @@ class HTMLConverter:
         return prop
 
     def tag_css(self, tag, parent_css={}):
-        """
+        '''
         Return a dictionary of style properties applicable to Tag tag.
-        """
+        '''
         def merge_parent_css(prop, pcss):
             # float should not be inherited according to the CSS spec
             # however we need to as we don't do alignment at a block level.
@@ -469,29 +479,29 @@ class HTMLConverter:
         tagname = tag.name.lower()
         if parent_css:
             merge_parent_css(prop, parent_css)
-        if tag.has_attr("align"):
+        if tag.has_attr('align'):
             al = tag['align'].lower()
             if al in ('left', 'right', 'center', 'justify'):
-                prop["text-align"] = al
+                prop['text-align'] = al
         if tagname in self.css:
             prop.update(self.css[tagname])
         if tagname in self.pseudo_css:
             pprop.update(self.pseudo_css[tagname])
-        if tag.has_attr("class"):
+        if tag.has_attr('class'):
             cls = tag['class']
             if isinstance(cls, list):
                 cls = ' '.join(cls)
             cls = cls.lower()
             for cls in cls.split():
-                for classname in ["."+cls, tagname+"."+cls]:
+                for classname in ['.'+cls, tagname+'.'+cls]:
                     if classname in self.css:
                         prop.update(self.css[classname])
                     if classname in self.pseudo_css:
                         pprop.update(self.pseudo_css[classname])
         if tag.has_attr('id') and tag['id'] in self.css:
             prop.update(self.css[tag['id']])
-        if tag.has_attr("style"):
-            prop.update(self.parse_style_properties(tag["style"]))
+        if tag.has_attr('style'):
+            prop.update(self.parse_style_properties(tag['style']))
         return prop, pprop
 
     def parse_file(self, soup):
@@ -589,7 +599,7 @@ class HTMLConverter:
             if isinstance(c, HTMLConverter.IGNORED_TAGS):
                 continue
             if isinstance(c, NavigableString):
-                text += unicode_type(c)
+                text += str(c)
             elif isinstance(c, Tag):
                 if c.name.lower() == 'img' and c.has_attr('alt'):
                     alt_text += c['alt']
@@ -604,7 +614,7 @@ class HTMLConverter:
                hasattr(target.parent, 'objId'):
                 self.book.addTocEntry(ascii_text, tb)
             else:
-                self.log.debug("Cannot add link %s to TOC"%ascii_text)
+                self.log.debug(f'Cannot add link {ascii_text} to TOC')
 
         def get_target_block(fragment, targets):
             '''Return the correct block for the <a name> element'''
@@ -634,7 +644,7 @@ class HTMLConverter:
                 ans = ntb
 
             if found:
-                targets[fragment] =  ans
+                targets[fragment] = ans
                 page.contents.remove(bs)
             return ans
 
@@ -644,7 +654,7 @@ class HTMLConverter:
             para, text, path, fragment = link['para'], link['text'], link['path'], link['fragment']
             ascii_text = text
 
-            if not isinstance(path, unicode_type):
+            if not isinstance(path, str):
                 path = path.decode(sys.getfilesystemencoding())
             if path in self.processed_files:
                 if path+fragment in self.targets.keys():
@@ -679,10 +689,10 @@ class HTMLConverter:
                     self.book.addTocEntry(ascii_text, self.targets[url])
 
     def end_page(self):
-        """
+        '''
         End the current page, ensuring that any further content is displayed
         on a new page.
-        """
+        '''
         if self.current_para.has_text():
             self.current_para.append_to(self.current_block)
             self.current_para = Paragraph()
@@ -716,7 +726,7 @@ class HTMLConverter:
             self.book.append(page)
 
     def process_children(self, ptag, pcss, ppcss={}):
-        """ Process the children of ptag """
+        ''' Process the children of ptag '''
         # Need to make a copy of contents as when
         # extract is called on a child, it will
         # mess up the iteration.
@@ -738,10 +748,10 @@ class HTMLConverter:
         val = css['text-align'].lower() if 'text-align' in css else None
         align = 'head'
         if val is not None:
-            if val in ["right", "foot"]:
-                align = "foot"
-            elif val == "center":
-                align = "center"
+            if val in ['right', 'foot']:
+                align = 'foot'
+            elif val == 'center':
+                align = 'center'
         if 'float' in css:
             val = css['float'].lower()
             if val == 'left':
@@ -793,7 +803,7 @@ class HTMLConverter:
             src = src.lstrip()
             f = src[0]
             next = 1
-            if f in ("'", '"', '\u201c', '\u2018', '\u201d', '\u2019'):
+            if f in ("'", '"', '“', '‘', '”', '’'):
                 if len(src) >= 2:
                     next = 2
                     f = src[:2]
@@ -809,10 +819,11 @@ class HTMLConverter:
 
         def append_text(src):
             fp, key, variant = self.font_properties(css)
-            for x, y in [('\xad', ''), ('\xa0', ' '), ('\ufb00', 'ff'), ('\ufb01', 'fi'), ('\ufb02', 'fl'), ('\ufb03', 'ffi'), ('\ufb04', 'ffl')]:
+            for x, y in [('\xad', ''), ('\xa0', ' '), ('ﬀ', 'ff'), ('ﬁ', 'fi'), ('ﬂ', 'fl'), ('ﬃ', 'ffi'), ('ﬄ', 'ffl')]:
                 src = src.replace(x, y)
 
-            valigner = lambda x: x
+            def valigner(x):
+                return x
             if 'vertical-align' in css:
                 valign = css['vertical-align']
                 if valign in ('sup', 'super', 'sub'):
@@ -926,8 +937,8 @@ class HTMLConverter:
 
         try:
             im = PILImage.open(path)
-        except IOError as err:
-            self.log.warning('Unable to process image: %s\n%s'%(original_path, err))
+        except OSError as err:
+            self.log.warning(f'Unable to process image: {original_path}\n{err}')
             return
         encoding = detect_encoding(im)
 
@@ -939,11 +950,11 @@ class HTMLConverter:
             pt = PersistentTemporaryFile(suffix='_html2lrf_scaled_image_.'+encoding.lower())
             self.image_memory.append(pt)  # Necessary, trust me ;-)
             try:
-                im.resize((int(width), int(height)), PILImage.ANTIALIAS).save(pt, encoding)
+                im.resize((int(width), int(height)), PILImage.Resampling.LANCZOS).save(pt, encoding)
                 pt.close()
                 self.scaled_images[path] = pt
                 return pt.name
-            except (IOError, SystemError) as err:  # PIL chokes on interlaced PNG images as well a some GIF images
+            except (OSError, SystemError) as err:  # PIL chokes on interlaced PNG images as well a some GIF images
                 self.log.warning(
                     _('Unable to process image %(path)s. Error: %(err)s')%dict(
                         path=path, err=err))
@@ -990,7 +1001,7 @@ class HTMLConverter:
                 path = pt.name
                 self.rotated_images[path] = pt
                 width, height = im.size
-            except IOError:  # PIL chokes on interlaced PNG files and since auto-rotation is not critical we ignore the error
+            except OSError:  # PIL chokes on interlaced PNG files and since auto-rotation is not critical we ignore the error
                 self.log.debug(_('Unable to process interlaced PNG %s')% original_path)
             finally:
                 pt.close()
@@ -1006,8 +1017,7 @@ class HTMLConverter:
             try:
                 self.images[path] = ImageStream(path, encoding=encoding)
             except LrsError as err:
-                self.log.warning(('Could not process image: %s\n%s')%(
-                    original_path, err))
+                self.log.warning(f'Could not process image: {original_path}\n{err}')
                 return
 
         im = Image(self.images[path], x0=0, y0=0, x1=width, y1=height,
@@ -1062,14 +1072,14 @@ class HTMLConverter:
             self.end_page()
             self.page_break_found = True
         if not self.page_break_found and self.page_break.match(tagname):
-            number_of_paragraphs = sum([
+            number_of_paragraphs = sum(
                 len([1 for i in block.contents if isinstance(i, Paragraph)])
                 for block in self.current_page.contents if isinstance(block, TextBlock)
-            ])
+            )
 
             if number_of_paragraphs > 2:
                 self.end_page()
-                self.log.debug('Forcing page break at %s'%tagname)
+                self.log.debug(f'Forcing page break at {tagname}')
         return end_page
 
     def block_properties(self, tag_css):
@@ -1087,7 +1097,7 @@ class HTMLConverter:
 
         s1, s2 = get('margin'), get('padding')
 
-        bl = unicode_type(self.current_block.blockStyle.attrs['blockwidth'])+'px'
+        bl = str(self.current_block.blockStyle.attrs['blockwidth'])+'px'
 
         def set(default, one, two):
             fval = None
@@ -1141,10 +1151,10 @@ class HTMLConverter:
 
         def font_weight(val):
             ans = 0
-            m = re.search("([0-9]+)", val)
+            m = re.search(r'([0-9]+)', val)
             if m:
                 ans = int(m.group(1))
-            elif val.find("bold") >= 0 or val.find("strong") >= 0:
+            elif val.find('bold') >= 0 or val.find('strong') >= 0:
                 ans = 700
             return 'bold' if ans >= 700 else 'normal'
 
@@ -1156,10 +1166,10 @@ class HTMLConverter:
 
         def font_family(val):
             ans = 'serif'
-            if max(val.find("courier"), val.find("mono"), val.find("fixed"), val.find("typewriter"))>=0:
+            if max(val.find('courier'), val.find('mono'), val.find('fixed'), val.find('typewriter'))>=0:
                 ans = 'mono'
-            elif max(val.find("arial"), val.find("helvetica"), val.find("verdana"),
-                 val.find("trebuchet"), val.find("sans")) >= 0:
+            elif max(val.find('arial'), val.find('helvetica'), val.find('verdana'),
+                 val.find('trebuchet'), val.find('sans')) >= 0:
                 ans = 'sans'
             return ans
 
@@ -1190,33 +1200,33 @@ class HTMLConverter:
                 if ans <= 0:
                     ans += normal
                     if ans == 0:  # Common case of using -1em to mean "smaller"
-                        ans = int(font_size("smaller"))
+                        ans = int(font_size('smaller'))
                     if ans < 0:
                         ans = normal
             else:
                 if ans == 0:
-                    ans = int(font_size("smaller"))
-                elif "smaller" in val:
+                    ans = int(font_size('smaller'))
+                elif 'smaller' in val:
                     ans = normal - 20
-                elif "xx-small" in val:
+                elif 'xx-small' in val:
                     ans = 40
-                elif "x-small" in val:
+                elif 'x-small' in val:
                     ans = 60
-                elif "small" in val:
+                elif 'small' in val:
                     ans = 80
-                elif "medium" in val:
+                elif 'medium' in val:
                     ans = 100
-                elif "larger" in val:
+                elif 'larger' in val:
                     ans = normal + 20
-                elif "xx-large" in val:
+                elif 'xx-large' in val:
                     ans = 180
-                elif "x-large" in val:
+                elif 'x-large' in val:
                     ans = 140
-                elif "large" in val:
+                elif 'large' in val:
                     ans = 120
             if ans is not None:
                 ans += int(self.font_delta * 20)
-                ans = unicode_type(ans)
+                ans = str(ans)
             return ans
 
         family, weight, style, variant = 'serif', 'normal', 'normal', None
@@ -1248,7 +1258,7 @@ class HTMLConverter:
                         break
             elif key in ['font-family', 'font-name']:
                 family = font_family(val)
-            elif key == "font-size":
+            elif key == 'font-size':
                 ans = font_size(val)
                 if ans:
                     t['fontsize'] = ans
@@ -1288,7 +1298,7 @@ class HTMLConverter:
             result = int(val)
         except ValueError:
             pass
-        m = re.search(r"\s*(-*[0-9]*\.?[0-9]*)\s*(%|em|px|mm|cm|in|dpt|pt|pc)", val)
+        m = re.search(r'\s*(-*[0-9]*\.?[0-9]*)\s*(%|em|px|mm|cm|in|dpt|pt|pc)', val)
 
         if m is not None and m.group(1):
             unit = float(m.group(1))
@@ -1322,10 +1332,10 @@ class HTMLConverter:
     def text_properties(self, tag_css):
         indent = self.book.defaultTextStyle.attrs['parindent']
         if 'text-indent' in tag_css:
-            bl = unicode_type(self.current_block.blockStyle.attrs['blockwidth'])+'px'
+            bl = str(self.current_block.blockStyle.attrs['blockwidth'])+'px'
             if 'em' in tag_css['text-indent']:
                 bl = '10pt'
-            indent = self.unit_convert(unicode_type(tag_css['text-indent']), pts=True, base_length=bl)
+            indent = self.unit_convert(str(tag_css['text-indent']), pts=True, base_length=bl)
             if not indent:
                 indent = 0
             if indent > 0 and indent < 10 * self.minimum_indent:
@@ -1459,7 +1469,7 @@ class HTMLConverter:
             (self.chapter_attr[1].lower() == 'none' or
              (tag.has_attr(self.chapter_attr[1]) and
               self.chapter_attr[2].match(tag[self.chapter_attr[1]])))):
-            self.log.debug('Detected chapter %s'%tagname)
+            self.log.debug(f'Detected chapter {tagname}')
             self.end_page()
             self.page_break_found = True
 
@@ -1470,7 +1480,7 @@ class HTMLConverter:
 
         end_page = self.process_page_breaks(tag, tagname, tag_css)
         try:
-            if tagname in ["title", "script", "meta", 'del', 'frameset']:
+            if tagname in ['title', 'script', 'meta', 'del', 'frameset']:
                 pass
             elif tagname == 'a' and self.link_levels >= 0:
                 if tag.has_attr('href') and not self.link_exclude.match(tag['href']):
@@ -1487,7 +1497,7 @@ class HTMLConverter:
                             else:
                                 text = self.get_text(tag, limit=1000)
                                 if not text.strip():
-                                    text = "Link"
+                                    text = 'Link'
                                 self.add_text(text, tag_css, {}, force_span_use=True)
                                 self.links.append(self.create_link(self.current_para.contents, tag))
                                 if tag.has_attr('id') or tag.has_attr('name'):
@@ -1519,24 +1529,24 @@ class HTMLConverter:
                     elif not urlparse(tag['src'])[0]:
                         self.log.warn('Could not find image: '+tag['src'])
                 else:
-                    self.log.debug("Failed to process: %s"%unicode_type(tag))
+                    self.log.debug(f'Failed to process: {tag!s}')
             elif tagname in ['style', 'link']:
                 ncss, npcss = {}, {}
                 if tagname == 'style':
-                    text = ''.join([unicode_type(i) for i in tag.findAll(text=True)])
+                    text = ''.join([str(i) for i in tag.findAll(text=True)])
                     css, pcss = self.parse_css(text)
                     ncss.update(css)
                     npcss.update(pcss)
-                elif (tag.has_attr('type') and tag['type'] in ("text/css", "text/x-oeb1-css") and tag.has_attr('href')):
+                elif (tag.has_attr('type') and tag['type'] in ('text/css', 'text/x-oeb1-css') and tag.has_attr('href')):
                     path = munge_paths(self.target_prefix, tag['href'])[0]
                     try:
                         with open(path, 'rb') as f:
                             src = f.read().decode('utf-8', 'replace')
                         match = self.PAGE_BREAK_PAT.search(src)
-                        if match and not re.match('avoid', match.group(1), re.IGNORECASE):
+                        if match and not re.match(r'avoid', match.group(1), re.IGNORECASE):
                             self.page_break_found = True
                         ncss, npcss = self.parse_css(src)
-                    except IOError:
+                    except OSError:
                         self.log.warn('Could not read stylesheet: '+tag['href'])
                 if ncss:
                     update_css(ncss, self.css)
@@ -1555,7 +1565,7 @@ class HTMLConverter:
                 if tag.contents:
                     c = tag.contents[0]
                     if isinstance(c, NavigableString):
-                        c = unicode_type(c).replace('\r\n', '\n').replace('\r', '\n')
+                        c = str(c).replace('\r\n', '\n').replace('\r', '\n')
                         if c.startswith('\n'):
                             c = c[1:]
                             tag.contents[0] = NavigableString(c)
@@ -1613,7 +1623,7 @@ class HTMLConverter:
                             in_ol = parent.name.lower() == 'ol'
                             break
                         parent = parent.parent
-                    prepend = unicode_type(self.list_counter)+'. ' if in_ol else '\u2022' + ' '
+                    prepend = str(self.list_counter)+'. ' if in_ol else '•' + ' '
                     self.current_para.append(Span(prepend))
                     self.process_children(tag, tag_css, tag_pseudo_css)
                     if in_ol:
@@ -1656,7 +1666,7 @@ class HTMLConverter:
 
                 if (self.anchor_ids and tag.has_attr('id')) or (self.book_designer and tag.get('class') in ('title', ['title'])):
                     if not tag.has_attr('id'):
-                        tag['id'] = __appname__+'_id_'+unicode_type(self.id_counter)
+                        tag['id'] = __appname__+'_id_'+str(self.id_counter)
                         self.id_counter += 1
 
                     tkey = self.target_prefix+tag['id']
@@ -1671,7 +1681,7 @@ class HTMLConverter:
 
                 if not self.disable_chapter_detection and tagname.startswith('h'):
                     if self.chapter_regex.search(src):
-                        self.log.debug('Detected chapter %s'%src)
+                        self.log.debug(f'Detected chapter {src}')
                         self.end_page()
                         self.page_break_found = True
 
@@ -1695,7 +1705,7 @@ class HTMLConverter:
 
                 self.process_children(tag, tag_css, tag_pseudo_css)
 
-                if self.current_para.contents :
+                if self.current_para.contents:
                     self.current_block.append(self.current_para)
                 self.current_para = Paragraph()
                 if tagname.startswith('h') or self.blank_after_para:
@@ -1729,7 +1739,7 @@ class HTMLConverter:
                 except Exception as err:
                     self.log.warning(_('An error occurred while processing a table: %s. Ignoring table markup.')%repr(err))
                     self.log.exception('')
-                    self.log.debug(_('Bad table:\n%s')%unicode_type(tag)[:300])
+                    self.log.debug(_('Bad table:\n%s')%str(tag)[:300])
                     self.in_table = False
                     self.process_children(tag, tag_css, tag_pseudo_css)
                 finally:
@@ -1804,17 +1814,17 @@ def process_file(path, options, logger):
             try:
                 cim = im.resize((width, height), PILImage.BICUBIC).convert('RGB') if \
                       scaled else im
-                cf = PersistentTemporaryFile(prefix=__appname__+"_", suffix=".jpg")
+                cf = PersistentTemporaryFile(prefix=__appname__+'_', suffix='.jpg')
                 cf.close()
                 cim.convert('RGB').save(cf.name)
                 options.cover = cf.name
 
-                tim = im.resize((int(0.75*th), th), PILImage.ANTIALIAS).convert('RGB')
-                tf = PersistentTemporaryFile(prefix=__appname__+'_', suffix=".jpg")
+                tim = im.resize((int(0.75*th), th), PILImage.Resampling.LANCZOS).convert('RGB')
+                tf = PersistentTemporaryFile(prefix=__appname__+'_', suffix='.jpg')
                 tf.close()
                 tim.save(tf.name)
                 tpath = tf.name
-            except IOError as err:  # PIL sometimes fails, for example on interlaced PNG files
+            except OSError as err:  # PIL sometimes fails, for example on interlaced PNG files
                 logger.warn(_('Could not read cover image: %s'), err)
                 options.cover = None
         else:
@@ -1825,9 +1835,9 @@ def process_file(path, options, logger):
 
     for prop in ('author', 'author_sort', 'title', 'title_sort', 'publisher', 'freetext'):
         val = getattr(options, prop, None)
-        if val and not isinstance(val, unicode_type):
+        if val and not isinstance(val, str):
             soup = BeautifulSoup(val)
-            setattr(options, prop, unicode_type(soup))
+            setattr(options, prop, str(soup))
 
     title = (options.title, options.title_sort)
     author = (options.author, options.author_sort)
@@ -1850,19 +1860,19 @@ def process_file(path, options, logger):
         if not options.author:
             options.author = _('Unknown')
         if not fheader:
-            fheader = "%t by %a"
+            fheader = '%t by %a'
         fheader = re.sub(r'(?<!%)%t', options.title, fheader)
         fheader = re.sub(r'(?<!%)%a', options.author, fheader)
-        fheader = re.sub(r'%%a','%a',fheader)
-        fheader = re.sub(r'%%t','%t',fheader)
-        header.append(fheader + "  ")
+        fheader = fheader.replace('%%a', '%a')
+        fheader = fheader.replace('%%t', '%t')
+        header.append(fheader + '  ')
     book, fonts = Book(options, logger, header=header, **args)
     le = re.compile(options.link_exclude) if options.link_exclude else \
-         re.compile('$')
+         re.compile(r'$')
     pb = re.compile(options.page_break, re.IGNORECASE) if options.page_break else \
-         re.compile('$')
+         re.compile(r'$')
     fpb = re.compile(options.force_page_break, re.IGNORECASE) if options.force_page_break else \
-         re.compile('$')
+         re.compile(r'$')
     cq = options.chapter_attr.split(',')
     if len(cq) < 3:
         raise ValueError('The --chapter-attr setting must have 2 commas.')
@@ -1871,7 +1881,7 @@ def process_file(path, options, logger):
     options.force_page_break = fpb
     options.link_exclude = le
     options.page_break = pb
-    if not isinstance(options.chapter_regex, unicode_type):
+    if not isinstance(options.chapter_regex, str):
         options.chapter_regex = options.chapter_regex.decode(preferred_encoding)
     options.chapter_regex = re.compile(options.chapter_regex, re.IGNORECASE)
     fpba = options.force_page_break_attr.split(',')
@@ -1889,7 +1899,7 @@ def process_file(path, options, logger):
     if not oname:
         suffix = '.lrs' if options.lrs else '.lrf'
         name = os.path.splitext(os.path.basename(path))[0] + suffix
-        oname = os.path.join(getcwd(), name)
+        oname = os.path.join(os.getcwd(), name)
     oname = os.path.abspath(os.path.expanduser(oname))
     conv.writeto(oname, lrs=options.lrs)
     conv.cleanup()

@@ -1,67 +1,93 @@
 #!/usr/bin/env python
-
-__license__ = 'GPL v3'
-__copyright__ = '2009, Kovid Goyal <kovid at kovidgoyal.net>'
-from calibre.web.feeds.news import BasicNewsRecipe
+# vim:fileencoding=utf-8
+from calibre.web.feeds.news import BasicNewsRecipe, classes
 
 
-def absurl(x):
-    if x.startswith('/'):
-        x = 'http://www.outlookindia.com' + x
-    return x
-
-
-class OutlookIndia(BasicNewsRecipe):
-
-    title = 'Outlook India'
-    __author__ = 'Kovid Goyal'
-    description = 'Weekly news and current affairs in India'
-    no_stylesheets = True
-    encoding = 'utf-8'
+class outlook(BasicNewsRecipe):
+    title = 'Outlook Magazine'
+    __author__ = 'unkn0wn'
+    description = (
+        'Outlook covers the latest India news, analysis, business news and long-form stories on culture,'
+        " money market and personal finance. Read India's best online magazine."
+    )
     language = 'en_IN'
-    ignore_duplicate_articles = {'title', 'url'}
+    use_embedded_content = False
+    no_stylesheets = True
+    remove_javascript = True
+    remove_attributes = ['height', 'width', 'style']
+    ignore_duplicate_articles = {'url'}
+    resolve_internal_links = True
+    masthead_url = 'https://images.assettype.com/outlookindia/2024-02/96fb06ce-1cc8-410e-ad6c-da4de57405f8/Outlook.svg'
+    extra_css = '''
+        .subcap-story {font-style:italic; color:#202020;}
+        .story-slug, .article-name-date {font-size:small; color:#404040;}
+        .main-img-div, .sb-image {font-size:small; text-align:center;}
+        em { color:#202020; }
+    '''
+    browser_type = 'webengine'
 
     keep_only_tags = [
-        dict(name='h1'),
-        dict(
-            attrs={'class': ['sub_head', 'magzine_stry_image', 'mainContent']}),
-        dict(attrs={'class': lambda x: x and set(
-            x.split()).intersection({'writter', 'covr_wr'})}),
+        # classes('story-slug story-title subcap-story article-name-date main-img-div sb-article')
+        classes('story-slug story-title subcap-story article-name-date w-93')
     ]
+
     remove_tags = [
-        dict(name='meta'),
+        dict(name='svg'),
+        dict(name='a', attrs={'href':lambda x: x and x.startswith('https://www.whatsapp.com/')}),
+        classes('ads-box info-img-absolute mobile-info-id story-dec-time-mobile sb-also-read ads-box1')
     ]
+
+    recipe_specific_options = {
+        'date': {
+            'short': 'The date of the edition to download (DD-Month-YYYY format)',
+            'long': 'For example, 10-june-2024'
+        }
+    }
 
     def get_browser(self):
-        br = BasicNewsRecipe.get_browser(self)
-        # This site sends article titles in the cookie which occasionally
-        # contain non ascii characters causing httplib to fail. Instead just
-        # disable cookies as they're not needed for download. Proper solution
-        # would be to implement a unicode aware cookie jar
-        br.set_cookiejar(None)
-        return br
-
-    def preprocess_raw_html(self, raw_html, url):
-        import html5lib
-        from lxml import html
-        root = html5lib.parse(raw_html, treebuilder='lxml',
-                              namespaceHTMLElements=False)
-        return html.tostring(root)
+        return BasicNewsRecipe.get_browser(self, user_agent='common_words/based', verify_ssl_certificates=False)
 
     def parse_index(self):
-        soup = self.index_to_soup('http://www.outlookindia.com/magazine')
-        for img in soup.findAll('img', src=lambda x: x and 'Latest-Cover.jpg' in x):
-            self.cover_url = absurl(img['src'])
-            self.log('Found cover:', self.cover_url)
+        self.log(
+            '\n***\nif this recipe fails, report it on: '
+            'https://www.mobileread.com/forums/forumdisplay.php?f=228\n***\n'
+        )
 
-        articles = []
-        for a in soup.findAll('a', href=lambda x: x and x.startswith('/magazine/story/')):
-            url = absurl(a['href'])
+        d = self.recipe_specific_options.get('date')
+        if d and isinstance(d, str):
+            url = 'https://www.outlookindia.com/magazine/' + d
+        else:
+            soup = self.index_to_soup('https://www.outlookindia.com/magazine')
+            a = soup.find('a', attrs={'aria-label':'magazine-cover-image'})
+            url = a['href']
+
+        self.log('Downloading issue:', url)
+
+        soup = self.index_to_soup(url)
+        cov = soup.find(attrs={'aria-label':'magazine-cover-image'})
+        self.cover_url = cov.img['src'].split('?')[0]
+        summ = soup.find(attrs={'data-test-id':'magazine-summary'})
+        if summ:
+            self.description = self.tag_to_string(summ)
+        tme = soup.find(attrs={'class':'arr__timeago'})
+        if tme:
+            self.timefmt = ' [' + self.tag_to_string(tme).split('-')[-1].strip() + ']'
+
+        ans = []
+
+        for div in soup.findAll(attrs={'class': 'article-heading-two'}):
+            a = div.a
+            url = a['href']
             title = self.tag_to_string(a)
             desc = ''
-            div = a.parent.findNextSibling(attrs={'class': 'descriptn'})
-            if div is not None:
-                desc = self.tag_to_string(div)
-            self.log('Found article:', title, 'at', url)
-            articles.append({'title': title, 'url': url, 'description': desc})
-        return [('Current Issue', articles)]
+            p = div.find_next_sibling('p', attrs={'class':lambda x: x and 'article-desc' in x.split()})
+            if p:
+                desc = self.tag_to_string(p)
+            auth = div.find_next_sibling('p', attrs={'class':'author'})
+            if auth:
+                desc = self.tag_to_string(auth) + ' | ' + desc
+            self.log('\t', title)
+            self.log('\t', desc)
+            self.log('\t\t', url)
+            ans.append({'title': title, 'url': url, 'description': desc})
+        return [('Articles', ans)]

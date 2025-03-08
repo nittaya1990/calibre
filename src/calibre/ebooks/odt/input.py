@@ -1,4 +1,3 @@
-
 __license__   = 'GPL v3'
 __copyright__ = '2008, Kovid Goyal kovid@kovidgoyal.net'
 __docformat__ = 'restructuredtext en'
@@ -6,21 +5,22 @@ __docformat__ = 'restructuredtext en'
 '''
 Convert an ODT file into a Open Ebook
 '''
-import os, logging
+import logging
+import os
 
-from lxml import etree
 from css_parser import CSSParser
 from css_parser.css import CSSRule
-
+from lxml import etree
+from odf.draw import Frame as odFrame
+from odf.draw import Image as odImage
+from odf.namespaces import TEXTNS as odTEXTNS
 from odf.odf2xhtml import ODF2XHTML
 from odf.opendocument import load as odLoad
-from odf.draw import Frame as odFrame, Image as odImage
-from odf.namespaces import TEXTNS as odTEXTNS
 
 from calibre import CurrentDir, walk
 from calibre.ebooks.oeb.base import _css_logger
 from calibre.utils.xml_parse import safe_xml_fromstring
-from polyglot.builtins import unicode_type, string_or_bytes, filter, getcwd, as_bytes
+from polyglot.builtins import as_bytes, string_or_bytes
 
 
 class Extract(ODF2XHTML):
@@ -66,11 +66,11 @@ class Extract(ODF2XHTML):
             head = head[0]
             ns = head.nsmap.get(None, '')
             if ns:
-                ns = '{%s}'%ns
+                ns = f'{{{ns}}}'
             etree.SubElement(head, ns+'link', {'type':'text/css',
                 'rel':'stylesheet', 'href':'odfpy.css'})
 
-        css = u'\n\n'.join(ans)
+        css = '\n\n'.join(ans)
         parser = CSSParser(loglevel=logging.WARNING,
                             log=_css_logger)
         self.css = parser.parseString(css, validate=False)
@@ -88,11 +88,11 @@ class Extract(ODF2XHTML):
                     return rule
 
     def epubify_markup(self, root, log):
-        from calibre.ebooks.oeb.base import XPath, XHTML
+        from calibre.ebooks.oeb.base import XHTML, XPath
         # Fix empty title tags
         for t in XPath('//h:title')(root):
             if not t.text:
-                t.text = u' '
+                t.text = ' '
         # Fix <p><div> constructs as the asinine epubchecker complains
         # about them
         pdiv = XPath('//h:p/h:div')
@@ -134,30 +134,30 @@ class Extract(ODF2XHTML):
                 cls.split()]))
             has_align = False
             for r in first_rules:
-                if r.style.getProperty(u'text-align') is not None:
+                if r.style.getProperty('text-align') is not None:
                     has_align = True
             ml = mr = None
             if not has_align:
                 aval = None
-                cls = div2.get(u'class', u'')
+                cls = div2.get('class', '')
                 rules = list(filter(None, [self.get_css_for_class(x) for x in
                     cls.split()]))
                 for r in rules:
-                    ml = r.style.getPropertyCSSValue(u'margin-left') or ml
-                    mr = r.style.getPropertyCSSValue(u'margin-right') or mr
+                    ml = r.style.getPropertyCSSValue('margin-left') or ml
+                    mr = r.style.getPropertyCSSValue('margin-right') or mr
                     ml = getattr(ml, 'value', None)
                     mr = getattr(mr, 'value', None)
-                if ml == mr == u'auto':
-                    aval = u'center'
-                elif ml == u'auto' and mr != u'auto':
+                if ml == mr == 'auto':
+                    aval = 'center'
+                elif ml == 'auto' and mr != 'auto':
                     aval = 'right'
-                elif ml != u'auto' and mr == u'auto':
+                elif ml != 'auto' and mr == 'auto':
                     aval = 'left'
                 if aval is not None:
                     style = div1.attrib.get('style', '').strip()
                     if style and not style.endswith(';'):
                         style = style + ';'
-                    style += 'text-align:%s'%aval
+                    style += f'text-align:{aval}'
                     has_align = True
                     div1.attrib['style'] = style
 
@@ -174,7 +174,7 @@ class Extract(ODF2XHTML):
             css = style.text
             if css:
                 css, sel_map = self.do_filter_css(css)
-                if not isinstance(css, unicode_type):
+                if not isinstance(css, str):
                     css = css.decode('utf-8', 'ignore')
                 style.text = css
                 for x in root.xpath('//*[@class]'):
@@ -200,7 +200,7 @@ class Extract(ODF2XHTML):
                 # Replace all the class selectors with a single class selector
                 # This will be added to the class attribute of all elements
                 # that have one of these selectors.
-                replace_name = 'c_odt%d'%count
+                replace_name = f'c_odt{count}'
                 count += 1
                 for sel in r.selectorList:
                     s = sel.selectorText[1:]
@@ -213,7 +213,7 @@ class Extract(ODF2XHTML):
     def search_page_img(self, mi, log):
         for frm in self.document.topnode.getElementsByType(odFrame):
             try:
-                if frm.getAttrNS(odTEXTNS,u'anchor-type') == 'page':
+                if frm.getAttrNS(odTEXTNS,'anchor-type') == 'page':
                     log.warn('Document has Pictures anchored to Page, will all end up before first page!')
                     break
             except ValueError:
@@ -239,14 +239,14 @@ class Extract(ODF2XHTML):
                         # now it should be safe to remove the text:p
                         parent = para.parentNode
                         parent.removeChild(para)
-                        log("Removed cover image paragraph from document...")
+                        log('Removed cover image paragraph from document...')
                         break
 
     def filter_load(self, odffile, mi, log):
-        """ This is an adaption from ODF2XHTML. It adds a step between
+        ''' This is an adaption from ODF2XHTML. It adds a step between
             load and parse of the document where the Element tree can be
             modified.
-        """
+        '''
         # first load the odf structure
         self.lines = []
         self._wfunc = self._wlines
@@ -265,9 +265,9 @@ class Extract(ODF2XHTML):
         self._walknode(self.document.topnode)
 
     def __call__(self, stream, odir, log):
-        from calibre.utils.zipfile import ZipFile
         from calibre.ebooks.metadata.odt import get_metadata
         from calibre.ebooks.metadata.opf2 import OPFCreator
+        from calibre.utils.zipfile import ZipFile
 
         if not os.path.exists(odir):
             os.makedirs(odir)
@@ -287,7 +287,7 @@ class Extract(ODF2XHTML):
             # the available screen real estate
             html = html.replace('img { width: 100%; height: 100%; }', '')
             # odf2xhtml creates empty title tag
-            html = html.replace('<title></title>','<title>%s</title>'%(mi.title,))
+            html = html.replace('<title></title>',f'<title>{mi.title}</title>')
             try:
                 html = self.fix_markup(html, log)
             except:
@@ -296,9 +296,9 @@ class Extract(ODF2XHTML):
                 f.write(as_bytes(html))
             zf = ZipFile(stream, 'r')
             self.extract_pictures(zf)
-            opf = OPFCreator(os.path.abspath(getcwd()), mi)
+            opf = OPFCreator(os.path.abspath(os.getcwd()), mi)
             opf.create_manifest([(os.path.abspath(f2), None) for f2 in
-                walk(getcwd())])
+                walk(os.getcwd())])
             opf.create_spine([os.path.abspath('index.xhtml')])
             with open('metadata.opf', 'wb') as f:
                 opf.render(f)

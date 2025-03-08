@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
 
 
 __license__   = 'GPL v3'
@@ -7,14 +6,15 @@ __copyright__ = '2009, Kovid Goyal <kovid@kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
 
 
-import time, io
+import io
+import time
 from itertools import count
 
 from calibre import prints
 from calibre.constants import DEBUG
-from polyglot.queue import Queue, Empty
+from calibre.utils.localization import _
 from polyglot.builtins import cmp
-
+from polyglot.queue import Empty, Queue
 
 job_counter = count()
 

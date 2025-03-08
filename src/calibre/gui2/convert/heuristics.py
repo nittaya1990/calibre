@@ -1,18 +1,14 @@
-# -*- coding: utf-8 -*-
-
-
 __license__ = 'GPL 3'
 __copyright__ = '2011, John Schember <john@nachtimwald.com>'
 __docformat__ = 'restructuredtext en'
 
 from qt.core import Qt
 
-from calibre.gui2 import gprefs
-from calibre.gui2.convert.heuristics_ui import Ui_Form
-from calibre.gui2.convert import Widget
-from calibre.utils.localization import localize_user_manual_link
 from calibre.ebooks.conversion.config import OPTIONS
-from polyglot.builtins import unicode_type, range
+from calibre.gui2 import gprefs
+from calibre.gui2.convert import Widget
+from calibre.gui2.convert.heuristics_ui import Ui_Form
+from calibre.utils.localization import localize_user_manual_link
 
 
 class HeuristicsWidget(Widget, Ui_Form):
@@ -20,7 +16,7 @@ class HeuristicsWidget(Widget, Ui_Form):
     TITLE = _('Heuristic\nprocessing')
     HELP  = _('Modify the document text and structure using common patterns.')
     COMMIT_NAME = 'heuristics'
-    ICON = I('heuristics.png')
+    ICON = 'heuristics.png'
 
     def __init__(self, parent, get_option, get_help, db=None, book_id=None):
         Widget.__init__(self, parent, OPTIONS['pipe']['heuristics'])
@@ -75,7 +71,7 @@ class HeuristicsWidget(Widget, Ui_Form):
             return True
 
     def load_histories(self):
-        val = unicode_type(self.opt_replace_scene_breaks.currentText())
+        val = str(self.opt_replace_scene_breaks.currentText())
 
         self.opt_replace_scene_breaks.clear()
         self.opt_replace_scene_breaks.lineEdit().setText('')
@@ -92,7 +88,7 @@ class HeuristicsWidget(Widget, Ui_Form):
 
     def save_histories(self):
         rssb_history = []
-        history_pats = [unicode_type(self.opt_replace_scene_breaks.lineEdit().text())] + [unicode_type(self.opt_replace_scene_breaks.itemText(i))
+        history_pats = [str(self.opt_replace_scene_breaks.lineEdit().text())] + [str(self.opt_replace_scene_breaks.itemText(i))
                                 for i in range(self.opt_replace_scene_breaks.count())]
         for p in history_pats[:10]:
             # Ensure we don't have duplicate items.
@@ -101,8 +97,7 @@ class HeuristicsWidget(Widget, Ui_Form):
         gprefs['replace_scene_breaks_history'] = rssb_history
 
     def enable_heuristics(self, state):
-        state = state == Qt.CheckState.Checked
-        self.heuristic_options.setEnabled(state)
+        self.heuristic_options.setEnabled(self.opt_enable_heuristics.isChecked())
 
     def enable_unwrap(self, state):
         if state == Qt.CheckState.Checked:

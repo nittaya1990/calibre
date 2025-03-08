@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
 
 
 # Copyright 2010 Hardcoded Software (http://www.hardcoded.net)
@@ -18,12 +17,12 @@
 # For external volumes this implementation will raise an exception if it can't
 # find or create the user's trash directory.
 
-import os, stat
+import os
 import os.path as op
-from datetime import datetime
 import shutil
+import stat
+from datetime import datetime
 
-from polyglot.builtins import unicode_type
 from polyglot.urllib import quote
 
 FILES_DIR = 'files'
@@ -36,13 +35,13 @@ HOMETRASH = op.join(XDG_DATA_HOME, 'Trash')
 
 uid = os.getuid()
 TOPDIR_TRASH = '.Trash'
-TOPDIR_FALLBACK = '.Trash-%s'%uid
+TOPDIR_FALLBACK = f'.Trash-{uid}'
 
 
 def uniquote(raw):
-    if isinstance(raw, unicode_type):
+    if isinstance(raw, str):
         raw = raw.encode('utf-8')
-    return unicode_type(quote(raw))
+    return str(quote(raw))
 
 
 def is_parent(parent, path):
@@ -52,7 +51,7 @@ def is_parent(parent, path):
 
 
 def format_date(date):
-    return date.strftime("%Y-%m-%dT%H:%M:%S")
+    return date.strftime('%Y-%m-%dT%H:%M:%S')
 
 
 def info_for(src, topdir):
@@ -63,9 +62,9 @@ def info_for(src, topdir):
     else:
         src = op.relpath(src, topdir)
 
-    info  = "[Trash Info]\n"
-    info += "Path=" + uniquote(src) + "\n"
-    info += "DeletionDate=" + format_date(datetime.now()) + "\n"
+    info  = '[Trash Info]\n'
+    info += 'Path=' + uniquote(src) + '\n'
+    info += 'DeletionDate=' + format_date(datetime.now()) + '\n'
     return info
 
 
@@ -85,7 +84,7 @@ def trash_move(src, dst, topdir=None):
     destname = filename
     while op.exists(op.join(filespath, destname)) or op.exists(op.join(infopath, destname + INFO_SUFFIX)):
         counter += 1
-        destname = '%s %s%s' % (base_name, counter, ext)
+        destname = f'{base_name} {counter}{ext}'
 
     check_create(filespath)
     check_create(infopath)
@@ -120,7 +119,7 @@ def find_ext_volume_global_trash(volume_root):
     if not op.isdir(trash_dir) or op.islink(trash_dir) or not (mode & stat.S_ISVTX):
         return None
 
-    trash_dir = op.join(trash_dir, unicode_type(uid))
+    trash_dir = op.join(trash_dir, str(uid))
     try:
         check_create(trash_dir)
     except OSError:
@@ -152,11 +151,11 @@ def get_dev(path):
 
 def send2trash(path):
     if not op.exists(path):
-        raise OSError("File not found: %s" % path)
+        raise OSError(f'File not found: {path}')
     # ...should check whether the user has the necessary permissions to delete
     # it, before starting the trashing operation itself. [2]
     if not os.access(path, os.W_OK):
-        raise OSError("Permission denied: %s" % path)
+        raise OSError(f'Permission denied: {path}')
     # if the file to be trashed is on the same device as HOMETRASH we
     # want to move it there.
     path_dev = get_dev(path)
@@ -172,6 +171,6 @@ def send2trash(path):
         topdir = find_mount_point(path)
         trash_dev = get_dev(topdir)
         if trash_dev != path_dev:
-            raise OSError("Couldn't find mount point for %s" % path)
+            raise OSError(f"Couldn't find mount point for {path}")
         dest_trash = find_ext_volume_trash(topdir)
     trash_move(path, dest_trash, topdir)

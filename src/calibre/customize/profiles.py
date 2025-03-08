@@ -1,11 +1,8 @@
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
-
 __license__ = 'GPL 3'
 __copyright__ = '2009, Kovid Goyal <kovid@kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
 
 from calibre.customize import Plugin as _Plugin
-from polyglot.builtins import zip
 
 FONT_SIZES = [('xx-small', 1),
               ('x-small',  None),
@@ -32,13 +29,13 @@ class Plugin(_Plugin):
         self.fsizes = []
         for (name, num), size in zip(FONT_SIZES, fsizes):
             self.fsizes.append((name, num, float(size)))
-        self.fnames = dict((name, sz) for name, _, sz in self.fsizes if name)
-        self.fnums = dict((num, sz) for _, num, sz in self.fsizes if num)
+        self.fnames = {name: sz for name, _, sz in self.fsizes if name}
+        self.fnums = {num: sz for _, num, sz in self.fsizes if num}
         self.width_pts = self.width * 72./self.dpi
         self.height_pts = self.height * 72./self.dpi
 
-# Input profiles {{{
 
+# Input profiles {{{
 
 class InputProfile(Plugin):
 
@@ -302,8 +299,8 @@ class iPadOutput(OutputProfile):
         }
     ]
 
-    ratings_char = '\u2605'            # filled star
-    empty_ratings_char = '\u2606'      # hollow star
+    ratings_char = '★'            # filled star
+    empty_ratings_char = '☆'      # hollow star
 
     touchscreen = True
     # touchscreen_news_css {{{
@@ -457,7 +454,7 @@ class TabletOutput(iPadOutput):
     description = _('Intended for generic tablet devices, does no resizing of images')
 
     screen_size = (10000, 10000)
-    comic_screen_size = (10000, 10000)
+    comic_screen_size = screen_size
 
 
 class SamsungGalaxy(TabletOutput):
@@ -487,7 +484,7 @@ class SonyReaderOutput(OutputProfile):
     dpi                       = 168.451
     fbase                     = 12
     fsizes                    = [7.5, 9, 10, 12, 15.5, 20, 22, 24]
-    unsupported_unicode_chars = [u'\u201f', u'\u201b']
+    unsupported_unicode_chars = ['\u201f', '\u201b']
 
     epub_periodical_format = 'sony'
     # periodical_date_in_title = False
@@ -564,7 +561,7 @@ class GenericEinkHD(GenericEink):
     description = _('Suitable for use with any modern high resolution e-ink device')
 
     screen_size = (10000, 10000)
-    comic_screen_size = (10000, 10000)
+    comic_screen_size = screen_size
 
 
 class JetBook5Output(OutputProfile):
@@ -680,8 +677,8 @@ class KindleOutput(OutputProfile):
     supports_mobi_indexing = True
     periodical_date_in_title = False
 
-    empty_ratings_char = '\u2606'
-    ratings_char = '\u2605'
+    empty_ratings_char = '☆'
+    ratings_char = '★'
 
     mobi_ems_per_blockquote = 2.0
 
@@ -699,8 +696,8 @@ class KindleDXOutput(OutputProfile):
     # comic_screen_size         = (741, 1022)
     supports_mobi_indexing = True
     periodical_date_in_title = False
-    empty_ratings_char = '\u2606'
-    ratings_char = '\u2605'
+    empty_ratings_char = '☆'
+    ratings_char = '★'
     mobi_ems_per_blockquote = 2.0
 
 
@@ -708,7 +705,7 @@ class KindlePaperWhiteOutput(KindleOutput):
 
     name = 'Kindle PaperWhite'
     short_name = 'kindle_pw'
-    description = _('This profile is intended for the Amazon Kindle PaperWhite 1 and 2')
+    description = _('This profile is intended for the Amazon Kindle Paperwhite 1 and 2')
 
     # Screen size is a best guess
     screen_size               = (658, 940)
@@ -733,7 +730,7 @@ class KindlePaperWhite3Output(KindleVoyageOutput):
 
     name = 'Kindle PaperWhite 3'
     short_name = 'kindle_pw3'
-    description = _('This profile is intended for the Amazon Kindle PaperWhite 3 and above')
+    description = _('This profile is intended for the Amazon Kindle Paperwhite 3 and above')
     # Screen size is currently just the spec size, actual renderable area will
     # depend on someone with the device doing tests.
     screen_size               = (1072, 1430)
@@ -745,10 +742,22 @@ class KindleOasisOutput(KindlePaperWhite3Output):
 
     name = 'Kindle Oasis'
     short_name = 'kindle_oasis'
-    description = _('This profile is intended for the Amazon Kindle Oasis 2017 and above')
+    description = _('This profile is intended for the Amazon Kindle Oasis 2017, Paperwhite 2021 and above')
     # Screen size is currently just the spec size, actual renderable area will
     # depend on someone with the device doing tests.
     screen_size               = (1264, 1680)
+    dpi                       = 300.0
+    comic_screen_size = screen_size
+
+
+class KindleScribeOutput(KindlePaperWhite3Output):
+
+    name = 'Kindle Scribe'
+    short_name = 'kindle_scribe'
+    description = _('This profile is intended for the Amazon Kindle Scribe 2022 and above')
+    # Screen size is currently just the spec size, actual renderable area will
+    # depend on someone with the device doing tests.
+    screen_size               = (1860, 2480)
     dpi                       = 300.0
     comic_screen_size = screen_size
 
@@ -904,7 +913,7 @@ output_profiles = [
     PocketBookPro912Output, PocketBookLuxOutput, PocketBookHDOutput,
     PocketBookInkpad3Output, GenericEink, GenericEinkLarge, GenericEinkHD,
     KindleFireOutput, KindlePaperWhiteOutput, KindleVoyageOutput,
-    KindlePaperWhite3Output, KindleOasisOutput
+    KindlePaperWhite3Output, KindleOasisOutput, KindleScribeOutput,
 ]
 
 output_profiles.sort(key=lambda x: x.name.lower())

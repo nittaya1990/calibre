@@ -1,17 +1,15 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
 
 
 __license__   = 'GPL v3'
 __copyright__ = '2009, Kovid Goyal <kovid@kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
 
-from qt.core import QDialog, QWidget, Qt, QDialogButtonBox, QVBoxLayout
+from qt.core import QComboBox, QDialog, QDialogButtonBox, QHBoxLayout, QIcon, QLabel, QSize, Qt, QToolButton, QVBoxLayout, QWidget
 
 from calibre.gui2.convert.xpath_wizard_ui import Ui_Form
-from calibre.gui2.convert.xexp_edit_ui import Ui_Form as Ui_Edit
+from calibre.gui2.widgets import HistoryLineEdit
 from calibre.utils.localization import localize_user_manual_link
-from polyglot.builtins import unicode_type, map
 
 
 class WizardWidget(QWidget, Ui_Form):
@@ -27,19 +25,19 @@ class WizardWidget(QWidget, Ui_Form):
 
     @property
     def xpath(self):
-        tag = unicode_type(self.tag.currentText()).strip()
+        tag = str(self.tag.currentText()).strip()
         if tag != '*':
             tag = 'h:'+tag
-        attr, val = map(unicode_type, (self.attribute.text(), self.value.text()))
+        attr, val = map(str, (self.attribute.text(), self.value.text()))
         attr, val = attr.strip(), val.strip()
         q = ''
         if attr:
             if val:
-                q = '[re:test(@%s, "%s", "i")]'%(attr, val)
+                q = f'[re:test(@{attr}, "{val}", "i")]'
             else:
-                q = '[@%s]'%attr
+                q = f'[@{attr}]'
         elif val:
-            q = '[re:test(., "%s", "i")]'%(val)
+            q = f'[re:test(., "{val}", "i")]'
         expr = '//'+tag + q
         return expr
 
@@ -59,47 +57,76 @@ class Wizard(QDialog):
 
         self.buttonBox.accepted.connect(self.accept)
         self.buttonBox.rejected.connect(self.reject)
-        self.setModal(Qt.WindowModality.WindowModal)
+        self.setWindowModality(Qt.WindowModality.WindowModal)
 
     @property
     def xpath(self):
         return self.widget.xpath
 
 
-class XPathEdit(QWidget, Ui_Edit):
+class XPathEdit(QWidget):
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, object_name='', show_msg=True):
         QWidget.__init__(self, parent)
-        self.setupUi(self)
-        self.button.clicked.connect(self.wizard)
+        self.h = h = QHBoxLayout(self)
+        h.setContentsMargins(0, 0, 0, 0)
+        self.l = l = QVBoxLayout()
+        h.addLayout(l)
+        self.button = b = QToolButton(self)
+        b.setIcon(QIcon.ic('wizard.png'))
+        b.setToolTip(_('Use a wizard to generate the XPath expression'))
+        b.clicked.connect(self.wizard)
+        h.addWidget(b)
+        self.edit = e = HistoryLineEdit(self)
+        e.setMinimumWidth(350)
+        e.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        e.setMinimumContentsLength(30)
+        self.msg = QLabel('')
+        l.addWidget(self.msg)
+        l.addWidget(self.edit)
+        if object_name:
+            self.setObjectName(object_name)
+        if show_msg:
+            b.setIconSize(QSize(40, 40))
+            self.msg.setBuddy(self.edit)
+        else:
+            self.msg.setVisible(False)
+            l.setContentsMargins(0, 0, 0, 0)
+
+    def setPlaceholderText(self, val):
+        self.edit.setPlaceholderText(val)
 
     def wizard(self):
         wiz = Wizard(self)
-        if wiz.exec_() == QDialog.DialogCode.Accepted:
+        if wiz.exec() == QDialog.DialogCode.Accepted:
             self.edit.setText(wiz.xpath)
 
     def setObjectName(self, *args):
         QWidget.setObjectName(self, *args)
         if hasattr(self, 'edit'):
-            self.edit.initialize('xpath_edit_'+unicode_type(self.objectName()))
+            self.edit.initialize('xpath_edit_'+str(self.objectName()))
 
     def set_msg(self, msg):
         self.msg.setText(msg)
 
     @property
     def text(self):
-        return unicode_type(self.edit.text())
+        return str(self.edit.text())
+
+    @text.setter
+    def text(self, val):
+        self.edit.setText(str(val))
+    value = text
 
     @property
     def xpath(self):
         return self.text
 
     def check(self):
-        from calibre.ebooks.oeb.base import XPNSMAP
-        from lxml.etree import XPath
+        from calibre.ebooks.oeb.base import XPath
         try:
             if self.text.strip():
-                XPath(self.text, namespaces=XPNSMAP)
+                XPath(self.text)
         except:
             import traceback
             traceback.print_exc()
@@ -113,5 +140,5 @@ if __name__ == '__main__':
     w = XPathEdit()
     w.setObjectName('test')
     w.show()
-    app.exec_()
+    app.exec()
     print(w.xpath)

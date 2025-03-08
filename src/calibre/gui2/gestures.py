@@ -1,24 +1,15 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 # License: GPLv3 Copyright: 2017, Kovid Goyal <kovid at kovidgoyal.net>
 
 
-import sys, os
+import os
+from functools import lru_cache
 
-from qt.core import (
-    QApplication, QEvent, QMouseEvent, QObject, QPointF, QScroller, Qt, QTouchDevice,
-    pyqtSignal
-)
+from qt.core import QApplication, QEvent, QInputDevice, QMouseEvent, QObject, QPointF, QScroller, Qt, pyqtSignal
 
-from calibre.constants import iswindows
+from calibre.startup import connect_lambda
 from calibre.utils.monotonic import monotonic
 from polyglot.builtins import itervalues
-
-touch_supported = False
-if iswindows and sys.getwindowsversion()[:2] >= (6, 2):  # At least windows 7
-    touch_supported = True
-if 'CALIBRE_NO_TOUCH' in os.environ:
-    touch_supported = False
 
 HOLD_THRESHOLD = 1.0  # seconds
 TAP_THRESHOLD  = 50   # manhattan pixels
@@ -27,22 +18,32 @@ Tap, TapAndHold, Flick = 'Tap', 'TapAndHold', 'Flick'
 Left, Right, Up, Down = 'Left', 'Right', 'Up', 'Down'
 
 
+@lru_cache(maxsize=2)
+def touch_supported():
+    if 'CALIBRE_NO_TOUCH' in os.environ:
+        return False
+    for dev in QInputDevice.devices():
+        if dev.type() == QInputDevice.DeviceType.TouchScreen:
+            return True
+    return False
+
+
 class TouchPoint:
 
     def __init__(self, tp):
         self.creation_time = self.last_update_time = self.time_of_last_move = monotonic()
-        self.start_screen_position = self.current_screen_position = self.previous_screen_position = QPointF(tp.screenPos())
+        self.start_screen_position = self.current_screen_position = self.previous_screen_position = QPointF(tp.globalPosition())
         self.time_since_last_update = -1
         self.total_movement = 0
-        self.start_position = self.current_position = tp.pos()
+        self.start_position = self.current_position = tp.position()
         self.extra_data = None
 
     def update(self, tp):
-        self.current_position = tp.pos()
+        self.current_position = tp.position()
         now = monotonic()
         self.time_since_last_update = now - self.last_update_time
         self.last_update_time = now
-        self.previous_screen_position, self.current_screen_position = self.current_screen_position, QPointF(tp.screenPos())
+        self.previous_screen_position, self.current_screen_position = self.current_screen_position, QPointF(tp.globalPosition())
         movement = (self.current_screen_position - self.previous_screen_position).manhattanLength()
         self.total_movement += movement
         if movement > 5:
@@ -72,10 +73,13 @@ class State(QObject):
         self.possible_gestures = {Tap, TapAndHold, Flick}
 
     def update(self, ev, boundary='update'):
+        if boundary == 'cancel':
+            self.clear()
+            return
         if boundary == 'start':
             self.start()
 
-        for tp in ev.touchPoints():
+        for tp in ev.points():
             tpid = tp.id()
             if tpid not in self.touch_points:
                 self.touch_points[tpid] = TouchPoint(tp)
@@ -151,9 +155,10 @@ class GestureManager(QObject):
 
     def __init__(self, view):
         QObject.__init__(self, view)
-        if touch_supported:
+        if touch_supported():
             view.viewport().setAttribute(Qt.WidgetAttribute.WA_AcceptTouchEvents)
         self.state = State()
+        self.last_touch_event_device_id = None
         self.state.tapped.connect(
             self.handle_tap,
             type=Qt.ConnectionType.QueuedConnection)  # has to be queued otherwise QApplication.keyboardModifiers() does not work
@@ -161,18 +166,18 @@ class GestureManager(QObject):
         connect_lambda(self.state.tap_hold_started, self, lambda self, tp: self.handle_tap_hold('start', tp))
         connect_lambda(self.state.tap_hold_updated, self, lambda self, tp: self.handle_tap_hold('update', tp))
         connect_lambda(self.state.tap_hold_finished, self, lambda self, tp: self.handle_tap_hold('end', tp))
-        self.evmap = {QEvent.Type.TouchBegin: 'start', QEvent.Type.TouchUpdate: 'update', QEvent.Type.TouchEnd: 'end'}
+        self.evmap = {QEvent.Type.TouchBegin: 'start', QEvent.Type.TouchUpdate: 'update', QEvent.Type.TouchEnd: 'end', QEvent.Type.TouchCancel: 'cancel'}
         self.last_tap_at = 0
-        if touch_supported:
+        if touch_supported():
             self.scroller = QScroller.scroller(view.viewport())
 
     def handle_event(self, ev):
-        if not touch_supported:
+        if not touch_supported():
             return
         etype = ev.type()
         if etype in (QEvent.Type.MouseButtonPress, QEvent.Type.MouseMove, QEvent.Type.MouseButtonRelease, QEvent.Type.MouseButtonDblClick):
-            if ev.source() in (Qt.MouseEventSource.MouseEventSynthesizedBySystem, Qt.MouseEventSource.MouseEventSynthesizedByQt):
-                # swallow fake mouse events generated from touch events
+            if self.last_touch_event_device_id is not None and self.last_touch_event_device_id == ev.pointingDevice().uniqueId():
+                # swallow fake mouse events generated by the same device as the last touch event
                 ev.ignore()
                 return False
             self.scroller.stop()
@@ -180,16 +185,17 @@ class GestureManager(QObject):
         if etype == QEvent.Type.Wheel and self.scroller.state() != QScroller.State.Inactive:
             ev.ignore()
             return False
-        boundary = self.evmap.get(etype, None)
-        if boundary is None or ev.device().type() != QTouchDevice.DeviceType.TouchScreen:
+        boundary = self.evmap.get(etype)
+        if boundary is None or ev.deviceType() != QInputDevice.DeviceType.TouchScreen:
             return
+        self.last_touch_event_device_id = ev.pointingDevice().uniqueId()
         self.state.update(ev, boundary=boundary)
         ev.accept()
         return True
 
     def close_open_menu(self):
         m = getattr(self.parent(), 'context_menu', None)
-        if m is not None and m.isVisible():
+        if m is not None and hasattr(m, 'isVisible') and m.isVisible():
             m.close()
             return True
 

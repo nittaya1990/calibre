@@ -6,10 +6,11 @@ __docformat__ = 'restructuredtext en'
 '''
 theage.com.au
 '''
-from calibre import strftime
-from calibre.web.feeds.news import BasicNewsRecipe
-from calibre.ebooks.BeautifulSoup import BeautifulSoup
 import re
+
+from calibre import strftime
+from calibre.ebooks.BeautifulSoup import BeautifulSoup
+from calibre.web.feeds.news import BasicNewsRecipe
 
 
 class TheAge(BasicNewsRecipe):
@@ -88,7 +89,7 @@ class TheAge(BasicNewsRecipe):
 
         for i in soup.findAll('a'):
             href = i['href']
-            if href and re.match('http://www.theage.com.au/frontpage/[0-9]+/[0-9]+/[0-9]+/frontpage.pdf', href):
+            if href and re.match(r'http://www.theage.com.au/frontpage/[0-9]+/[0-9]+/[0-9]+/frontpage.pdf', href):
                 return href
 
         return None

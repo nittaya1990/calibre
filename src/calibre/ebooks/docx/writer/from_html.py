@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 
 
 __license__ = 'GPL v3'
@@ -8,17 +7,18 @@ __copyright__ = '2013, Kovid Goyal <kovid at kovidgoyal.net>'
 import re
 from collections import Counter
 
-from calibre.ebooks.docx.writer.container import create_skeleton, page_size, page_effective_area
-from calibre.ebooks.docx.writer.styles import StylesManager, FloatSpec
-from calibre.ebooks.docx.writer.links import LinksManager
-from calibre.ebooks.docx.writer.images import ImagesManager
+from calibre.ebooks.docx.writer.container import create_skeleton, page_effective_area, page_size
 from calibre.ebooks.docx.writer.fonts import FontsManager
-from calibre.ebooks.docx.writer.tables import Table
+from calibre.ebooks.docx.writer.images import ImagesManager
+from calibre.ebooks.docx.writer.links import LinksManager
 from calibre.ebooks.docx.writer.lists import ListsManager
-from calibre.ebooks.oeb.stylizer import Stylizer as Sz, Style as St
+from calibre.ebooks.docx.writer.styles import FloatSpec, StylesManager
+from calibre.ebooks.docx.writer.tables import Table
 from calibre.ebooks.oeb.base import XPath, barename
+from calibre.ebooks.oeb.stylizer import Style as St
+from calibre.ebooks.oeb.stylizer import Stylizer as Sz
 from calibre.utils.localization import lang_as_iso639_1
-from polyglot.builtins import unicode_type, string_or_bytes
+from polyglot.builtins import string_or_bytes
 
 
 def lang_for_tag(tag):
@@ -62,7 +62,7 @@ class TextRun:
         self.first_html_parent = first_html_parent
         if self.ws_pat is None:
             TextRun.ws_pat = self.ws_pat = re.compile(r'\s+')
-            TextRun.soft_hyphen_pat = self.soft_hyphen_pat = re.compile('(\u00ad)')
+            TextRun.soft_hyphen_pat = self.soft_hyphen_pat = re.compile(r'(\xad)')
         self.style = style
         self.texts = []
         self.link = None
@@ -108,7 +108,7 @@ class TextRun:
         for text, preserve_whitespace, bookmark in self.texts:
             if bookmark is not None:
                 bid = links_manager.bookmark_id
-                makeelement(r, 'w:bookmarkStart', w_id=unicode_type(bid), w_name=bookmark)
+                makeelement(r, 'w:bookmarkStart', w_id=str(bid), w_name=bookmark)
             if text is None:
                 makeelement(r, 'w:br', w_clear=preserve_whitespace)
             elif hasattr(text, 'xpath'):
@@ -117,13 +117,22 @@ class TextRun:
                 if text:
                     for x in self.soft_hyphen_pat.split(text):
                         if x == '\u00ad':
+                            # trailing spaces in <w:t> before a soft hyphen are
+                            # ignored, so put them in a preserve whitespace
+                            # element with a single space.
+                            if not preserve_whitespace and len(r) and r[-1].text and r[-1].text.endswith(' '):
+                                r[-1].text = r[-1].text.rstrip()
+                                add_text(' ', True)
                             makeelement(r, 'w:softHyphen')
                         elif x:
+                            if not preserve_whitespace and x.startswith(' ') and len(r) and r[-1].tag and 'softHyphen' in r[-1].tag:
+                                x = x.lstrip()
+                                add_text(' ', True)
                             add_text(x, preserve_whitespace)
                 else:
                     add_text('', preserve_whitespace)
             if bookmark is not None:
-                makeelement(r, 'w:bookmarkEnd', w_id=unicode_type(bid))
+                makeelement(r, 'w:bookmarkEnd', w_id=str(bid))
 
     def __repr__(self):
         return repr(self.texts)
@@ -139,7 +148,7 @@ class TextRun:
     def style_weight(self):
         ans = 0
         for text, preserve_whitespace, bookmark in self.texts:
-            if isinstance(text, unicode_type):
+            if isinstance(text, str):
                 ans += len(text)
         return ans
 
@@ -219,7 +228,7 @@ class Block:
         p = makeelement(body, 'w:p')
         end_bookmarks = []
         for bmark in self.bookmarks:
-            end_bookmarks.append(unicode_type(self.links_manager.bookmark_id))
+            end_bookmarks.append(str(self.links_manager.bookmark_id))
             makeelement(p, 'w:bookmarkStart', w_id=end_bookmarks[-1], w_name=bmark)
         if self.block_lang:
             rpr = makeelement(p, 'w:rPr')
@@ -232,8 +241,8 @@ class Block:
             self.float_spec.serialize(self, ppr)
         if self.numbering_id is not None:
             numpr = makeelement(ppr, 'w:numPr')
-            makeelement(numpr, 'w:ilvl', w_val=unicode_type(self.numbering_id[1]))
-            makeelement(numpr, 'w:numId', w_val=unicode_type(self.numbering_id[0]))
+            makeelement(numpr, 'w:ilvl', w_val=str(self.numbering_id[1]))
+            makeelement(numpr, 'w:numId', w_val=str(self.numbering_id[0]))
         if self.linked_style is not None:
             makeelement(ppr, 'w:pStyle', w_val=self.linked_style.id)
         elif self.style.id:
@@ -250,7 +259,7 @@ class Block:
             makeelement(p, 'w:bookmarkEnd', w_id=bmark)
 
     def __repr__(self):
-        return 'Block(%r)' % self.runs
+        return f'Block({self.runs!r})'
     __str__ = __repr__
 
     def is_empty(self):
@@ -414,7 +423,7 @@ class Blocks:
                     block.block_lang = None
 
     def __repr__(self):
-        return 'Block(%r)' % self.runs
+        return f'Block({self.runs!r})'
 
 
 class Convert:
@@ -441,7 +450,7 @@ class Convert:
 
         self.styles_manager = StylesManager(self.docx.namespace, self.log, self.mi.language)
         self.links_manager = LinksManager(self.docx.namespace, self.docx.document_relationships, self.log)
-        self.images_manager = ImagesManager(self.oeb, self.docx.document_relationships, self.opts)
+        self.images_manager = ImagesManager(self.oeb, self.docx.document_relationships, self.opts, self.svg_rasterizer)
         self.lists_manager = ListsManager(self.docx)
         self.fonts_manager = FontsManager(self.docx.namespace, self.oeb, self.opts)
         self.blocks = Blocks(self.docx.namespace, self.styles_manager, self.links_manager)
@@ -453,8 +462,8 @@ class Convert:
         if self.add_toc:
             self.links_manager.process_toc_links(self.oeb)
 
-        if self.add_cover and self.oeb.metadata.cover and unicode_type(self.oeb.metadata.cover[0]) in self.oeb.manifest.ids:
-            cover_id = unicode_type(self.oeb.metadata.cover[0])
+        if self.add_cover and self.oeb.metadata.cover and str(self.oeb.metadata.cover[0]) in self.oeb.manifest.ids:
+            cover_id = str(self.oeb.metadata.cover[0])
             item = self.oeb.manifest.ids[cover_id]
             self.cover_img = self.images_manager.read_image(item.href)
 
@@ -482,9 +491,7 @@ class Convert:
 
     def process_item(self, item):
         self.current_item = item
-        stylizer = self.svg_rasterizer.stylizer_cache.get(item)
-        if stylizer is None:
-            stylizer = Stylizer(item.data, item.href, self.oeb, self.opts, profile=self.opts.output_profile, base_css=self.base_css)
+        stylizer = self.svg_rasterizer.stylizer(item)
         self.abshref = self.images_manager.abshref = item.abshref
 
         self.current_lang = lang_for_tag(item.data) or self.styles_manager.document_lang
@@ -537,7 +544,7 @@ class Convert:
                 else:
                     if tagname == 'hr':
                         for edge in 'right bottom left'.split():
-                            tag_style.set('border-%s-style' % edge, 'none')
+                            tag_style.set(f'border-{edge}-style', 'none')
                     self.add_block_tag(tagname, html_tag, tag_style, stylizer, float_spec=float_spec)
 
             for child in html_tag.iterchildren():
@@ -587,7 +594,7 @@ class Convert:
         else:
             text = html_tag.text
             is_list_item = tagname == 'li'
-            has_sublist = is_list_item and len(html_tag) and barename(html_tag[0].tag) in ('ul', 'ol') and len(html_tag[0])
+            has_sublist = is_list_item and len(html_tag) and isinstance(html_tag[0].tag, str) and barename(html_tag[0].tag) in ('ul', 'ol') and len(html_tag[0])
             if text and has_sublist and not text.strip():
                 text = ''  # whitespace only, ignore
             if text:

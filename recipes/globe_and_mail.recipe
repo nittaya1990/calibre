@@ -28,11 +28,11 @@ class GlobeMail(BasicNewsRecipe):
     remove_attributes = ['style']
 
     keep_only_tags = [
-            dict(name='h1'),
-            dict(name='main', attrs={'class': lambda x: x and 'article-primary-content-chain' in x.split()}),
+        classes('article-title c-article-meta l-article l-article-title')
     ]
     remove_tags = [
-            classes('c-ad pb-f-commercial-dfp-ads pb-f-article-actions pb-f-article-meta'),
+        classes('c-ad pb-f-commercial-dfp-ads pb-f-article-actions pb-f-article-meta article-toolbar'),
+        dict(name='source'),
     ]
 
     def parse_index(self):
@@ -48,7 +48,7 @@ class GlobeMail(BasicNewsRecipe):
         return ans
 
     def parse_gm_section(self, soup):
-        for a in soup.findAll('a', href=True, attrs={'data-lt-lid': lambda x: x and x.startswith('Headline.')}):
+        for a in soup.findAll('a', href=True, attrs={'data-lt-pos': lambda x: x and x.endswith('featured')}):
             headline = a.find('div', 'c-card__hed-text')
             title = self.tag_to_string(headline)
             url = absolutize(a['href'])

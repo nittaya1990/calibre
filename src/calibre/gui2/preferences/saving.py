@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
 
 
 __license__   = 'GPL v3'
@@ -7,12 +6,11 @@ __copyright__ = '2010, Kovid Goyal <kovid@kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
 
 
-from calibre.gui2.preferences import ConfigWidgetBase, test_widget, \
-        AbortCommit
-from calibre.gui2.preferences.saving_ui import Ui_Form
-from calibre.utils.config import ConfigProxy
-from calibre.library.save_to_disk import config
 from calibre.gui2 import gprefs
+from calibre.gui2.preferences import AbortCommit, ConfigWidgetBase, test_widget
+from calibre.gui2.preferences.saving_ui import Ui_Form
+from calibre.library.save_to_disk import config
+from calibre.utils.config import ConfigProxy
 
 
 class ConfigWidget(ConfigWidgetBase, Ui_Form):
@@ -24,7 +22,7 @@ class ConfigWidget(ConfigWidgetBase, Ui_Form):
         r = self.register
 
         for x in ('asciiize', 'update_metadata', 'save_cover', 'write_opf',
-                'replace_whitespace', 'to_lowercase', 'formats', 'timefmt'):
+                'replace_whitespace', 'to_lowercase', 'formats', 'timefmt', 'save_extra_files'):
             r(x, self.proxy)
         r('show_files_after_save', gprefs)
 
@@ -36,6 +34,8 @@ class ConfigWidget(ConfigWidgetBase, Ui_Form):
         self.save_template.initialize('save_to_disk', self.proxy['template'],
                 self.proxy.help('template'),
                 self.gui.library_view.model().db.field_metadata)
+        self.opt_timefmt.setToolTip('<p>' + self.opt_timefmt.toolTip() + '</p><p>' +
+                    _('Changes will not appear in the template editor until you press the apply button.') + '</p>')
         self.save_template.blockSignals(False)
 
     def restore_defaults(self):

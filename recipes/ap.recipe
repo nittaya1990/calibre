@@ -2,32 +2,10 @@
 # vim:fileencoding=utf-8
 # License: GPLv3 Copyright: 2017, Kovid Goyal <kovid at kovidgoyal.net>
 
-from __future__ import absolute_import, division, print_function, unicode_literals
 import json
-import re
 
-from calibre.web.feeds.news import BasicNewsRecipe
-
-
-def extract_article(raw):
-    ms = re.search(r"window\['titanium-state'\]", raw)
-    me = re.search(r"window\['titanium-cacheConfig'\]", raw)
-    raw = raw[ms.start():me.start()]
-    raw = raw[raw.find('{'):]
-    data = json.loads(raw)
-    data = tuple(data['content']['data'].values())[0]
-    story_html = '<h1>' + data['headline'] + '</h1>\n'
-    story_html += '<p>' + data['bylines'] + '</p>\n'
-    story_html += '<p>' + data['published'] + '</p>\n'
-    for m in data.get('media', ()):
-        sizes = m['imageRenderedSizes']
-        if sizes:
-            sz = 800 if 800 in sizes else sizes[0]
-            url = m['gcsBaseUrl'] + '{}{}'.format(sz, m['imageFileExtension'])
-            story_html += '\n<div><img src="' + url + '"/></div>\n'
-            story_html += '<div>' + m['caption'] + '</div>\n'
-    story_html += '\n<div>' + data['storyHTML'] + '</div>'
-    return '<html><body>' + story_html + '</body></html>'
+from calibre.utils.date import parse_date, utcnow
+from calibre.web.feeds.news import BasicNewsRecipe, classes
 
 
 class AssociatedPress(BasicNewsRecipe):
@@ -41,6 +19,23 @@ class AssociatedPress(BasicNewsRecipe):
     no_stylesheets = True
     ignore_duplicate_articles = {'title', 'url'}
     remove_empty_feeds = False
+    oldest_article = 1.5
+
+    keep_only_tags = [
+        classes('Page-headline Page-lead Page-storyBody Page-authorinfo'),
+    ]
+    remove_tags = [
+        classes('Page-actions Enhancement'),
+        dict(name='source'),
+    ]
+    remove_attributes = ['srcset']
+    extra_css = '''
+    .Figure-caption {
+    font-style: italic;
+    font-size: smaller;
+    margin-left: 1rem; margin-right: 1rem;
+    }
+    '''
 
     def parse_index(self):
         feeds = []
@@ -74,10 +69,14 @@ class AssociatedPress(BasicNewsRecipe):
                 if not title:
                     continue
                 title = title.split('\u2014')[-1]
+                updated = article.get('updated')
+                if updated:
+                    updated = parse_date(updated, assume_utc=True)
+                    delta = utcnow() - updated
+                    if (delta.days*24*3600 + delta.seconds) > 24*3600*self.oldest_article:
+                        self.log('Skipping', title, 'as it is too old')
+                        continue
                 self.log('\tFound article:', title, 'at', url)
                 articles.append({'title': title, 'url': url})
         self.log('')
         return articles
-
-    def preprocess_raw_html(self, raw_html, url):
-        return extract_article(raw_html)

@@ -1,21 +1,19 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 # License: GPLv3 Copyright: 2016, Kovid Goyal <kovid at kovidgoyal.net>
 
 
-from qt.core import (
-    QWidget, QHBoxLayout, QVBoxLayout, QLabel, QComboBox, QPushButton, QIcon,
-    pyqtSignal, QFont, QCheckBox, QSizePolicy
-)
 from lxml.etree import tostring
+from qt.core import QCheckBox, QComboBox, QFont, QHBoxLayout, QIcon, QLabel, QPushButton, QSizePolicy, QVBoxLayout, QWidget, pyqtSignal
 
 from calibre import prepare_string_for_xml
 from calibre.gui2 import error_dialog
-from calibre.gui2.tweak_book import tprefs, editors, current_container
-from calibre.gui2.tweak_book.search import get_search_regex, InvalidRegex, initialize_search_request
-from calibre.gui2.tweak_book.widgets import BusyCursor
+from calibre.gui2.tweak_book import current_container, editors, tprefs
+from calibre.gui2.tweak_book.search import InvalidRegex, get_search_regex, initialize_search_request
+from calibre.gui2.widgets import BusyCursor
 from calibre.gui2.widgets2 import HistoryComboBox
-from polyglot.builtins import iteritems, error_message
+from calibre.startup import connect_lambda
+from calibre.utils.icu import utf16_length
+from polyglot.builtins import error_message, iteritems
 
 # UI {{{
 
@@ -121,11 +119,11 @@ class TextSearch(QWidget):
         self.h3 = h = QHBoxLayout()
         l.addLayout(h)
         h.addStretch(10)
-        self.next_button = b = QPushButton(QIcon(I('arrow-down.png')), _('&Next'), self)
+        self.next_button = b = QPushButton(QIcon.ic('arrow-down.png'), _('&Next'), self)
         b.setToolTip(_('Find next match'))
         h.addWidget(b)
         connect_lambda(b.clicked, self, lambda self: self.do_search('down'))
-        self.prev_button = b = QPushButton(QIcon(I('arrow-up.png')), _('&Previous'), self)
+        self.prev_button = b = QPushButton(QIcon.ic('arrow-up.png'), _('&Previous'), self)
         b.setToolTip(_('Find previous match'))
         h.addWidget(b)
         connect_lambda(b.clicked, self, lambda self: self.do_search('up'))
@@ -217,7 +215,7 @@ def find_text_in_chunks(pat, chunks):
                 start_pos = chunk_start + (start - offset)
         if start_pos is not None:
             if contains(clen, after-1):
-                end_pos = chunk_start + (after - offset)
+                end_pos = chunk_start + utf16_length(chunk[:after-offset])
                 return start_pos, end_pos
         offset += clen
         if offset > after:

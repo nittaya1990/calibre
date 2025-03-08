@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 
 
 __license__ = 'GPL v3'
@@ -14,24 +13,24 @@ from polyglot.builtins import iteritems
 
 # Names {{{
 TRANSITIONAL_NAMES = {
-    'DOCUMENT'  : 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument',
-    'DOCPROPS'  : 'http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties',
-    'APPPROPS'  : 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties',
-    'STYLES'    : 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles',
-    'NUMBERING' : 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering',
-    'FONTS'     : 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/fontTable',
-    'EMBEDDED_FONT' : 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/font',
-    'IMAGES'    : 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/image',
-    'LINKS'     : 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink',
-    'FOOTNOTES' : 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes',
-    'ENDNOTES'  : 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/endnotes',
-    'THEMES'    : 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme',
-    'SETTINGS'  : 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings',
+    'DOCUMENT'     : 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument',
+    'DOCPROPS'     : 'http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties',
+    'APPPROPS'     : 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties',
+    'STYLES'       : 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles',
+    'NUMBERING'    : 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering',
+    'FONTS'        : 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/fontTable',
+    'EMBEDDED_FONT': 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/font',
+    'IMAGES'       : 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/image',
+    'LINKS'        : 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink',
+    'FOOTNOTES'    : 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes',
+    'ENDNOTES'     : 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/endnotes',
+    'THEMES'       : 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme',
+    'SETTINGS'     : 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings',
     'WEB_SETTINGS' : 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/webSettings',
 }
 
 STRICT_NAMES = {
-    k:v.replace('http://schemas.openxmlformats.org/officeDocument/2006',  'http://purl.oclc.org/ooxml/officeDocument')
+    k:v.replace('http://schemas.openxmlformats.org/officeDocument/2006', 'http://purl.oclc.org/ooxml/officeDocument')
     for k, v in iteritems(TRANSITIONAL_NAMES)
 }
 
@@ -47,6 +46,7 @@ TRANSITIONAL_NAMESPACES = {
     'xml': 'http://www.w3.org/XML/1998/namespace',
     # Drawing
     'a': 'http://schemas.openxmlformats.org/drawingml/2006/main',
+    'a14': 'http://schemas.microsoft.com/office/drawing/2010/main',
     'm': 'http://schemas.openxmlformats.org/officeDocument/2006/math',
     'mv': 'urn:schemas-microsoft-com:mac:vml',
     'pic': 'http://schemas.openxmlformats.org/drawingml/2006/picture',
@@ -64,7 +64,9 @@ TRANSITIONAL_NAMESPACES = {
     'pr': 'http://schemas.openxmlformats.org/package/2006/relationships',
     # Dublin Core document properties
     'dcmitype': 'http://purl.org/dc/dcmitype/',
-    'dcterms': 'http://purl.org/dc/terms/'
+    'dcterms': 'http://purl.org/dc/terms/',
+    # SVG embeds
+    'asvg': 'http://schemas.microsoft.com/office/drawing/2016/SVG/main',
 }
 
 STRICT_NAMESPACES = {
@@ -74,6 +76,8 @@ STRICT_NAMESPACES = {
         'http://schemas.openxmlformats.org/drawingml/2006', 'http://purl.oclc.org/ooxml/drawingml')
     for k, v in iteritems(TRANSITIONAL_NAMESPACES)
 }
+SVG_BLIP_URI = '{96DAC541-7B7A-43D3-8B79-37D633B846F1}'
+USE_LOCAL_DPI_URI = '{28A0092B-C50C-407E-A947-70E740481C1C}'
 # }}}
 
 
@@ -82,14 +86,14 @@ def barename(x):
 
 
 def XML(x):
-    return '{%s}%s' % (TRANSITIONAL_NAMESPACES['xml'], x)
+    return '{{{}}}{}'.format(TRANSITIONAL_NAMESPACES['xml'], x)
 
 
 def generate_anchor(name, existing):
     x = y = 'id_' + re.sub(r'[^0-9a-zA-Z_]', '', ascii_text(name)).lstrip('_')
     c = 1
     while y in existing:
-        y = '%s_%d' % (x, c)
+        y = f'{x}_{c}'
         c += 1
     return y
 
@@ -114,12 +118,12 @@ class DOCXNamespace:
     def is_tag(self, x, q):
         tag = getattr(x, 'tag', x)
         ns, name = q.partition(':')[0::2]
-        return '{%s}%s' % (self.namespaces.get(ns, None), name) == tag
+        return f'{{{self.namespaces.get(ns, None)}}}{name}' == tag
 
     def expand(self, name, sep=':'):
         ns, tag = name.partition(sep)[::2]
         if ns and tag:
-            tag = '{%s}%s' % (self.namespaces[ns], tag)
+            tag = f'{{{self.namespaces[ns]}}}{tag}'
         return tag or ns
 
     def get(self, x, attr, default=None):
@@ -127,15 +131,15 @@ class DOCXNamespace:
 
     def ancestor(self, elem, name):
         try:
-            return self.XPath('ancestor::%s[1]' % name)(elem)[0]
+            return self.XPath(f'ancestor::{name}[1]')(elem)[0]
         except IndexError:
             return None
 
     def children(self, elem, *args):
-        return self.XPath('|'.join('child::%s' % a for a in args))(elem)
+        return self.XPath('|'.join(f'child::{a}' for a in args))(elem)
 
     def descendants(self, elem, *args):
-        return self.XPath('|'.join('descendant::%s' % a for a in args))(elem)
+        return self.XPath('|'.join(f'descendant::{a}' for a in args))(elem)
 
     def makeelement(self, root, tag, append=True, **attrs):
         ans = root.makeelement(self.expand(tag), **{self.expand(k, sep='_'):v for k, v in iteritems(attrs)})

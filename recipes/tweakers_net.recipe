@@ -12,6 +12,7 @@ removed some extra tags
 '''
 
 import re
+
 from calibre.web.feeds.news import BasicNewsRecipe
 
 
@@ -37,7 +38,7 @@ class Tweakers(BasicNewsRecipe):
             'class': ['sidebar', 'advertorial']
         },
         {
-            'class': re.compile('nextPrevious')
+            'class': re.compile(r'nextPrevious')
         },
     ]
     no_stylesheets = True

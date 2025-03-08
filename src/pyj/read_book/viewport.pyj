@@ -5,7 +5,7 @@ from __python__ import bound_methods, hash_literals
 FUNCTIONS = 'x y scroll_to scroll_into_view reset_globals __reset_transforms window_scroll_pos content_size'.split(' ')
 
 from read_book.globals import get_boss, viewport_mode_changer
-from utils import document_height, document_width, is_ios
+from utils import document_height, document_width, ios_major_version
 
 class ScrollViewport:
 
@@ -321,7 +321,7 @@ class IOSScrollViewport(ScrollViewport):
         self.__reset_transforms()
 
 
-if is_ios:
+if 1 < ios_major_version < 15:
     scroll_viewport = IOSScrollViewport()
 else:
     scroll_viewport = ScrollViewport()
@@ -329,6 +329,22 @@ for attr in FUNCTIONS:
     if not scroll_viewport['paged_' + attr]:
         scroll_viewport['paged_' + attr] = scroll_viewport[attr]
 viewport_mode_changer(scroll_viewport.set_mode)
+
+
+def get_unit_size_in_pixels(unit):
+    d = document.createElement('span')
+    d.style.position = 'absolute'
+    d.style.visibility = 'hidden'
+    d.style.width = f'1{unit}'
+    d.style.fontSize = f'1{unit}'
+    d.style.paddingTop = d.style.paddingBottom = d.style.paddingLeft = d.style.paddingRight = '0'
+    d.style.marginTop = d.style.marginBottom = d.style.marginLeft = d.style.marginRight = '0'
+    d.style.borderStyle = 'none'
+    document.body.appendChild(d)
+    ans = d.clientWidth
+    document.body.removeChild(d)
+    return ans
+
 
 def rem_size(reset):
     if reset:
@@ -344,7 +360,7 @@ def rem_size(reset):
         d.style.marginTop = d.style.marginBottom = d.style.marginLeft = d.style.marginRight = '0'
         d.style.borderStyle = 'none'
         document.body.appendChild(d)
-        rem_size.ans = d.clientWidth
+        rem_size.ans = max(2, d.clientWidth)
         document.body.removeChild(d)
     return rem_size.ans
 

@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 # License: GPLv3 Copyright: 2016, Kovid Goyal <kovid at kovidgoyal.net>
 
 
@@ -7,17 +6,17 @@ import os
 
 
 class ReadOnlyFileBuffer:
-
     ''' A zero copy implementation of a file like object. Uses memoryviews for efficiency. '''
 
-    def __init__(self, raw):
+    def __init__(self, raw: bytes, name: str = ''):
         self.sz, self.mv = len(raw), (raw if isinstance(raw, memoryview) else memoryview(raw))
         self.pos = 0
+        self.name: str = name
 
     def tell(self):
         return self.pos
 
-    def read(self, n=None):
+    def read(self, n: int | None = None) -> memoryview:
         if n is None:
             ans = self.mv[self.pos:]
             self.pos = self.sz
@@ -35,6 +34,9 @@ class ReadOnlyFileBuffer:
             self.pos += pos
         self.pos = max(0, min(self.pos, self.sz))
         return self.pos
+
+    def seekable(self):
+        return True
 
     def getvalue(self):
         return self.mv
@@ -193,11 +195,11 @@ def svg_path_to_painter_path(d):
                 raise ValueError('Extra parameters after close path command')
             elif last_cmd in (
                 lineto_abs, lineto_rel, hline_abs, hline_rel, vline_abs,
-                vline_rel, curveto_abs, curveto_rel,smoothcurveto_abs,
+                vline_rel, curveto_abs, curveto_rel, smoothcurveto_abs,
                 smoothcurveto_rel, quadcurveto_abs, quadcurveto_rel,
                 smoothquadcurveto_abs, smoothquadcurveto_rel
             ):
                 repeated_command = cmd = last_cmd
         else:
-            raise ValueError('Unknown path command: %s' % cmd)
+            raise ValueError(f'Unknown path command: {cmd}')
     return path

@@ -10,7 +10,7 @@ reading. It is cross platform, running on Linux, Windows and macOS.
 
 For more information, see the [calibre About page](https://calibre-ebook.com/about).
 
-[![Build Status](https://github.com/kovidgoyal/calibre/workflows/Continuous%20Integration/badge.svg)](https://github.com/kovidgoyal/calibre/actions?query=workflow%3ACI)
+[![Build Status](https://github.com/kovidgoyal/calibre/workflows/CI/badge.svg)](https://github.com/kovidgoyal/calibre/actions?query=workflow%3ACI)
 
 ## Screenshots  
 
@@ -29,7 +29,7 @@ current calibre release.
 
 ## Bugs
 
-Bug reports and feature requests should be made in the calibre bug tracker at [launchpad](https://bugs.launchpad.net/calibre).
+Bug reports and feature requests should be made in the calibre bug tracker at [Launchpad](https://bugs.launchpad.net/calibre).
 GitHub is only used for code hosting and pull requests.
 
 ## Support calibre
@@ -45,4 +45,4 @@ calibre binaries and installers for all the platforms calibre supports.
 
 ## calibre package versions in various repositories
 
-[![Packaging Status](https://repology.org/badge/vertical-allrepos/calibre.svg)](https://repology.org/project/calibre/versions)
+[![Packaging Status](https://repology.org/badge/vertical-allrepos/calibre.svg?columns=3&header=calibre)](https://repology.org/project/calibre/versions)

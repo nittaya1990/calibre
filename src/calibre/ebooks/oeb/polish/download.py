@@ -1,9 +1,7 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 # License: GPLv3 Copyright: 2016, Kovid Goyal <kovid at kovidgoyal.net>
 
 
-import cgi
 import mimetypes
 import os
 import posixpath
@@ -16,7 +14,8 @@ from io import BytesIO
 from multiprocessing.dummy import Pool
 from tempfile import NamedTemporaryFile
 
-from calibre import as_unicode, sanitize_file_name as sanitize_file_name_base
+from calibre import as_unicode, browser
+from calibre import sanitize_file_name as sanitize_file_name_base
 from calibre.constants import iswindows
 from calibre.ebooks.oeb.base import OEB_DOCS, OEB_STYLES, barename, iterlinks
 from calibre.ebooks.oeb.polish.utils import guess_type
@@ -24,7 +23,7 @@ from calibre.ptempfile import TemporaryDirectory
 from calibre.web import get_download_filename_from_response
 from polyglot.binary import from_base64_bytes
 from polyglot.builtins import iteritems
-from polyglot.urllib import unquote, urlopen, urlparse
+from polyglot.urllib import unquote, urlparse
 
 
 def is_external(url):
@@ -58,15 +57,17 @@ def get_external_resources(container):
 
 def get_filename(original_url_parsed, response):
     ans = get_download_filename_from_response(response) or posixpath.basename(original_url_parsed.path) or 'unknown'
-    ct = response.info().get('Content-Type', '')
-    if ct:
-        ct = cgi.parse_header(ct)[0].lower()
-        if ct:
-            mt = guess_type(ans)
-            if mt != ct:
-                exts = mimetypes.guess_all_extensions(ct)
-                if exts:
-                    ans += exts[0]
+    headers = response.info()
+    try:
+        ct = headers.get_params()[0][0].lower()
+    except Exception:
+        ct = ''
+    if ct and ct != 'application/octet-stream':
+        mt = guess_type(ans)
+        if mt != ct:
+            exts = mimetypes.guess_all_extensions(ct)
+            if exts:
+                ans += exts[0]
     return ans
 
 
@@ -112,7 +113,7 @@ def download_one(tdir, timeout, progress_report, data_uri_map, url):
                 path = unquote(purl.path)
                 if iswindows and path.startswith('/'):
                     path = path[1:]
-                src = lopen(path, 'rb')
+                src = open(path, 'rb')
                 filename = os.path.basename(path)
                 sz = (src.seek(0, os.SEEK_END), src.tell(), src.seek(0))[1]
             elif purl.scheme == 'data':
@@ -138,7 +139,7 @@ def download_one(tdir, timeout, progress_report, data_uri_map, url):
                             break
                 filename = 'data-uri.' + ext
             else:
-                src = urlopen(url, timeout=timeout)
+                src = browser().open(url, timeout=timeout)
                 filename = get_filename(purl, src)
                 sz = get_content_length(src)
             progress_report(url, 0, sz)
@@ -150,9 +151,9 @@ def download_one(tdir, timeout, progress_report, data_uri_map, url):
             filename = sanitize_file_name(filename)
             mt = guess_type(filename)
             if mt in OEB_DOCS:
-                raise ValueError('The external resource {} looks like a HTML document ({})'.format(url, filename))
+                raise ValueError(f'The external resource {url} looks like a HTML document ({filename})')
             if not mt or mt == 'application/octet-stream' or '.' not in filename:
-                raise ValueError('The external resource {} is not of a known type'.format(url))
+                raise ValueError(f'The external resource {url} is not of a known type')
             return True, (url, filename, dest.name, mt)
     except Exception as err:
         return False, (url, as_unicode(err))
@@ -168,7 +169,7 @@ def download_external_resources(container, urls, timeout=60, progress_report=lam
             for ok, result in pool.imap_unordered(partial(download_one, tdir, timeout, progress_report, data_uri_map), urls):
                 if ok:
                     url, suggested_filename, downloaded_file, mt = result
-                    with lopen(downloaded_file, 'rb') as src:
+                    with open(downloaded_file, 'rb') as src:
                         name = container.add_file(suggested_filename, src, mt, modify_name_if_needed=True)
                     replacements[url] = name
                 else:

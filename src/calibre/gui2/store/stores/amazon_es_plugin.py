@@ -6,13 +6,13 @@ from __future__ import absolute_import, division, print_function, unicode_litera
 store_version = 15  # Needed for dynamic plugin loading
 
 from contextlib import closing
+
 try:
     from urllib.parse import urlencode
 except ImportError:
     from urllib import urlencode
 
 from lxml import html
-
 from qt.core import QUrl
 
 from calibre import browser
@@ -100,7 +100,7 @@ def search_amazon(query, max_results=10, timeout=60,
             title = ''.join(data.xpath(title_xpath))
             author = ''.join(data.xpath(author_xpath))
             try:
-                author = author.split('by ', 1)[1].split(" (")[0]
+                author = author.split('by ', 1)[1].split(' (')[0]
             except:
                 pass
 

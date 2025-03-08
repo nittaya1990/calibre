@@ -1,4 +1,3 @@
-
 '''
 Basic support for writing LIT files.
 '''
@@ -6,31 +5,30 @@ Basic support for writing LIT files.
 __license__   = 'GPL v3'
 __copyright__ = '2008, Marshall T. Vandegrift <llasram@gmail.com>'
 
-from struct import pack
-from itertools import count, chain
-from operator import attrgetter
+import copy
+import functools
 import io
-import time
+import numbers
 import os
 import re
-import copy
+import time
 import uuid
-import functools
-import numbers
+from itertools import chain, count
+from operator import attrgetter
+from struct import pack
+
 from lxml import etree
-from calibre.ebooks.lit.reader import DirectoryEntry
-import calibre.ebooks.lit.maps as maps
-from calibre.ebooks.oeb.base import OEB_DOCS, XHTML_MIME, OEB_STYLES, \
-    CSS_MIME, OPF_MIME, XML_NS, XML
-from calibre.ebooks.oeb.base import prefixname, \
-    urlnormalize
-from calibre.ebooks.oeb.stylizer import Stylizer
-from calibre.ebooks.lit.lzx import Compressor
+
 import calibre
-from calibre_extensions import msdes
+import calibre.ebooks.lit.maps as maps
 import calibre.ebooks.lit.mssha1 as mssha1
-from polyglot.builtins import codepoint_to_chr, unicode_type, string_or_bytes, range, zip, native_string_type
-from polyglot.urllib import urldefrag, unquote
+from calibre.ebooks.lit.lzx import Compressor
+from calibre.ebooks.lit.reader import DirectoryEntry
+from calibre.ebooks.oeb.base import CSS_MIME, OEB_DOCS, OEB_STYLES, OPF_MIME, XHTML_MIME, XML, XML_NS, prefixname, urlnormalize
+from calibre.ebooks.oeb.stylizer import Stylizer
+from calibre_extensions import msdes
+from polyglot.builtins import codepoint_to_chr, native_string_type, string_or_bytes
+from polyglot.urllib import unquote, urldefrag
 
 __all__ = ['LitWriter']
 
@@ -48,9 +46,9 @@ ALL_MS_COVER_TYPES = [
 
 def invert_tag_map(tag_map):
     tags, dattrs, tattrs = tag_map
-    tags = dict((tags[i], i) for i in range(len(tags)))
-    dattrs = dict((v, k) for k, v in dattrs.items())
-    tattrs = [dict((v, k) for k, v in (map or {}).items()) for map in tattrs]
+    tags = {tags[i]: i for i in range(len(tags))}
+    dattrs = {v: k for k, v in dattrs.items()}
+    tattrs = [{v: k for k, v in (map or {}).items()} for map in tattrs]
     for map in tattrs:
         if map:
             map.update(dattrs)
@@ -63,11 +61,11 @@ HTML_MAP = invert_tag_map(maps.HTML_MAP)
 
 LIT_MAGIC = b'ITOLITLS'
 
-LITFILE_GUID = "{0A9007C1-4076-11D3-8789-0000F8105754}"
-PIECE3_GUID = "{0A9007C3-4076-11D3-8789-0000F8105754}"
-PIECE4_GUID = "{0A9007C4-4076-11D3-8789-0000F8105754}"
-DESENCRYPT_GUID = "{67F6E4A2-60BF-11D3-8540-00C04F58C3CF}"
-LZXCOMPRESS_GUID = "{0A9007C6-4076-11D3-8789-0000F8105754}"
+LITFILE_GUID = '{0A9007C1-4076-11D3-8789-0000F8105754}'
+PIECE3_GUID = '{0A9007C3-4076-11D3-8789-0000F8105754}'
+PIECE4_GUID = '{0A9007C4-4076-11D3-8789-0000F8105754}'
+DESENCRYPT_GUID = '{67F6E4A2-60BF-11D3-8540-00C04F58C3CF}'
+LZXCOMPRESS_GUID = '{0A9007C6-4076-11D3-8789-0000F8105754}'
 
 
 def packguid(guid):
@@ -75,7 +73,7 @@ def packguid(guid):
         guid[20:22], guid[22:24], guid[25:27], guid[27:29], \
         guid[29:31], guid[31:33], guid[33:35], guid[35:37]
     values = [int(value, 16) for value in values]
-    return pack("<LHHBBBBBBBB", *values)
+    return pack('<LHHBBBBBBBB', *values)
 
 
 FLAG_OPENING = (1 << 0)
@@ -95,25 +93,28 @@ ULL_NEG1 = 0xffffffffffffffff
 ROOT_OFFSET = 1284508585713721976
 ROOT_SIZE = 4165955342166943123
 
-BLOCK_CAOL = \
-    b"\x43\x41\x4f\x4c\x02\x00\x00\x00" \
-    b"\x50\x00\x00\x00\x37\x13\x03\x00" \
-    b"\x00\x00\x00\x00\x00\x20\x00\x00" \
-    b"\x00\x02\x00\x00\x00\x00\x10\x00" \
-    b"\x00\x00\x02\x00\x00\x00\x00\x00" \
-    b"\x00\x00\x00\x00\x00\x00\x00\x00"
-BLOCK_ITSF = \
-    b"\x49\x54\x53\x46\x04\x00\x00\x00" \
-    b"\x20\x00\x00\x00\x01\x00\x00\x00"
-
-MSDES_CONTROL = \
-    b"\x03\x00\x00\x00\x29\x17\x00\x00" \
-    b"\x01\x00\x00\x00\xa5\xa5\x00\x00"
-LZXC_CONTROL = \
-    b"\x07\x00\x00\x00\x4c\x5a\x58\x43" \
-    b"\x03\x00\x00\x00\x04\x00\x00\x00" \
-    b"\x04\x00\x00\x00\x02\x00\x00\x00" \
-    b"\x00\x00\x00\x00\x00\x00\x00\x00"
+BLOCK_CAOL = (
+    b'\x43\x41\x4f\x4c\x02\x00\x00\x00'
+    b'\x50\x00\x00\x00\x37\x13\x03\x00'
+    b'\x00\x00\x00\x00\x00\x20\x00\x00'
+    b'\x00\x02\x00\x00\x00\x00\x10\x00'
+    b'\x00\x00\x02\x00\x00\x00\x00\x00'
+    b'\x00\x00\x00\x00\x00\x00\x00\x00'
+)
+BLOCK_ITSF = (
+    b'\x49\x54\x53\x46\x04\x00\x00\x00'
+    b'\x20\x00\x00\x00\x01\x00\x00\x00'
+)
+MSDES_CONTROL = (
+    b'\x03\x00\x00\x00\x29\x17\x00\x00'
+    b'\x01\x00\x00\x00\xa5\xa5\x00\x00'
+)
+LZXC_CONTROL = (
+    b'\x07\x00\x00\x00\x4c\x5a\x58\x43'
+    b'\x03\x00\x00\x00\x04\x00\x00\x00'
+    b'\x04\x00\x00\x00\x02\x00\x00\x00'
+    b'\x00\x00\x00\x00\x00\x00\x00\x00'
+)
 
 COLLAPSE = re.compile(r'[ \t\r\n\v]+')
 
@@ -164,8 +165,8 @@ class ReBinary:
                 try:
                     value = codepoint_to_chr(value)
                 except OverflowError:
-                    self.logger.warn('unicode_type overflow for integer:', value)
-                    value = u'?'
+                    self.logger.warn('Unicode overflow for integer:', value)
+                    value = '?'
             self.buf.write(value.encode('utf-8'))
 
     def is_block(self, style):
@@ -277,13 +278,13 @@ class ReBinary:
 
     def build_ahc(self):
         if len(self.anchors) > 6:
-            self.logger.warn("More than six anchors in file %r. "
-                "Some links may not work properly." % self.item.href)
+            self.logger.warn(f'More than six anchors in file {self.item.href!r}. '
+                'Some links may not work properly.')
         data = io.BytesIO()
         data.write(codepoint_to_chr(len(self.anchors)).encode('utf-8'))
         for anchor, offset in self.anchors:
             data.write(codepoint_to_chr(len(anchor)).encode('utf-8'))
-            if isinstance(anchor, unicode_type):
+            if isinstance(anchor, str):
                 anchor = anchor.encode('utf-8')
             data.write(anchor)
             data.write(pack('<I', offset))
@@ -314,7 +315,7 @@ class LitWriter:
         oeb.metadata.add('calibre-version', calibre.__version__)
         cover = None
         if oeb.metadata.cover:
-            id = unicode_type(oeb.metadata.cover[0])
+            id = str(oeb.metadata.cover[0])
             cover = oeb.manifest.ids[id]
             for type, title in ALL_MS_COVER_TYPES:
                 if type not in oeb.guide:
@@ -471,8 +472,8 @@ class LitWriter:
         self._add_folder('/data')
         for item in self._oeb.manifest.values():
             if item.media_type not in LIT_MIMES:
-                self._logger.warn("File %r of unknown media-type %r "
-                    "excluded from output." % (item.href, item.media_type))
+                self._logger.warn(f'File {item.href!r} of unknown media-type {item.media_type!r} '
+                    'excluded from output.')
                 continue
             name = '/data/' + item.id
             data = item.data
@@ -486,7 +487,7 @@ class LitWriter:
                 data = rebin.content
                 name = name + '/content'
                 secnum = 1
-            elif isinstance(data, unicode_type):
+            elif isinstance(data, str):
                 data = data.encode('utf-8')
             elif hasattr(data, 'cssText'):
                 data = item.bytes_representation
@@ -495,7 +496,7 @@ class LitWriter:
 
     def _build_manifest(self):
         states = ['linear', 'nonlinear', 'css', 'images']
-        manifest = dict((state, []) for state in states)
+        manifest = {state: [] for state in states}
         for item in self._oeb.manifest.values():
             if item.spine_position is not None:
                 key = 'linear' if item.linear else 'nonlinear'
@@ -521,9 +522,9 @@ class LitWriter:
                 item.offset = offset \
                     if state in ('linear', 'nonlinear') else 0
                 data.write(pack('<I', item.offset))
-                entry = [codepoint_to_chr(len(id)), unicode_type(id),
-                         codepoint_to_chr(len(href)), unicode_type(href),
-                         codepoint_to_chr(len(media_type)), unicode_type(media_type)]
+                entry = [codepoint_to_chr(len(id)), str(id),
+                         codepoint_to_chr(len(href)), str(href),
+                         codepoint_to_chr(len(media_type)), str(media_type)]
                 for value in entry:
                     data.write(value.encode('utf-8'))
                 data.write(b'\0')
@@ -570,18 +571,18 @@ class LitWriter:
         _, meta = self._oeb.to_opf1()[OPF_MIME]
         meta.attrib['ms--minimum_level'] = '0'
         meta.attrib['ms--attr5'] = '1'
-        meta.attrib['ms--guid'] = '{%s}' % native_string_type(uuid.uuid4()).upper()
+        meta.attrib['ms--guid'] = f'{{{native_string_type(uuid.uuid4()).upper()}}}'
         rebin = ReBinary(meta, None, self._oeb, self.opts, map=OPF_MAP)
         meta = rebin.content
         self._meta = meta
         self._add_file('/meta', meta)
 
     def _build_drm_storage(self):
-        drmsource = u'Free as in freedom\0'.encode('utf-16-le')
+        drmsource = 'Free as in freedom\0'.encode('utf-16-le')
         self._add_file('/DRMStorage/DRMSource', drmsource)
         tempkey = self._calculate_deskey([self._meta, drmsource])
         msdes.deskey(tempkey, msdes.EN0)
-        self._add_file('/DRMStorage/DRMSealed', msdes.des(b"\0" * 16))
+        self._add_file('/DRMStorage/DRMSealed', msdes.des(b'\0' * 16))
         self._bookkey = b'\0' * 8
         self._add_file('/DRMStorage/ValidationStream', b'MSReader', 3)
 
@@ -653,11 +654,11 @@ class LitWriter:
         hash = mssha1.new()
         for data in hashdata:
             if prepad > 0:
-                data = (b"\000" * prepad) + data
+                data = (b'\000' * prepad) + data
                 prepad = 0
             postpad = 64 - (len(data) % 64)
             if postpad < 64:
-                data = data + (b"\000" * postpad)
+                data = data + (b'\000' * postpad)
             hash.update(data)
         digest = hash.digest()
         if not isinstance(digest, bytes):

@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
 # License: GPLv3 Copyright: 2009, Kovid Goyal <kovid at kovidgoyal.net>
 
 import os
@@ -9,6 +8,7 @@ from calibre.customize.ui import run_plugins_on_import
 from calibre.ebooks.metadata.meta import metadata_from_formats
 from calibre.ebooks.metadata.opf2 import metadata_to_opf
 from calibre.utils.filenames import samefile
+from calibre.utils.icu import lower as icu_lower
 
 
 def serialize_metadata_for(paths, tdir, group_id):
@@ -23,7 +23,7 @@ def serialize_metadata_for(paths, tdir, group_id):
     opf = metadata_to_opf(mi, default_lang='und')
     has_cover = False
     if cdata:
-        with open(os.path.join(tdir, '%s.cdata' % group_id), 'wb') as f:
+        with open(os.path.join(tdir, f'{group_id}.cdata'), 'wb') as f:
             f.write(cdata)
             has_cover = True
     return mi, opf, has_cover

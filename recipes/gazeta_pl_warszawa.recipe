@@ -8,8 +8,9 @@ warszawa.gazeta.pl
 '''
 
 import re
-from calibre.web.feeds.news import BasicNewsRecipe
+
 from calibre.ebooks.BeautifulSoup import Comment
+from calibre.web.feeds.news import BasicNewsRecipe
 
 
 class gw_wawa(BasicNewsRecipe):
@@ -32,7 +33,7 @@ class gw_wawa(BasicNewsRecipe):
 
     # rules for gazeta.pl
     preprocess_regexps = [
-        (re.compile(u'<b>Czytaj więcej</b>.*', re.DOTALL), lambda m: '</body>')]
+        (re.compile(u'<b>Czytaj więcej</b>.*', re.DOTALL), lambda m: '</body>')]  # noqa: RUF039
     keep_only_tags = [dict(id='gazeta_article')]
     remove_tags = [dict(id=['gazeta_article_tools', 'gazeta_article_miniatures']), dict(
         attrs={'class': ['mod mod_sociallist', 'c0', 'fb', 'voteNeedLogin']})]

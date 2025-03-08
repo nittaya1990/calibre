@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
 
 
 __license__   = 'GPL v3'
@@ -10,10 +9,11 @@ from functools import partial
 
 from qt.core import QIcon, Qt
 
+from calibre.constants import DEBUG, ismacos
+from calibre.customize.ui import preferences_plugins
+from calibre.gui2 import error_dialog, show_restart_warning
 from calibre.gui2.actions import InterfaceAction
 from calibre.gui2.preferences.main import Preferences
-from calibre.gui2 import error_dialog, show_restart_warning
-from calibre.constants import DEBUG, ismacos
 
 
 class PreferencesAction(InterfaceAction):
@@ -27,7 +27,7 @@ class PreferencesAction(InterfaceAction):
         pm = self.qaction.menu()
         cm = partial(self.create_menu_action, pm)
         if ismacos:
-            pm.addAction(QIcon(I('config.png')), _('Preferences'), self.do_config)
+            pm.addAction(QIcon.ic('config.png'), _('Preferences'), self.do_config)
         cm('welcome wizard', _('Run Welcome wizard'),
                 icon='wizard.png', triggered=self.gui.run_wizard)
         cm('plugin updater', _('Get plugins to enhance calibre'),
@@ -43,12 +43,33 @@ class PreferencesAction(InterfaceAction):
         for x in (self.gui.preferences_action, self.qaction):
             x.triggered.connect(self.do_config)
 
+    def initialization_complete(self):
+        # Add the individual preferences to the menu.
+        # First, sort them into the same order as shown in the preferences dialog
+        plugins = sorted(preferences_plugins(),
+                         key=lambda p: p.category_order * 100 + p.name_order)
+
+        pm = self.preferences_menu
+        # The space pushes the separator a bit away from the text
+        pm.addSection(_('Sections') + ' ')
+
+        config_icon = QIcon.ic('config.png')
+        current_cat = 0
+        for p in plugins:
+            if p.category_order != current_cat:
+                current_cat = p.category_order
+                cm = pm.addMenu(p.gui_category.replace('&', '&&'))
+                cm.setIcon(config_icon)
+            self.create_menu_action(cm, p.name, p.gui_name.replace('&', '&&'),
+                                    icon=QIcon.ic(p.icon), shortcut=None, shortcut_name=p.gui_name,
+                                    triggered=partial(self.do_config, initial_plugin=(p.category, p.name),
+                                                      close_after_initial=True))
+
     def get_plugins(self):
-        from calibre.gui2.dialogs.plugin_updater import (PluginUpdaterDialog,
-                FILTER_NOT_INSTALLED)
+        from calibre.gui2.dialogs.plugin_updater import FILTER_NOT_INSTALLED, PluginUpdaterDialog
         d = PluginUpdaterDialog(self.gui,
                 initial_filter=FILTER_NOT_INSTALLED)
-        d.exec_()
+        d.exec()
         if d.do_restart:
             self.gui.quit(restart=True)
 
@@ -57,7 +78,7 @@ class PreferencesAction(InterfaceAction):
         if self.gui.job_manager.has_jobs():
             d = error_dialog(self.gui, _('Cannot configure'),
                     _('Cannot configure while there are running jobs.'))
-            d.exec_()
+            d.exec()
             return
         if self.gui.must_restart_before_config:
             do_restart = show_restart_warning(_('Cannot configure before calibre is restarted.'))
@@ -68,7 +89,7 @@ class PreferencesAction(InterfaceAction):
                 close_after_initial=close_after_initial)
         d.run_wizard_requested.connect(self.gui.run_wizard,
                 type=Qt.ConnectionType.QueuedConnection)
-        d.exec_()
+        d.exec()
         if d.do_restart:
             self.gui.quit(restart=True)
 

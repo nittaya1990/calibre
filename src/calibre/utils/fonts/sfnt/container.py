@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:fdm=marker:ai
 # License: GPLv3 Copyright: 2012, Kovid Goyal <kovid at kovidgoyal.net>
 
 
@@ -13,13 +12,12 @@ from calibre.utils.fonts.sfnt.cmap import CmapTable
 from calibre.utils.fonts.sfnt.errors import UnsupportedFont
 from calibre.utils.fonts.sfnt.glyf import GlyfTable
 from calibre.utils.fonts.sfnt.gsub import GSUBTable
-from calibre.utils.fonts.sfnt.head import (
-    HeadTable, HorizontalHeader, OS2Table, PostTable, VerticalHeader
-)
+from calibre.utils.fonts.sfnt.head import HeadTable, HorizontalHeader, OS2Table, PostTable, VerticalHeader
 from calibre.utils.fonts.sfnt.kern import KernTable
 from calibre.utils.fonts.sfnt.loca import LocaTable
 from calibre.utils.fonts.sfnt.maxp import MaxpTable
 from calibre.utils.fonts.utils import checksum_of_block, get_tables, verify_checksums
+from calibre.utils.resources import get_path as P
 
 # OpenType spec: http://www.microsoft.com/typography/otspec/otff.htm
 
@@ -27,18 +25,18 @@ from calibre.utils.fonts.utils import checksum_of_block, get_tables, verify_chec
 class Sfnt:
 
     TABLE_MAP = {
-        b'head' : HeadTable,
-        b'hhea' : HorizontalHeader,
-        b'vhea' : VerticalHeader,
-        b'maxp' : MaxpTable,
-        b'loca' : LocaTable,
-        b'glyf' : GlyfTable,
-        b'cmap' : CmapTable,
-        b'CFF ' : CFFTable,
-        b'kern' : KernTable,
-        b'GSUB' : GSUBTable,
-        b'OS/2' : OS2Table,
-        b'post' : PostTable,
+        b'head': HeadTable,
+        b'hhea': HorizontalHeader,
+        b'vhea': VerticalHeader,
+        b'maxp': MaxpTable,
+        b'loca': LocaTable,
+        b'glyf': GlyfTable,
+        b'cmap': CmapTable,
+        b'CFF ': CFFTable,
+        b'kern': KernTable,
+        b'GSUB': GSUBTable,
+        b'OS/2': OS2Table,
+        b'post': PostTable,
     }
 
     def __init__(self, raw_or_get_table):
@@ -48,7 +46,7 @@ class Sfnt:
             self.sfnt_version = raw[:4]
             if self.sfnt_version not in {b'\x00\x01\x00\x00', b'OTTO', b'true',
                     b'type1'}:
-                raise UnsupportedFont('Font has unknown sfnt version: %r'%self.sfnt_version)
+                raise UnsupportedFont(f'Font has unknown sfnt version: {self.sfnt_version!r}')
             for table_tag, table, table_index, table_offset, table_checksum in get_tables(raw):
                 self.tables[table_tag] = self.TABLE_MAP.get(
                     table_tag, UnknownTable)(table)
@@ -79,8 +77,7 @@ class Sfnt:
 
     def __iter__(self):
         '''Iterate over the table tags in order.'''
-        for x in sorted(self.tables):
-            yield x
+        yield from sorted(self.tables)
         # Although the optimal order is not alphabetical, the OTF spec says
         # they should be alphabetical, so we stick with that. See
         # http://partners.adobe.com/public/developer/opentype/index_recs.html
@@ -90,7 +87,7 @@ class Sfnt:
         #     b'hmtx', b'LTSH', b'VDMX', b'hdmx', b'cmap', b'fpgm', b'prep',
         #     b'cvt ', b'loca', b'glyf', b'CFF ', b'kern', b'name', b'post',
         #     b'gasp', b'PCLT', b'DSIG'))}
-        # keys.sort(key=lambda x:order.get(x, 1000))
+        # keys.sort(key=lambda x: order.get(x, 1000))
         # for x in keys:
         #     yield x
 
@@ -107,7 +104,7 @@ class Sfnt:
         return ans
 
     def get_all_font_names(self):
-        from calibre.utils.fonts.metadata import get_font_names2, FontNames
+        from calibre.utils.fonts.metadata import FontNames, get_font_names2
         name_table = self.get(b'name')
         if name_table is not None:
             return FontNames(*get_font_names2(name_table.raw, raw_is_table=True))
@@ -168,8 +165,7 @@ def test_roundtrip(ff=None):
     if data[:12] != rd[:12]:
         raise ValueError('Roundtripping failed, font header not the same')
     if len(data) != len(rd):
-        raise ValueError('Roundtripping failed, size different (%d vs. %d)'%
-                         (len(data), len(rd)))
+        raise ValueError(f'Roundtripping failed, size different ({len(data)} vs. {len(rd)})')
 
 
 if __name__ == '__main__':

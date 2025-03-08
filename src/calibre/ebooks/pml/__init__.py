@@ -1,11 +1,6 @@
-# -*- coding: utf-8 -*-
-
-
 __license__   = 'GPL v3'
 __copyright__ = '2009, John Schember <john@nachtimwald.com>'
 __docformat__ = 'restructuredtext en'
-
-from polyglot.builtins import range
 
 
 def r(*a):
@@ -59,7 +54,7 @@ def unipmlcode(char):
     try:
         val = ord(char.encode('cp1252'))
         if val in A_CHARS:
-            return '\\a%i' % val
+            return f'\\a{val}'
     except Exception:
         pass
     val = ord(char)

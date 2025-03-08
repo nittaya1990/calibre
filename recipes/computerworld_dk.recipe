@@ -1,8 +1,10 @@
 #!/usr/bin/env python
 # vim:fileencoding=utf-8
 # https://manual.calibre-ebook.com/news_recipe.html
-from __future__ import unicode_literals, division, absolute_import, print_function
+from __future__ import absolute_import, division, print_function, unicode_literals
+
 from calibre.web.feeds.news import BasicNewsRecipe
+
 '''
 Computerworld.dk
 '''
@@ -49,4 +51,3 @@ class WwwComputerworld_dk(BasicNewsRecipe):
         ('IDG Kurser', 'http://job.idgkurser.dk/rss/'),
 
     ]
-

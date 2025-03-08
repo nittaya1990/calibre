@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 # License: GPL v3 Copyright: 2021, Kovid Goyal <kovid at kovidgoyal.net>
 
 import os
@@ -33,7 +32,7 @@ def extract_member(path_or_stream, match=None, name=None):
     with open_archive(path_or_stream) as ar:
         all_names = list(filter(is_match, ar.getnames()))
         if all_names:
-            return all_names[0] , ar.read(all_names[:1])[all_names[0]].read()
+            return all_names[0], ar.read(all_names[:1])[all_names[0]].read()
 
 
 def extract_cover_image(stream):
@@ -53,9 +52,9 @@ def extract(path_or_stream, location):
 
 # Test {{{
 
-
 def test_basic():
     from tempfile import TemporaryDirectory
+
     from calibre import CurrentDir
 
     tdata = {
@@ -88,7 +87,7 @@ def test_basic():
             if name not in '1 2 symlink'.split():
                 with open(os.path.join(tdir, name), 'rb') as s:
                     if s.read() != tdata[name]:
-                        raise ValueError('Did not extract %s properly' % name)
+                        raise ValueError(f'Did not extract {name} properly')
 
     with TemporaryDirectory('test-7z') as tdir, CurrentDir(tdir):
         do_test()

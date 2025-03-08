@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
 
 
 __license__   = 'GPL v3'
@@ -18,7 +17,6 @@ class NoRaster(Exception):
 
 
 class DIBHeader:
-
     '''
     See http://en.wikipedia.org/wiki/BMP_file_format
     '''
@@ -40,7 +38,7 @@ class DIBHeader:
                 'bits_per_pixel')):
                 setattr(self, attr, parts[i])
         else:
-            raise ValueError('Unsupported DIB header type of size: %d'%hsize)
+            raise ValueError(f'Unsupported DIB header type of size: {hsize}')
 
         self.bitmasks_size = 12 if getattr(self, 'compression', 0) == 3 else 0
         self.color_table_size = 0
@@ -61,7 +59,7 @@ def create_bmp_from_dib(raw):
 
 
 def to_png(bmp):
-    from qt.core import QImage, QByteArray, QBuffer, QIODevice
+    from qt.core import QBuffer, QByteArray, QImage, QIODevice
     i = QImage()
     if not i.loadFromData(bmp):
         raise ValueError('Invalid image data')

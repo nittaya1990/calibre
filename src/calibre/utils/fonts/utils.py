@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:fdm=marker:ai
 
 
 __license__   = 'GPL v3'
@@ -7,10 +6,11 @@ __copyright__ = '2012, Kovid Goyal <kovid at kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
 
 import struct
-from io import BytesIO
 from collections import defaultdict
+from io import BytesIO
 
-from polyglot.builtins import iteritems, itervalues, unicode_type, range, as_bytes
+from calibre.utils.resources import get_path as P
+from polyglot.builtins import as_bytes, iteritems, itervalues
 
 
 class UnsupportedFont(ValueError):
@@ -19,7 +19,7 @@ class UnsupportedFont(ValueError):
 
 def get_printable_characters(text):
     import unicodedata
-    return u''.join(x for x in unicodedata.normalize('NFC', text)
+    return ''.join(x for x in unicodedata.normalize('NFC', text)
             if unicodedata.category(x)[0] not in {'C', 'Z', 'M'})
 
 
@@ -48,6 +48,32 @@ def get_table(raw, name):
     return None, None, None, None
 
 
+def get_font_characteristics_from_ttlib_os2_table(t, return_all=False):
+    (char_width, weight, width, fs_type, subscript_x_size, subscript_y_size, subscript_x_offset, subscript_y_offset,
+     superscript_x_size, superscript_y_size, superscript_x_offset, superscript_y_offset, strikeout_size,
+     strikeout_position, family_class, selection, version) = (
+         t.xAvgCharWidth, t.usWeightClass, t.usWidthClass, t.fsType,
+         t.ySubscriptXSize, t.ySubscriptYSize, t.ySubscriptXOffset, t.ySubscriptYOffset,
+         t.ySuperscriptXSize, t.ySuperscriptYSize, t.ySuperscriptXOffset, t.ySuperscriptYOffset,
+         t.yStrikeoutSize, t.yStrikeoutPosition, t.sFamilyClass, t.fsSelection, t.version)
+    is_italic = (selection & (1 << 0)) != 0
+    is_bold = (selection & (1 << 5)) != 0
+    is_regular = (selection & (1 << 6)) != 0
+    is_wws = (selection & (1 << 8)) != 0
+    is_oblique = (selection & (1 << 9)) != 0
+    p = t.panose
+    panose = (p.bFamilyType, p.bSerifStyle, p.bWeight, p.bProportion, p.bContrast, p.bStrokeVariation, p.bArmStyle, p.bLetterForm, p.bMidline, p.bXHeight)
+
+    if return_all:
+        return (version, char_width, weight, width, fs_type, subscript_x_size,
+            subscript_y_size, subscript_x_offset, subscript_y_offset,
+            superscript_x_size, superscript_y_size, superscript_x_offset,
+            superscript_y_offset, strikeout_size, strikeout_position,
+            family_class, panose, selection, is_italic, is_bold, is_regular)
+
+    return weight, is_italic, is_bold, is_regular, fs_type, panose, width, is_oblique, is_wws, version
+
+
 def get_font_characteristics(raw, raw_is_table=False, return_all=False):
     '''
     Return (weight, is_italic, is_bold, is_regular, fs_type, panose, width,
@@ -55,6 +81,8 @@ def get_font_characteristics(raw, raw_is_table=False, return_all=False):
     values are taken from the OS/2 table of the font. See
     http://www.microsoft.com/typography/otspec/os2.htm for details
     '''
+    if hasattr(raw, 'getUnicodeRanges'):
+        return get_font_characteristics_from_ttlib_os2_table(raw, return_all)
     if raw_is_table:
         os2_table = raw
     else:
@@ -71,7 +99,7 @@ def get_font_characteristics(raw, raw_is_table=False, return_all=False):
     offset = struct.calcsize(common_fields)
     panose = struct.unpack_from(b'>10B', os2_table, offset)
     offset += 10
-    (range1, range2, range3, range4) = struct.unpack_from(b'>4L', os2_table, offset)
+    range1, range2, range3, range4 = struct.unpack_from(b'>4L', os2_table, offset)
     offset += struct.calcsize(b'>4L')
     vendor_id = os2_table[offset:offset+4]
     vendor_id
@@ -146,7 +174,7 @@ def decode_name_record(recs):
             if codec is None:
                 continue
             try:
-                windows_names[language_id] = src.decode('utf-%d-be'%codec)
+                windows_names[language_id] = src.decode(f'utf-{codec}-be')
             except ValueError:
                 continue
 
@@ -194,6 +222,29 @@ def _get_font_names(raw, raw_is_table=False):
             src))
 
     return records
+
+
+def get_font_name_records_from_ttlib_names_table(names_table):
+    records = defaultdict(list)
+    for rec in names_table.names:
+        records[rec.nameID].append((rec.platformID, rec.platEncID, rec.langID, rec.string))
+    return records
+
+
+def get_font_names_from_ttlib_names_table(names_table):
+    records = get_font_name_records_from_ttlib_names_table(names_table)
+    family_name = decode_name_record(records[1])
+    subfamily_name = decode_name_record(records[2])
+    full_name = decode_name_record(records[4])
+
+    preferred_family_name = decode_name_record(records[16])
+    preferred_subfamily_name = decode_name_record(records[17])
+
+    wws_family_name = decode_name_record(records[21])
+    wws_subfamily_name = decode_name_record(records[22])
+
+    return (family_name, subfamily_name, full_name, preferred_family_name,
+            preferred_subfamily_name, wws_family_name, wws_subfamily_name)
 
 
 def get_font_names(raw, raw_is_table=False):
@@ -269,7 +320,7 @@ def verify_checksums(raw):
             offset = table_offset
             checksum = table_checksum
         elif checksum_of_block(table) != table_checksum:
-            raise ValueError('The %r table has an incorrect checksum'%table_tag)
+            raise ValueError(f'The {table_tag!r} table has an incorrect checksum')
 
     if head_table is not None:
         table = head_table
@@ -307,7 +358,7 @@ def set_table_checksum(f, name):
 def remove_embed_restriction(raw):
     ok, sig = is_truetype_font(raw)
     if not ok:
-        raise UnsupportedFont('Not a supported font, sfnt_version: %r'%sig)
+        raise UnsupportedFont(f'Not a supported font, sfnt_version: {sig!r}')
 
     table, table_index, table_offset = get_table(raw, 'os/2')[:3]
     if table is None:
@@ -333,7 +384,7 @@ def is_font_embeddable(raw):
     # https://www.microsoft.com/typography/otspec/os2.htm#fst
     ok, sig = is_truetype_font(raw)
     if not ok:
-        raise UnsupportedFont('Not a supported font, sfnt_version: %r'%sig)
+        raise UnsupportedFont(f'Not a supported font, sfnt_version: {sig!r}')
 
     table, table_index, table_offset = get_table(raw, 'os/2')[:3]
     if table is None:
@@ -397,8 +448,8 @@ def get_bmp_glyph_ids(table, bmp, codes):
 
 
 def get_glyph_ids(raw, text, raw_is_table=False):
-    if not isinstance(text, unicode_type):
-        raise TypeError('%r is not a unicode object'%text)
+    if not isinstance(text, str):
+        raise TypeError(f'{text!r} is not a unicode object')
     if raw_is_table:
         table = raw
     else:
@@ -418,13 +469,12 @@ def get_glyph_ids(raw, text, raw_is_table=False):
     if bmp_table is None:
         raise UnsupportedFont('Not a supported font, has no format 4 cmap table')
 
-    for glyph_id in get_bmp_glyph_ids(table, bmp_table, map(ord, text)):
-        yield glyph_id
+    yield from get_bmp_glyph_ids(table, bmp_table, map(ord, text))
 
 
 def supports_text(raw, text, has_only_printable_chars=False):
-    if not isinstance(text, unicode_type):
-        raise TypeError('%r is not a unicode object'%text)
+    if not isinstance(text, str):
+        raise TypeError(f'{text!r} is not a unicode object')
     if not has_only_printable_chars:
         text = get_printable_characters(text)
     try:
@@ -444,7 +494,7 @@ def get_font_for_text(text, candidate_font_data=None):
         from calibre.utils.fonts.scanner import font_scanner
         family, faces = font_scanner.find_font_for_text(text)
         if faces:
-            with lopen(faces[0]['path'], 'rb') as f:
+            with open(faces[0]['path'], 'rb') as f:
                 candidate_font_data = f.read()
     return candidate_font_data
 
@@ -454,7 +504,7 @@ def test_glyph_ids():
     data = P('fonts/liberation/LiberationSerif-Regular.ttf', data=True)
     ft = FreeType()
     font = ft.load_font(data)
-    text = u'诶йab'
+    text = '诶йab'
     ft_glyphs = tuple(font.glyph_ids(text))
     glyphs = tuple(get_glyph_ids(data, text))
     if ft_glyphs != glyphs:
@@ -486,7 +536,8 @@ def test():
 
 
 def main():
-    import sys, os
+    import os
+    import sys
     for arg in sys.argv[1:]:
         print(os.path.basename(arg))
         with open(arg, 'rb') as f:

@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
 # License: GPLv3 Copyright: 2011, Kovid Goyal <kovid at kovidgoyal.net>
 
 
@@ -7,8 +6,8 @@ import json
 import re
 from textwrap import dedent
 
+from calibre.utils.localization import _
 from polyglot.binary import as_hex_unicode, from_hex_bytes
-from polyglot.builtins import map
 
 color_row_key = '*row'
 
@@ -26,7 +25,7 @@ class Rule:  # {{{
 
     def add_condition(self, col, action, val):
         if col not in self.fm:
-            raise ValueError('%r is not a valid column name'%col)
+            raise ValueError(f'{col!r} is not a valid column name')
         v = self.validate_condition(col, action, val)
         if v:
             raise ValueError(v)
@@ -41,14 +40,14 @@ class Rule:  # {{{
             try:
                 int(val) if dt == 'int' else float(val)
             except:
-                return '%r is not a valid numerical value'%val
+                return f'{val!r} is not a valid numerical value'
 
         if (dt in ('comments', 'series', 'text', 'enumeration') and 'pattern'
                 in action):
             try:
                 re.compile(val)
             except:
-                return '%r is not a valid regular expression'%val
+                return f'{val!r} is not a valid regular expression'
 
     @property
     def signature(self):
@@ -110,14 +109,14 @@ class Rule:  # {{{
 
     def identifiers_condition(self, col, action, val):
         if action == 'has id':
-            return "identifier_in_list(field('identifiers'), '%s', '1', '')"%val
-        return "identifier_in_list(field('identifiers'), '%s', '', '1')"%val
+            return f"identifier_in_list(field('identifiers'), '{val}', '1', '')"
+        return f"identifier_in_list(field('identifiers'), '{val}', '', '1')"
 
     def ondevice_condition(self, col, action, val):
         if action == 'is set':
-            return "test(ondevice(), '1', '')"
+            return 'ondevice()'
         if action == 'is not set':
-            return "test(ondevice(), '', '1')"
+            return '!ondevice()'
 
     def bool_condition(self, col, action, val):
         test = {'is true':      '0, 0, 1',
@@ -126,101 +125,98 @@ class Rule:  # {{{
                 'is not false': '1, 0, 1',
                 'is undefined': '1, 0, 0',
                 'is defined':   '0, 1, 1'}[action]
-        return "check_yes_no('%s', %s)"%(col, test)
+        return f"check_yes_no('{col}', {test})"
 
     def number_condition(self, col, action, val):
         if action == 'is set':
-            return "test(field('%s'), '1', '')"%col
+            return f'${col}'
         if action == 'is not set':
-            return "test(field('%s'), '', '1')"%col
+            return f'!${col}'
         lt, eq, gt = {
                 'eq': ('', '1', ''),
                 'lt': ('1', '', ''),
                 'gt': ('', '', '1')
         }[action]
         if col == 'size':
-            return "cmp(booksize(), %s, '%s', '%s', '%s')" % (val, lt, eq, gt)
+            return f"cmp(booksize(), {val}, '{lt}', '{eq}', '{gt}')"
         else:
-            return "cmp(raw_field('%s'), %s, '%s', '%s', '%s')" % (col, val, lt, eq, gt)
+            return f"cmp(raw_field('{col}', 0), {val}, '{lt}', '{eq}', '{gt}')"
 
     def rating_condition(self, col, action, val):
         if action == 'is set':
-            return "test(field('%s'), '1', '')"%col
+            return f'${col}'
         if action == 'is not set':
-            return "test(field('%s'), '', '1')"%col
+            return f'!${col}'
         lt, eq, gt = {
                 'eq': ('', '1', ''),
                 'lt': ('1', '', ''),
                 'gt': ('', '', '1')
         }[action]
-        return "cmp(field('%s'), %s, '%s', '%s', '%s')" % (col, val, lt, eq, gt)
+        return f"cmp(field('{col}'), {val}, '{lt}', '{eq}', '{gt}')"
 
     def date_condition(self, col, action, val):
         if action == 'count_days':
-            return (("test(field('%s'), cmp(%s, "
+            return (f"test(field('{col}'), cmp({val}, "
                             "days_between(format_date(today(), 'yyyy-MM-dd'),"
-                            "format_date(raw_field('%s'), 'yyyy-MM-dd')), '', '1', '1'), '')")
-                     %(col, val, col))
+                            f"format_date(raw_field('{col}'), 'yyyy-MM-dd')), '', '1', '1'), '')")
         if action == 'older count days':
-            return (("test(field('%s'), cmp(%s, "
+            return (f"test(field('{col}'), cmp({val}, "
                             "days_between(format_date(today(), 'yyyy-MM-dd'),"
-                            "format_date(raw_field('%s'), 'yyyy-MM-dd')), '1', '', ''), '')")
-                     %(col, val, col))
+                            f"format_date(raw_field('{col}'), 'yyyy-MM-dd')), '1', '', ''), '')")
         if action == 'older future days':
-            return (("test(field('%s'), cmp(%s, "
-                            "days_between(format_date(raw_field('%s'), 'yyyy-MM-dd'), "
+            return (f"test(field('{col}'), cmp({val}, "
+                            f"days_between(format_date(raw_field('{col}'), 'yyyy-MM-dd'), "
                             "format_date(today(), 'yyyy-MM-dd')), '', '1', '1'), '')")
-                     %(col, val, col))
         if action == 'newer future days':
-            return (("test(field('%s'), cmp(%s, "
-                            "days_between(format_date(raw_field('%s'), 'yyyy-MM-dd'), "
+            return (f"test(field('{col}'), cmp({val}, "
+                            f"days_between(format_date(raw_field('{col}'), 'yyyy-MM-dd'), "
                             "format_date(today(), 'yyyy-MM-dd')), '1', '', ''), '')")
-                     %(col, val, col))
         if action == 'is set':
-            return (("test(field('%s'), '1', '')"%(col)))
+            return (f'${col}')
         if action == 'is not set':
-            return (("test(field('%s'), '', '1')"%(col)))
+            return (f'!${col}')
+        if action == 'is today':
+            return f"substr(format_date(raw_field('{col}'), 'iso'), 0, 10) == substr(today(), 0, 10)"
         lt, eq, gt = {
                 'eq': ('', '1', ''),
                 'lt': ('1', '', ''),
                 'gt': ('', '', '1')
         }[action]
-        return ("strcmp(format_date(raw_field('%s'), 'yyyy-MM-dd'), '%s', '%s', '%s', '%s')" %
-            (col, val, lt, eq, gt))
+        return (f"strcmp(format_date(raw_field('{col}'), 'yyyy-MM-dd'), '{val}', '{lt}', '{eq}', '{gt}')")
 
     def multiple_condition(self, col, action, val, sep):
         if not sep or sep == '|':
             sep = ','
         if action == 'is set':
-            return "test(field('%s'), '1', '')"%col
+            return f'${col}'
         if action == 'is not set':
-            return "test(field('%s'), '', '1')"%col
+            return f'!${col}'
         if action == 'has':
-            return "str_in_list(field('%s'), '%s', \"%s\", '1', '')"%(col, sep, val)
+            return f"str_in_list(field('{col}'), '{sep}', \"{val}\", '1', '')"
         if action == 'does not have':
-            return "str_in_list(field('%s'), '%s', \"%s\", '', '1')"%(col, sep, val)
+            return f"str_in_list(field('{col}'), '{sep}', \"{val}\", '', '1')"
         if action == 'has pattern':
-            return "in_list(field('%s'), '%s', \"%s\", '1', '')"%(col, sep, val)
+            return f"in_list(field('{col}'), '{sep}', \"{val}\", '1', '')"
         if action == 'does not have pattern':
-            return "in_list(field('%s'), '%s', \"%s\", '', '1')"%(col, sep, val)
+            return f"in_list(field('{col}'), '{sep}', \"{val}\", '', '1')"
 
     def text_condition(self, col, action, val):
         if action == 'is set':
-            return "test(field('%s'), '1', '')"%col
+            return f'${col}'
         if action == 'is not set':
-            return "test(field('%s'), '', '1')"%col
+            return f'!${col}'
         if action == 'is':
-            return "strcmp(field('%s'), \"%s\", '', '1', '')"%(col, val)
+            return f"strcmp(field('{col}'), \"{val}\", '', '1', '')"
         if action == 'is not':
-            return "strcmp(field('%s'), \"%s\", '1', '', '1')"%(col, val)
+            return f"strcmp(field('{col}'), \"{val}\", '1', '', '1')"
         if action == 'matches pattern':
-            return "contains(field('%s'), \"%s\", '1', '')"%(col, val)
+            return f"contains(field('{col}'), \"{val}\", '1', '')"
         if action == 'does not match pattern':
-            return "contains(field('%s'), \"%s\", '', '1')"%(col, val)
+            return f"contains(field('{col}'), \"{val}\", '', '1')"
         if action == 'contains':
-            return "contains(field('%s'), \"%s\", '1', '')"%(col, re.escape(val))
+            return f"contains(field('{col}'), \"{re.escape(val)}\", '1', '')"
         if action == 'does not contain':
-            return "contains(field('%s'), \"%s\", '', '1')"%(col, re.escape(val))
+            return f"contains(field('{col}'), \"{re.escape(val)}\", '', '1')"
 
 # }}}
 
@@ -263,8 +259,7 @@ def conditionable_columns(fm):
 def displayable_columns(fm):
     yield color_row_key
     for key in fm.displayable_field_keys():
-        if key not in ('sort', 'author_sort', 'comments', 'formats',
-                'identifiers', 'path'):
+        if key not in ('sort', 'author_sort', 'comments', 'identifiers',):
             yield key
 
 

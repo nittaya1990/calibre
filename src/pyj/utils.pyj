@@ -8,9 +8,14 @@ from book_list.theme import get_font_family
 
 
 is_ios = v'!!navigator.platform && /iPad|iPhone|iPod/.test(navigator.platform)'
+ios_major_version = 0
 if !is_ios and v'!!navigator.platform' and window? and window.navigator.platform is 'MacIntel' and window.navigator.maxTouchPoints > 1:
     # iPad Safari in desktop mode https://stackoverflow.com/questions/57765958/how-to-detect-ipad-and-ipad-os-version-in-ios-13-and-up
     is_ios = True
+if is_ios:
+    v = v'navigator.appVersion.match(/OS (\d+)/)'
+    if v and v[1]:
+        ios_major_version = parseInt(v[1], 10) or 0
 
 
 def default_context_menu_should_be_allowed(evt):
@@ -137,19 +142,17 @@ def rating_to_stars(value, allow_half_stars=False, star='★', half='⯨'):
         ans = star.repeat(int(r/2.0))
     return ans
 
+
 def human_readable(size, sep=' '):
-    divisor, suffix = 1, "B"
-    for i, candidate in enumerate(('B', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB')):
-        if size < (1 << ((i + 1) * 10)):
-            divisor, suffix = (1 << (i * 10)), candidate
-            break
-    size = (float(size)/divisor) + ''
-    pos = size.find(".")
-    if pos > -1:
-        size = size[:pos + 2]
+    if size <= 0:
+        return f'0{sep}B'
+    i = Math.floor(Math.log(size) / Math.log(1024))
+    size = (size / Math.pow(1024, i)).toFixed(1)
     if size.endswith('.0'):
         size = size[:-2]
+    suffix = v"['B', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB']"[i]
     return size + sep + suffix
+
 
 def document_height():
     html = document.documentElement
@@ -235,6 +238,5 @@ def sandboxed_html(html, style, sandbox):
     css = 'html, body { margin: 0; padding: 0; font-family: __FONT__ } p:first-child { margin-top: 0; padding-top: 0; -webkit-margin-before: 0 }'.replace('__FONT__', get_font_family())
     css += style or ''
     final_html = f'<!DOCTYPE html><html><head><style>{css}</style></head><body>{html}</body></html>'
-    # Microsoft Edge does not support srcdoc not does it work using a data URI.
     ans.srcdoc = final_html
     return ans

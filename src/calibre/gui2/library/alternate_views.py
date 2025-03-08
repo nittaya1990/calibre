@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 
 
 __license__ = 'GPL v3'
@@ -9,29 +8,67 @@ import itertools
 import math
 import operator
 import os
+import weakref
+from collections import namedtuple
 from functools import wraps
-from qt.core import (
-    QAbstractItemView, QApplication, QBuffer, QByteArray, QColor, QDrag,
-    QEasingCurve, QEvent, QFont, QHelpEvent, QIcon, QImage, QItemSelection,
-    QItemSelectionModel, QListView, QMimeData, QModelIndex, QPainter, QPixmap,
-    QPoint, QPropertyAnimation, QRect, QSize, QStyledItemDelegate, QPalette,
-    QStyleOptionViewItem, Qt, QTableView, QTimer, QToolTip, QTreeView, QUrl,
-    pyqtProperty, pyqtSignal, pyqtSlot, qBlue, qGreen, qRed, QIODevice
-)
+from io import BytesIO
 from textwrap import wrap
 from threading import Event, Thread
 
-from calibre import fit_image, human_readable, prepare_string_for_xml, prints
+from qt.core import (
+    QAbstractItemView,
+    QApplication,
+    QBuffer,
+    QByteArray,
+    QColor,
+    QDrag,
+    QEasingCurve,
+    QEvent,
+    QFont,
+    QHelpEvent,
+    QIcon,
+    QImage,
+    QIODevice,
+    QItemSelection,
+    QItemSelectionModel,
+    QListView,
+    QMimeData,
+    QModelIndex,
+    QPainter,
+    QPalette,
+    QPixmap,
+    QPoint,
+    QPropertyAnimation,
+    QRect,
+    QSize,
+    QStyledItemDelegate,
+    QStyleOptionViewItem,
+    Qt,
+    QTableView,
+    QTimer,
+    QToolTip,
+    QTreeView,
+    pyqtProperty,
+    pyqtSignal,
+    pyqtSlot,
+    qBlue,
+    qGreen,
+    qRed,
+)
+
+from calibre import fit_image, human_readable, prepare_string_for_xml
 from calibre.constants import DEBUG, config_dir, islinux
 from calibre.ebooks.metadata import fmt_sidx, rating_to_stars
-from calibre.gui2 import config, empty_index, gprefs, rating_font
+from calibre.gui2 import clip_border_radius, config, empty_index, gprefs, rating_font
 from calibre.gui2.dnd import path_from_qurl
 from calibre.gui2.gestures import GestureManager
 from calibre.gui2.library.caches import CoverCache, ThumbnailCache
+from calibre.gui2.library.models import themed_icon_name
 from calibre.gui2.pin_columns import PinContainer
 from calibre.utils import join_with_timeout
 from calibre.utils.config import prefs, tweaks
-from polyglot.builtins import itervalues, range, unicode_type
+from calibre.utils.img import convert_PIL_image_to_pixmap
+from polyglot.builtins import itervalues
 from polyglot.queue import LifoQueue
 
 CM_TO_INCH = 0.393701
@@ -41,7 +78,7 @@ CACHE_FORMAT = 'PPM'
 def auto_height(widget):
     # On some broken systems, availableGeometry() returns tiny values, we need
     # a value of at least 1000 for 200 DPI systems.
-    return max(1000, QApplication.instance().desktop().availableGeometry(widget).height()) / 5.0
+    return max(1000, widget.screen().availableSize().height()) / 5.0
 
 
 class EncodeError(ValueError):
@@ -51,7 +88,10 @@ class EncodeError(ValueError):
 def handle_enter_press(self, ev, special_action=None, has_edit_cell=True):
     if ev.key() in (Qt.Key.Key_Enter, Qt.Key.Key_Return):
         mods = ev.modifiers()
-        if mods & Qt.Modifier.CTRL or mods & Qt.Modifier.ALT or mods & Qt.Modifier.SHIFT or mods & Qt.Modifier.META:
+        if (
+            mods & Qt.KeyboardModifier.ControlModifier or mods & Qt.KeyboardModifier.AltModifier or
+            mods & Qt.KeyboardModifier.ShiftModifier or mods & Qt.KeyboardModifier.MetaModifier
+        ):
             return
         if self.state() != QAbstractItemView.State.EditingState and self.hasFocus() and self.currentIndex().isValid():
             from calibre.gui2.ui import get_gui
@@ -67,6 +107,10 @@ def handle_enter_press(self, ev, special_action=None, has_edit_cell=True):
                 gui.iactions['Edit Metadata'].edit_metadata(False)
             elif tweak == 'do_nothing':
                 pass
+            elif tweak == 'show_locked_book_details':
+                self.gui.iactions['Show Book Details'].show_book_info(locked=True)
+            elif tweak == 'show_book_details':
+                self.gui.iactions['Show Book Details'].show_book_info()
             else:
                 if special_action is not None:
                     special_action(self.currentIndex())
@@ -76,6 +120,8 @@ def handle_enter_press(self, ev, special_action=None, has_edit_cell=True):
 
 
 def image_to_data(image):  # {{{
+    # Although this function is no longer used in this file, it is used in
+    # other places in calibre. Don't delete it.
     ba = QByteArray()
     buf = QBuffer(ba)
     buf.open(QIODevice.OpenModeFlag.WriteOnly)
@@ -86,8 +132,8 @@ def image_to_data(image):  # {{{
     return ret
 # }}}
 
-# Drag 'n Drop {{{
 
+# Drag 'n Drop {{{
 
 def qt_item_view_base_class(self):
     for q in (QTableView, QListView, QTreeView):
@@ -108,12 +154,19 @@ def event_has_mods(self, event=None):
 
 def mousePressEvent(self, event):
     ep = event.pos()
-    if self.indexAt(ep) in self.selectionModel().selectedIndexes() and \
-            event.button() == Qt.MouseButton.LeftButton and not self.event_has_mods():
+    # for performance, check the selection only once we know we need it
+    if event.button() == Qt.MouseButton.LeftButton and not self.event_has_mods() \
+                and self.indexAt(ep) in self.selectionModel().selectedIndexes():
         self.drag_start_pos = ep
     if hasattr(self, 'handle_mouse_press_event'):
         return self.handle_mouse_press_event(event)
     return qt_item_view_base_class(self).mousePressEvent(self, event)
+
+
+def mouseReleaseEvent(self, event):
+    if hasattr(self, 'handle_mouse_release_event'):
+        return self.handle_mouse_release_event(event)
+    return qt_item_view_base_class(self).mouseReleaseEvent(self, event)
 
 
 def drag_icon(self, cover, multiple):
@@ -154,7 +207,7 @@ def drag_data(self):
     md.setData('application/calibre+from_library', ids.encode('utf-8'))
     fmt = prefs['output_format']
 
-    def url_for_id(i):
+    def path_for_id(i):
         try:
             ans = db.format_path(i, fmt, index_is_id=True)
         except:
@@ -172,9 +225,10 @@ def drag_data(self):
                     ans = None
         if ans is None:
             ans = db.abspath(i, index_is_id=True)
-        return QUrl.fromLocalFile(ans)
+        return ans
 
-    md.setUrls([url_for_id(i) for i in selected])
+    from calibre.gui2.dnd import set_urls_from_local_file_paths
+    set_urls_from_local_file_paths(md, *[path_for_id(i) for i in selected])
     drag = QDrag(self)
     col = self.selectionModel().currentIndex().column()
     try:
@@ -190,15 +244,18 @@ def drag_data(self):
 
 
 def mouseMoveEvent(self, event):
-    if not self.drag_allowed:
-        return
-    if self.drag_start_pos is None:
-        return qt_item_view_base_class(self).mouseMoveEvent(self, event)
-
     if self.event_has_mods():
         self.drag_start_pos = None
+    if not self.drag_allowed:
+        if hasattr(self, 'handle_mouse_move_event'):
+            self.handle_mouse_move_event(event)
         return
-
+    if self.drag_start_pos is None:
+        if hasattr(self, 'handle_mouse_move_event'):
+            self.handle_mouse_move_event(event)
+        else:
+            qt_item_view_base_class(self).mouseMoveEvent(self, event)
+        return
     if not (event.buttons() & Qt.MouseButton.LeftButton) or \
             (event.pos() - self.drag_start_pos).manhattanLength() \
                     < QApplication.startDragDistance():
@@ -208,7 +265,7 @@ def mouseMoveEvent(self, event):
     if not index.isValid():
         return
     drag = self.drag_data()
-    drag.exec_(Qt.DropAction.CopyAction)
+    drag.exec(Qt.DropAction.CopyAction)
     self.drag_start_pos = None
 
 
@@ -217,8 +274,7 @@ def dnd_merge_ok(md):
 
 
 def dragEnterEvent(self, event):
-    if int(event.possibleActions() & Qt.DropAction.CopyAction) + \
-        int(event.possibleActions() & Qt.DropAction.MoveAction) == 0:
+    if not event.possibleActions() & (Qt.DropAction.CopyAction | Qt.DropAction.MoveAction):
         return
     paths = self.paths_from_event(event)
     md = event.mimeData()
@@ -231,7 +287,7 @@ def dropEvent(self, event):
     md = event.mimeData()
     if dnd_merge_ok(md):
         ids = set(map(int, filter(None, bytes(md.data('application/calibre+from_library')).decode('utf-8').split(' '))))
-        row = self.indexAt(event.pos()).row()
+        row = self.indexAt(event.position().toPoint()).row()
         if row > -1 and ids:
             book_id = self.model().id(row)
             if book_id and book_id not in ids:
@@ -261,7 +317,7 @@ def setup_dnd_interface(cls_or_self):
         cls = cls_or_self
         fmap = globals()
         for x in (
-            'dragMoveEvent', 'event_has_mods', 'mousePressEvent', 'mouseMoveEvent',
+            'dragMoveEvent', 'event_has_mods', 'mousePressEvent', 'mouseMoveEvent', 'mouseReleaseEvent',
             'drag_data', 'drag_icon', 'dragEnterEvent', 'dropEvent', 'paths_from_event'):
             func = fmap[x]
             setattr(cls, x, func)
@@ -275,8 +331,8 @@ def setup_dnd_interface(cls_or_self):
         self.setDragDropMode(QAbstractItemView.DragDropMode.DragDrop)
 # }}}
 
-# Manage slave views {{{
 
+# Manage slave views {{{
 
 def sync(func):
     @wraps(func)
@@ -380,8 +436,8 @@ class AlternateViews:
             self.current_view.marked_changed(old_marked, current_marked)
 # }}}
 
-# Rendering of covers {{{
 
+# Rendering of covers {{{
 
 class CoverDelegate(QStyledItemDelegate):
 
@@ -397,7 +453,7 @@ class CoverDelegate(QStyledItemDelegate):
         self._animated_size = val
 
     def __init__(self, parent):
-        super(CoverDelegate, self).__init__(parent)
+        super().__init__(parent)
         self._animated_size = 1.0
         self.animation = QPropertyAnimation(self, b'animated_size', self)
         self.animation.setEasingCurve(QEasingCurve.Type.OutInCirc)
@@ -438,7 +494,7 @@ class CoverDelegate(QStyledItemDelegate):
             sz = f.pixelSize()
             if sz < 5:
                 sz = f.pointSize() * self.parent().logicalDpiY() / 72.0
-            self.title_height = max(25, sz + 10)
+            self.title_height = int(max(25, sz + 10))
         self.item_size = self.cover_size + QSize(2 * self.MARGIN, (2 * self.MARGIN) + self.title_height)
         if self.emblem_size > 0:
             extra = self.emblem_size + self.MARGIN
@@ -453,7 +509,7 @@ class CoverDelegate(QStyledItemDelegate):
         if spc < 0.01:
             self.spacing = max(10, min(50, int(0.1 * self.original_width)))
         else:
-            self.spacing = self.parent().logicalDpiX() * CM_TO_INCH * spc
+            self.spacing = int(self.parent().logicalDpiX() * CM_TO_INCH * spc)
 
     def sizeHint(self, option, index):
         return self.item_size
@@ -470,7 +526,7 @@ class CoverDelegate(QStyledItemDelegate):
                 if fm and fm['datatype'] == 'rating':
                     ans = rating_to_stars(val, fm['display'].get('allow_half_stars', False))
                     is_stars = True
-            return ('' if ans is None else unicode_type(ans)), is_stars
+            return ('' if ans is None else str(ans)), is_stars
         except Exception:
             if DEBUG:
                 import traceback
@@ -484,7 +540,7 @@ class CoverDelegate(QStyledItemDelegate):
         ans = None
         if mi is None:
             mi = db.get_proxy_metadata(book_id)
-        ans = formatter.safe_format(rule, mi, '', mi, column_name='cover_grid%d' % rule_index, template_cache=template_cache) or None
+        ans = formatter.safe_format(rule, mi, '', mi, column_name=f'cover_grid{rule_index}', template_cache=template_cache) or None
         cache[book_id][rule] = ans
         return ans, mi
 
@@ -497,16 +553,22 @@ class CoverDelegate(QStyledItemDelegate):
         if raw_icon is not None:
             ans = raw_icon.pixmap(sz, sz)
         elif name == ':ondevice':
-            ans = QIcon(I('ok.png')).pixmap(sz, sz)
+            ans = QIcon.ic('ok.png').pixmap(sz, sz)
         elif name:
-            pmap = QIcon(os.path.join(config_dir, 'cc_icons', name)).pixmap(sz, sz)
+            pmap = None
+            d = themed_icon_name(os.path.join(config_dir, 'cc_icons'), name)
+            if d is not None:
+                pmap = QIcon(d).pixmap(sz, sz)
+            if pmap is None:
+                pmap = QIcon(os.path.join(config_dir, 'cc_icons', name)).pixmap(sz, sz)
             if not pmap.isNull():
                 ans = pmap
         cache[name] = ans
         return ans
 
     def paint(self, painter, option, index):
-        QStyledItemDelegate.paint(self, painter, option, empty_index)  # draw the hover and selection highlights
+        with clip_border_radius(painter, option.rect):
+            QStyledItemDelegate.paint(self, painter, option, empty_index)  # draw the hover and selection highlights
         m = index.model()
         db = m.db
         try:
@@ -524,6 +586,12 @@ class CoverDelegate(QStyledItemDelegate):
         marked = db.data.get_marked(book_id)
         db = db.new_api
         cdata = self.cover_cache[book_id]
+        if cdata is False:
+            # Don't render anything if we haven't cached the rendered cover.
+            # This reduces subtle flashing as covers are repainted. Note that
+            # cdata is None if there isn't a cover vs an unrendered cover.
+            self.render_queue.put(book_id)
+            return
         device_connected = self.parent().gui.device_connected is not None
         on_device = device_connected and db.field_for('ondevice', book_id)
 
@@ -559,9 +627,10 @@ class CoverDelegate(QStyledItemDelegate):
                 title = db.field_for('title', book_id, default_value='')
                 authors = ' & '.join(db.field_for('authors', book_id, default_value=()))
                 painter.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
-                painter.drawText(rect, Qt.AlignmentFlag.AlignCenter|Qt.TextFlag.TextWordWrap, '%s\n\n%s' % (title, authors))
+                painter.drawText(rect, Qt.AlignmentFlag.AlignCenter|Qt.TextFlag.TextWordWrap, f'{title}\n\n{authors}')
                 if cdata is False:
                     self.render_queue.put(book_id)
+                # else if None: don't queue the request
                 if self.title_height != 0:
                     self.paint_title(painter, trect, db, book_id)
             else:
@@ -573,11 +642,12 @@ class CoverDelegate(QStyledItemDelegate):
                 dy = max(0, int((rect.height() - ch)/2.0))
                 right_adjust = dx
                 rect.adjust(dx, dy, -dx, -dy)
-                painter.drawPixmap(rect, cdata)
+                self.paint_cover(painter, rect, cdata)
                 if self.title_height != 0:
                     self.paint_title(painter, trect, db, book_id)
             if self.emblem_size > 0:
-                return  # We dont draw embossed emblems as the ondevice/marked emblems are drawn in the gutter
+                # We dont draw embossed emblems as the ondevice/marked emblems are drawn in the gutter
+                return
             if marked:
                 try:
                     p = self.marked_emblem
@@ -589,10 +659,14 @@ class CoverDelegate(QStyledItemDelegate):
                 try:
                     p = self.on_device_emblem
                 except AttributeError:
-                    p = self.on_device_emblem = QIcon(I('ok.png')).pixmap(48, 48)
+                    p = self.on_device_emblem = QIcon.ic('ok.png').pixmap(48, 48)
                 self.paint_embossed_emblem(p, painter, orect, right_adjust, left=False)
         finally:
             painter.restore()
+
+    def paint_cover(self, painter: QPainter, rect: QRect, pixmap: QPixmap):
+        with clip_border_radius(painter, rect):
+            painter.drawPixmap(rect, pixmap)
 
     def paint_title(self, painter, rect, db, book_id):
         painter.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
@@ -665,9 +739,9 @@ class CoverDelegate(QStyledItemDelegate):
             title = db.field_for('title', book_id)
             authors = db.field_for('authors', book_id)
             if title and authors:
-                title = '<b>%s</b>' % ('<br>'.join(wrap(p(title), 120)))
+                title = '<b>{}</b>'.format('<br>'.join(wrap(p(title), 120)))
                 authors = '<br>'.join(wrap(p(' & '.join(authors)), 120))
-                tt = '%s<br><br>%s' % (title, authors)
+                tt = f'{title}<br><br>{authors}'
                 series = db.field_for('series', book_id)
                 if series:
                     use_roman_numbers=config['use_roman_numerals_for_series_number']
@@ -685,17 +759,23 @@ class CoverDelegate(QStyledItemDelegate):
 # }}}
 
 
+CoverTuple = namedtuple('CoverTuple', ['book_id', 'has_cover', 'cache_valid',
+                                     'cdata', 'timestamp'])
+
+
 # The View {{{
 
 @setup_dnd_interface
 class GridView(QListView):
 
-    update_item = pyqtSignal(object)
+    update_item = pyqtSignal(object, object)
     files_dropped = pyqtSignal(object)
     books_dropped = pyqtSignal(object)
 
     def __init__(self, parent):
         QListView.__init__(self, parent)
+        self.shift_click_start_data = None
+        self.dbref = lambda: None
         self._ncols = None
         self.gesture_manager = GestureManager(self)
         setup_dnd_interface(self)
@@ -716,8 +796,12 @@ class GridView(QListView):
         self.set_color()
         self.ignore_render_requests = Event()
         dpr = self.device_pixel_ratio
+        # Up the version number if anything changes in how images are stored in
+        # the cache.
         self.thumbnail_cache = ThumbnailCache(max_size=gprefs['cover_grid_disk_cache_size'],
-            thumbnail_size=(int(dpr * self.delegate.cover_size.width()), int(dpr * self.delegate.cover_size.height())))
+            thumbnail_size=(int(dpr * self.delegate.cover_size.width()),
+                            int(dpr * self.delegate.cover_size.height())),
+            version=1)
         self.render_thread = None
         self.update_item.connect(self.re_render, type=Qt.ConnectionType.QueuedConnection)
         self.doubleClicked.connect(self.double_clicked)
@@ -733,20 +817,15 @@ class GridView(QListView):
         t.timeout.connect(self.update_memory_cover_cache_size)
 
     def viewportEvent(self, ev):
-        try:
+        if hasattr(self, 'gesture_manager'):
             ret = self.gesture_manager.handle_event(ev)
-        except AttributeError:
-            ret = None
-        if ret is not None:
-            return ret
-        return QListView.viewportEvent(self, ev)
+            if ret is not None:
+                return ret
+        return super().viewportEvent(ev)
 
     @property
     def device_pixel_ratio(self):
-        try:
-            return self.devicePixelRatioF()
-        except AttributeError:
-            return self.devicePixelRatio()
+        return self.devicePixelRatioF()
 
     @property
     def first_visible_row(self):
@@ -804,15 +883,16 @@ class GridView(QListView):
         r, g, b = gprefs['cover_grid_color']
         tex = gprefs['cover_grid_texture']
         pal = self.palette()
-        pal.setColor(QPalette.ColorRole.Base, QColor(r, g, b))
+        bgcol = QColor(r, g, b)
+        pal.setColor(QPalette.ColorRole.Base, bgcol)
         self.setPalette(pal)
-        ss = ''
+        ss = f'background-color: {bgcol.name()}; border: 0px solid {bgcol.name()};'
         if tex:
             from calibre.gui2.preferences.texture_chooser import texture_path
             path = texture_path(tex)
             if path:
                 path = os.path.abspath(path).replace(os.sep, '/')
-                ss += 'background-image: url({});'.format(path)
+                ss += f'background-image: url({path});'
                 ss += 'background-attachment: fixed;'
                 pm = QPixmap(path)
                 if not pm.isNull():
@@ -820,9 +900,9 @@ class GridView(QListView):
                     r, g, b = qRed(val), qGreen(val), qBlue(val)
         dark = max(r, g, b) < 115
         col = '#eee' if dark else '#111'
-        ss += 'color: {};'.format(col)
+        ss += f'color: {col};'
         self.delegate.highlight_color = QColor(col)
-        self.setStyleSheet('QListView {{ {} }}'.format(ss))
+        self.setStyleSheet(f'QListView {{ {ss} }}')
 
     def refresh_settings(self):
         size_changed = (
@@ -871,12 +951,11 @@ class GridView(QListView):
     def shown(self):
         self.update_memory_cover_cache_size()
         if self.render_thread is None:
-            self.thumbnail_cache.set_database(self.gui.current_db)
-            self.render_thread = Thread(target=self.render_covers)
-            self.render_thread.daemon = True
-            self.render_thread.start()
+            self.fetch_thread = Thread(target=self.fetch_covers)
+            self.fetch_thread.daemon = True
+            self.fetch_thread.start()
 
-    def render_covers(self):
+    def fetch_covers(self):
         q = self.delegate.render_queue
         while True:
             book_id = q.get()
@@ -885,73 +964,177 @@ class GridView(QListView):
                     return
                 if self.ignore_render_requests.is_set():
                     continue
+                thumb = None
                 try:
-                    self.render_cover(book_id)
-                except:
+                    # Fetch the cover from the cache or file system
+                    cover_tuple = self.fetch_cover_from_cache(book_id)
+                    if cover_tuple is not None:
+                        # Render/resize the cover.
+                        thumb = self.make_thumbnail(cover_tuple)
+                except Exception:
                     import traceback
                     traceback.print_exc()
+                # Tell the GUI to redisplay the thumbnail with the new image
+                self.update_item.emit(book_id, thumb)
+
             finally:
                 q.task_done()
 
-    def render_cover(self, book_id):
-        if self.ignore_render_requests.is_set():
-            return
-        dpr = self.device_pixel_ratio
-        page_width = int(dpr * self.delegate.cover_size.width())
-        page_height = int(dpr * self.delegate.cover_size.height())
-        tcdata, timestamp = self.thumbnail_cache[book_id]
-        use_cache = False
-        if timestamp is None:
-            # Not in cache
-            has_cover, cdata, timestamp = self.model().db.new_api.cover_or_cache(book_id, 0)
-        else:
-            has_cover, cdata, timestamp = self.model().db.new_api.cover_or_cache(book_id, timestamp)
-            if has_cover and cdata is None:
-                # The cached cover is fresh
-                cdata = tcdata
-                use_cache = True
+    def fetch_cover_from_cache(self, book_id):
+        '''
+        This method fetches the cover from the cache if it exists, otherwise the
+        cover.jpg stored in the library.
 
-        if has_cover:
-            p = QImage()
-            p.loadFromData(cdata, CACHE_FORMAT if cdata is tcdata else 'JPEG')
-            p.setDevicePixelRatio(dpr)
-            if p.isNull() and cdata is tcdata:
-                # Invalid image in cache
-                self.thumbnail_cache.invalidate((book_id,))
-                self.update_item.emit(book_id)
-                return
-            cdata = None if p.isNull() else p
-            if not use_cache:  # cache is stale
-                if cdata is not None:
-                    width, height = p.width(), p.height()
-                    scaled, nwidth, nheight = fit_image(
-                        width, height, page_width, page_height)
-                    if scaled:
-                        if self.ignore_render_requests.is_set():
-                            return
-                        p = p.scaled(nwidth, nheight, Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.SmoothTransformation)
-                        p.setDevicePixelRatio(dpr)
-                    cdata = p
-                # update cache
-                if cdata is None:
-                    self.thumbnail_cache.invalidate((book_id,))
+        It is called on the cover thread.
+
+        It returns a CoverTuple containing the following cover and cache data:
+
+        book_id: The id of the book for which a cover is wanted.
+        has_cover: True if the book has an associated cover image file.
+        cdata: Cover data. Can be None (no cover data), or a rendered cover image.
+        cache_valid: True if the cache has correct data, False if a cover exists
+                     but isn't in the cache, None if the cache has data but the
+                     cover has been deleted.
+        timestamp: the cover file modtime if the cover came from the file system,
+                   the timestamp in the cache if a valid cover is in the cache,
+                   otherwise None.
+        '''
+        if self.ignore_render_requests.is_set():
+            return None
+        db = self.dbref()
+        if db is None:
+            return None
+        tc = self.thumbnail_cache
+        cdata, timestamp = tc[book_id]  # None, None if not cached.
+        if timestamp is None:
+            # Cover not in cache. Try to read the cover from the library.
+            has_cover, cdata, timestamp = db.new_api.cover_or_cache(book_id, 0, as_what='pil_image')
+            if has_cover:
+                # There is a cover.jpg, already rendered as a pil_image
+                cache_valid = False
+            else:
+                # No cover.jpg
+                cache_valid = None
+        else:
+            # A cover is in the cache. Check whether it is up to date.
+            # Note that if tcdata is not None then it is already a PIL image.
+            has_cover, tcdata, timestamp = db.new_api.cover_or_cache(book_id, timestamp,
+                                                                     as_what='pil_image')
+            if has_cover:
+                if tcdata is None:
+                    from PIL import Image
+                    # The cached cover is up-to-date. Convert the cached bytes
+                    # to a PIL image
+                    cache_valid = True
+                    cdata = Image.open(BytesIO(cdata))
                 else:
+                    # The cached cover is stale
+                    cache_valid = False
+                    cdata = tcdata
+            else:
+                # We found a cached cover for a book without a cover. This can
+                # happen in older version of calibre that can reuse book_ids
+                # between libraries and books in one library have covers where
+                # they don't in another library. This version doesn't have the
+                # problem because the cache UUID is set when the database
+                # changes instead of when the cache thread is created.
+                tc.invalidate((book_id,))
+                cache_valid = None
+                cdata = None
+        if has_cover and cdata is None:
+            raise RuntimeError('No cover data when has_cover is True')
+        return CoverTuple(book_id=book_id, has_cover=has_cover, cache_valid=cache_valid,
+                          cdata=cdata, timestamp=timestamp)
+
+    def make_thumbnail(self, cover_tuple):
+        # Render the cover image data to the thumbnail size and correct format.
+        # Rendering isn't needed if the cover came from the cache and the cache
+        # is valid. Put newly rendered images into the cache. Returns the
+        # thumbnail as a PIL Image. This method is called on the cover thread.
+
+        cdata = cover_tuple.cdata
+        book_id = cover_tuple.book_id
+        tc = self.thumbnail_cache
+        thumb = None
+        if cover_tuple.has_cover:
+            # cdata contains either the resized thumbnail, the full cover.jpg
+            # rendered as a PIL image, or None if cover.jpg isn't valid
+            if not cover_tuple.cache_valid:
+                # The cover isn't in the cache, is stale, or isn't a valid
+                # image. We might have the image from cover.jpg, in which case
+                # make it into a thumbnail.
+                if cdata is not None:
+                    # We have an image from cover.jpg. Scale it by creating a thumbnail
+                    dpr = self.device_pixel_ratio
+                    page_width = int(dpr * self.delegate.cover_size.width())
+                    page_height = int(dpr * self.delegate.cover_size.height())
+                    scaled, nwidth, nheight = fit_image(cdata.width, cdata.height,
+                                                        page_width, page_height)
+                    if scaled:
+                        # The image is the wrong size. Scale it.
+                        if self.ignore_render_requests.is_set():
+                            return None
+                        # The PIL thumbnail operation works in-place, changing
+                        # the source image.
+                        cdata.thumbnail((int(nwidth), int(nheight)))
+                        thumb = cdata
+                    # Put the new thumbnail into the cache.
                     try:
-                        self.thumbnail_cache.insert(book_id, timestamp, image_to_data(cdata))
-                    except EncodeError as err:
-                        self.thumbnail_cache.invalidate((book_id,))
-                        prints(err)
+                        with BytesIO() as buf:
+                            cdata.save(buf, format=CACHE_FORMAT)
+                            # use getbuffer() instead of getvalue() to avoid a copy
+                            tc.insert(book_id, cover_tuple.timestamp, buf.getbuffer())
+                        thumb = cdata
                     except Exception:
+                        tc.invalidate((book_id,))
                         import traceback
                         traceback.print_exc()
-        elif tcdata is not None:
-            # Cover was removed, but it exists in cache, remove from cache
-            self.thumbnail_cache.invalidate((book_id,))
-        self.delegate.cover_cache.set(book_id, cdata)
-        self.update_item.emit(book_id)
+                else:
+                    # The cover data isn't valid. Remove it from the cache
+                    tc.invalidate((book_id,))
+            else:
+                # Test to see if there is something wrong with the cover data in
+                # the cache. If so, remove it from the cache and queue it to
+                # render again. It isn't clear that this can ever happen. One
+                # possibility is if different versions of calibre are used
+                # interchangeably.
+                def getbbox(img):
+                    try:
+                        return img.getbbox()
+                    except Exception:
+                        return None
+                if getbbox(cdata) is None:
+                    tc.invalidate((book_id,))
+                    self.render_queue.put(book_id)
+                    return None
+                # The data from the cover cache is valid and is already a thumb.
+                thumb = cdata
+        else:
+            # The book doesn't have a cover.
+            if cover_tuple.cache_valid is not None:
+                # Cover was removed, but it exists in cache. Remove it from the cache
+                tc.invalidate((book_id,))
+            thumb = None
+        # Conversion to QPixmap needs RGBA data. Do it here rather than in the
+        # GUI thread. This check doesn't need to be wrapped in
+        #     if thumb is not None:
+        # because None is a first-class object with no attributes.
+        if getattr(thumb, 'mode', None) == 'RGB':
+            thumb = thumb.convert('RGBA')
+        # Return the thumbnail, which is either None or a PIL Image. If not None
+        # the image will be converted to a QPixmap on the GUI thread. Putting
+        # None into the CoverCache ensures re-rendering won't try again.
+        return thumb
 
-    def re_render(self, book_id):
+    def re_render(self, book_id, thumb):
+        # This is called on the GUI thread when a cover thumbnail is not in the
+        # CoverCache. The parameter "thumb" is either None if there is no cover
+        # or a PIL Image of the thumbnail.
         self.delegate.cover_cache.clear_staging()
+        if thumb is not None:
+            # Convert the image to a QPixmap
+            thumb = convert_PIL_image_to_pixmap(thumb, self.device_pixel_ratio)
+        self.delegate.cover_cache.set(book_id, thumb)
         m = self.model()
         try:
             index = m.db.row(book_id)
@@ -965,6 +1148,7 @@ class GridView(QListView):
         self.thumbnail_cache.shutdown()
 
     def set_database(self, newdb, stage=0):
+        self.dbref = weakref.ref(newdb)
         if stage == 0:
             self.ignore_render_requests.set()
             try:
@@ -974,6 +1158,9 @@ class GridView(QListView):
                 pass  # db is None
             for x in (self.delegate.cover_cache, self.thumbnail_cache):
                 newdb.new_api.add_cover_cache(x)
+            # This must be done here so the UUID in the cache is changed when
+            # libraries are switched.
+            self.thumbnail_cache.set_database(newdb)
             try:
                 # Use a timeout so that if, for some reason, the render thread
                 # gets stuck, we dont deadlock, future covers won't get
@@ -993,7 +1180,7 @@ class GridView(QListView):
         # Create a range based selector for each set of contiguous rows
         # as supplying selectors for each individual row causes very poor
         # performance if a large number of rows has to be selected.
-        for k, g in itertools.groupby(enumerate(rows), lambda i_x:i_x[0]-i_x[1]):
+        for k, g in itertools.groupby(enumerate(rows), lambda i_x: i_x[0]-i_x[1]):
             group = list(map(operator.itemgetter(1), g))
             sel.merge(QItemSelection(m.index(min(group), 0), m.index(max(group), 0)), QItemSelectionModel.SelectionFlag.Select)
         sm.select(sel, QItemSelectionModel.SelectionFlag.ClearAndSelect)
@@ -1033,21 +1220,54 @@ class GridView(QListView):
     def restore_hpos(self, hpos):
         pass
 
+    def handle_mouse_move_event(self, ev):
+        # handle shift drag to extend selections
+        if not QApplication.keyboardModifiers() & Qt.KeyboardModifier.ShiftModifier:
+            return super().mouseMoveEvent(ev)
+        index = self.indexAt(ev.pos())
+        if not index.isValid() or not self.shift_click_start_data:
+            return
+        m = self.model()
+        ci = m.index(self.shift_click_start_data[0], 0)
+        if not ci.isValid():
+            return
+        sm = self.selectionModel()
+        sm.setCurrentIndex(index, QItemSelectionModel.SelectionFlag.NoUpdate)
+        if not sm.hasSelection():
+            sm.select(index, QItemSelectionModel.SelectionFlag.ClearAndSelect)
+            return True
+        cr = ci.row()
+        tgt = index.row()
+        if cr == tgt:
+            sm.select(index, QItemSelectionModel.SelectionFlag.Select)
+            return
+        if cr < tgt:
+            # mouse is moved after the start pos
+            top = min(self.shift_click_start_data[1], cr)
+            bottom = tgt
+        else:
+            top = tgt
+            bottom = max(self.shift_click_start_data[2], cr)
+        sm.select(QItemSelection(m.index(top, 0), m.index(bottom, 0)), QItemSelectionModel.SelectionFlag.ClearAndSelect)
+
     def handle_mouse_press_event(self, ev):
-        if QApplication.keyboardModifiers() & Qt.KeyboardModifier.ShiftModifier:
-            # Shift-Click in QListView is broken. It selects extra items in
-            # various circumstances, for example, click on some item in the
-            # middle of a row then click on an item in the next row, all items
-            # in the first row will be selected instead of only items after the
-            # middle item.
-            index = self.indexAt(ev.pos())
-            if not index.isValid():
-                return
-            ci = self.currentIndex()
-            sm = self.selectionModel()
-            sm.setCurrentIndex(index, QItemSelectionModel.SelectionFlag.NoUpdate)
+        # Shift-Click in QListView is broken. It selects extra items in
+        # various circumstances, for example, click on some item in the
+        # middle of a row then click on an item in the next row, all items
+        # in the first row will be selected instead of only items after the
+        # middle item.
+        if not QApplication.keyboardModifiers() & Qt.KeyboardModifier.ShiftModifier:
+            return super().mousePressEvent(ev)
+        self.shift_click_start_data = None
+        index = self.indexAt(ev.pos())
+        if not index.isValid():
+            return
+        sm = self.selectionModel()
+        ci = self.currentIndex()
+        try:
             if not ci.isValid():
                 return
+            sm.setCurrentIndex(index, QItemSelectionModel.SelectionFlag.NoUpdate)
             if not sm.hasSelection():
                 sm.select(index, QItemSelectionModel.SelectionFlag.ClearAndSelect)
                 return
@@ -1056,8 +1276,16 @@ class GridView(QListView):
             top = self.model().index(min(cr, tgt), 0)
             bottom = self.model().index(max(cr, tgt), 0)
             sm.select(QItemSelection(top, bottom), QItemSelectionModel.SelectionFlag.Select)
-        else:
-            return QListView.mousePressEvent(self, ev)
+        finally:
+            min_row = self.model().rowCount(QModelIndex())
+            max_row = -1
+            for idx in sm.selectedIndexes():
+                r = idx.row()
+                if r < min_row:
+                    min_row = r
+                elif r > max_row:
+                    max_row = r
+            self.shift_click_start_data = index.row(), min_row, max_row
 
     def indices_for_merge(self, resolved=True):
         return self.selectionModel().selectedIndexes()
@@ -1141,6 +1369,7 @@ class GridView(QListView):
                 pass
 
     def moveCursor(self, action, modifiers):
+        action = QAbstractItemView.CursorAction(action)
         index = QListView.moveCursor(self, action, modifiers)
         if action in (QAbstractItemView.CursorAction.MoveLeft, QAbstractItemView.CursorAction.MoveRight) and index.isValid():
             ci = self.currentIndex()
@@ -1151,12 +1380,13 @@ class GridView(QListView):
         return index
 
     def selectionCommand(self, index, event):
-        if event and event.type() == QEvent.Type.KeyPress and event.key() in (Qt.Key.Key_Home, Qt.Key.Key_End) and event.modifiers() & Qt.Modifier.CTRL:
+        if event and event.type() == QEvent.Type.KeyPress and event.key() in (Qt.Key.Key_Home, Qt.Key.Key_End
+                                    ) and event.modifiers() & Qt.KeyboardModifier.ControlModifier:
             return QItemSelectionModel.SelectionFlag.ClearAndSelect | QItemSelectionModel.SelectionFlag.Rows
-        return super(GridView, self).selectionCommand(index, event)
+        return super().selectionCommand(index, event)
 
     def wheelEvent(self, ev):
-        if ev.phase() not in (Qt.ScrollPhase.ScrollUpdate, 0, Qt.ScrollPhase.ScrollMomentum):
+        if ev.phase() not in (Qt.ScrollPhase.ScrollUpdate, Qt.ScrollPhase.NoScrollPhase, Qt.ScrollPhase.ScrollMomentum):
             return
         number_of_pixels = ev.pixelDelta()
         number_of_degrees = ev.angleDelta() / 8.0
@@ -1179,6 +1409,6 @@ class GridView(QListView):
         if size_changed:
             self.delegate.cover_cache.clear()
 
-        return super(GridView, self).paintEvent(ev)
+        return super().paintEvent(ev)
 
 # }}}

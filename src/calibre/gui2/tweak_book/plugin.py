@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 
 
 __license__ = 'GPL v3'
@@ -7,6 +6,7 @@ __copyright__ = '2014, Kovid Goyal <kovid at kovidgoyal.net>'
 
 import importlib
 import sys
+
 from qt.core import QToolButton
 
 from calibre import prints
@@ -14,11 +14,10 @@ from calibre.customize import PluginInstallationType
 from calibre.customize.ui import all_edit_book_tool_plugins
 from calibre.gui2.tweak_book import current_container, tprefs
 from calibre.gui2.tweak_book.boss import get_boss
-from polyglot.builtins import itervalues, unicode_type
+from polyglot.builtins import itervalues
 
 
 class Tool:
-
     '''
     The base class for individual tools in an Edit Book plugin. Useful members include:
 
@@ -81,7 +80,7 @@ class Tool:
         :param description: An optional longer description of this action, it
             will be used in the preferences entry for this shortcut.
         '''
-        short_text = short_text or unicode_type(qaction.text()).replace('&&', '\0').replace('&', '').replace('\0', '&')
+        short_text = short_text or str(qaction.text()).replace('&&', '\0').replace('&', '').replace('\0', '&')
         self.gui.keyboard.register_shortcut(
             self.name + '_' + unique_name, short_text, default_keys=default_keys, action=qaction,
             description=description or '', group=_('Plugins'))
@@ -144,7 +143,7 @@ def create_plugin_action(plugin, tool, for_toolbar, actions=None, toolbar_action
         return
     sid = plugin_action_sid(plugin, tool, for_toolbar)
     if actions is not None and sid in actions:
-        prints('The %s tool from the %s plugin has a non unique name, ignoring' % (tool.name, plugin.name))
+        prints(f'The {tool.name} tool from the {plugin.name} plugin has a non unique name, ignoring')
     else:
         if actions is not None:
             actions[sid] = ac

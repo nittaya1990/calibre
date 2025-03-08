@@ -1,69 +1,94 @@
-"""
+'''
 Container-/OPF-based input OEBBook reader.
-"""
+'''
 
 
 __license__   = 'GPL v3'
 __copyright__ = '2008, Marshall T. Vandegrift <llasram@gmail.com>'
 
-import sys, os, uuid, copy, re, io
+import copy
+import io
+import os
+import re
+import sys
+import uuid
 from collections import defaultdict
 
 from lxml import etree
 
-from calibre.ebooks.oeb.base import OPF1_NS, OPF2_NS, OPF2_NSMAP, DC11_NS, \
-    DC_NSES, OPF, xml2text, XHTML_MIME
-from calibre.ebooks.oeb.base import OEB_DOCS, OEB_STYLES, OEB_IMAGES, \
-    PAGE_MAP_MIME, JPEG_MIME, NCX_MIME, SVG_MIME
-from calibre.ebooks.oeb.base import XMLDECL_RE, COLLAPSE_RE, \
-    MS_COVER_TYPE, iterlinks
-from calibre.ebooks.oeb.base import namespace, barename, XPath, xpath, \
-                                    urlnormalize, BINARY_MIME, \
-                                    OEBError, OEBBook, DirContainer
-from calibre.ebooks.oeb.writer import OEBWriter
-from calibre.utils.xml_parse import safe_xml_fromstring
-from calibre.utils.cleantext import clean_xml_chars
-from calibre.utils.localization import get_lang
-from calibre.ptempfile import TemporaryDirectory
-from calibre.constants import __appname__, __version__
 from calibre import guess_type, xml_replace_entities
-from polyglot.builtins import unicode_type, zip
+from calibre.constants import __appname__, __version__
+from calibre.ebooks.oeb.base import (
+    BINARY_MIME,
+    COLLAPSE_RE,
+    DC11_NS,
+    DC_NSES,
+    JPEG_MIME,
+    MS_COVER_TYPE,
+    NCX_MIME,
+    OEB_DOCS,
+    OEB_IMAGES,
+    OEB_STYLES,
+    OPF,
+    OPF1_NS,
+    OPF2_NS,
+    OPF2_NSMAP,
+    PAGE_MAP_MIME,
+    SVG_MIME,
+    XHTML_MIME,
+    XMLDECL_RE,
+    DirContainer,
+    OEBBook,
+    OEBError,
+    XPath,
+    barename,
+    iterlinks,
+    namespace,
+    urlnormalize,
+    xml2text,
+    xpath,
+)
+from calibre.ebooks.oeb.writer import OEBWriter
+from calibre.ptempfile import TemporaryDirectory
+from calibre.utils.cleantext import clean_xml_chars
+from calibre.utils.localization import __, get_lang
+from calibre.utils.xml_parse import safe_xml_fromstring
 from polyglot.urllib import unquote, urldefrag, urlparse
 
 __all__ = ['OEBReader']
 
 
 class OEBReader:
-    """Read an OEBPS 1.x or OPF/OPS 2.0 file collection."""
+    '''Read an OEBPS 1.x or OPF/OPS 2.0 file collection.'''
 
     COVER_SVG_XP    = XPath('h:body//svg:svg[position() = 1]')
     COVER_OBJECT_XP = XPath('h:body//h:object[@data][position() = 1]')
 
     Container = DirContainer
-    """Container type used to access book files.  Override in sub-classes."""
+    '''Container type used to access book files.  Override in sub-classes.'''
 
     DEFAULT_PROFILE = 'PRS505'
-    """Default renderer profile for content read with this Reader."""
+    '''Default renderer profile for content read with this Reader.'''
 
     TRANSFORMS = []
-    """List of transforms to apply to content read with this Reader."""
+    '''List of transforms to apply to content read with this Reader.'''
 
     @classmethod
     def config(cls, cfg):
-        """Add any book-reading options to the :class:`Config` object
+        '''Add any book-reading options to the :class:`Config` object
         :param:`cfg`.
-        """
+        '''
         return
 
     @classmethod
     def generate(cls, opts):
-        """Generate a Reader instance from command-line options."""
+        '''Generate a Reader instance from command-line options.'''
         return cls()
 
     def __call__(self, oeb, path):
-        """Read the book at :param:`path` into the :class:`OEBBook` object
+        '''Read the book at :param:`path` into the :class:`OEBBook` object
         :param:`oeb`.
-        """
+        '''
         self.oeb = oeb
         self.logger = self.log = oeb.logger
         oeb.container = self.Container(path, self.logger)
@@ -81,6 +106,8 @@ class OEBReader:
                 elem.tag = OPF(barename(elem.tag))
         nsmap.update(OPF2_NSMAP)
         attrib = dict(opf.attrib)
+        if xmlns := attrib.pop('xmlns:', None):
+            attrib['xmlns'] = xmlns
         nroot = etree.Element(OPF('package'),
             nsmap={None: OPF2_NS}, attrib=attrib)
         metadata = etree.SubElement(nroot, OPF('metadata'), nsmap=nsmap)
@@ -90,10 +117,10 @@ class OEBReader:
                 continue
             if namespace(elem.tag) in DC_NSES:
                 tag = barename(elem.tag).lower()
-                elem.tag = '{%s}%s' % (DC11_NS, tag)
+                elem.tag = f'{{{DC11_NS}}}{tag}'
             if elem.tag.startswith('dc:'):
                 tag = elem.tag.partition(':')[-1].lower()
-                elem.tag = '{%s}%s' % (DC11_NS, tag)
+                elem.tag = f'{{{DC11_NS}}}{tag}'
             metadata.append(elem)
         for element in xpath(opf, 'o2:metadata//o2:meta'):
             metadata.append(element)
@@ -124,7 +151,7 @@ class OEBReader:
 
         ns = namespace(opf.tag)
         if ns not in ('', OPF1_NS, OPF2_NS):
-            raise OEBError('Invalid namespace %r for OPF document' % ns)
+            raise OEBError(f'Invalid namespace {ns!r} for OPF document')
         opf = self._clean_opf(opf)
         return opf
 
@@ -141,11 +168,10 @@ class OEBReader:
             mi.language = get_lang().replace('_', '-')
         self.oeb.metadata.add('language', mi.language)
         if not mi.book_producer:
-            mi.book_producer = '%(a)s (%(v)s) [http://%(a)s-ebook.com]'%\
-                dict(a=__appname__, v=__version__)
+            mi.book_producer = '{a} ({v}) [http://{a}-ebook.com]'.format(**dict(a=__appname__, v=__version__))
         meta_info_to_oeb_metadata(mi, self.oeb.metadata, self.logger)
         m = self.oeb.metadata
-        m.add('identifier', unicode_type(uuid.uuid4()), id='uuid_id', scheme='uuid')
+        m.add('identifier', str(uuid.uuid4()), id='uuid_id', scheme='uuid')
         self.oeb.uid = self.oeb.metadata.identifier[-1]
         if not m.title:
             m.add('title', self.oeb.translate(__('Unknown')))
@@ -172,8 +198,7 @@ class OEBReader:
                 except KeyboardInterrupt:
                     raise
                 except:
-                    self.logger.exception('Failed to parse content in %s'%
-                            item.href)
+                    self.logger.exception(f'Failed to parse content in {item.href}')
                     bad.append(item)
                     self.oeb.manifest.remove(item)
         return bad
@@ -194,7 +219,7 @@ class OEBReader:
                         data = item.data
                     except:
                         self.oeb.log.exception('Failed to read from manifest '
-                                'entry with id: %s, ignoring'%item.id)
+                                f'entry with id: {item.id}, ignoring')
                         invalid.add(item)
                         continue
                 if data is None:
@@ -213,7 +238,7 @@ class OEBReader:
                             scheme = urlparse(href).scheme
                         except:
                             self.oeb.log.exception(
-                                'Skipping invalid href: %r'%href)
+                                f'Skipping invalid href: {href!r}')
                             continue
                         if not scheme and href not in known:
                             new.add(href)
@@ -241,11 +266,11 @@ class OEBReader:
                     continue
                 if not self.oeb.container.exists(href):
                     if href not in warned:
-                        self.logger.warn('Referenced file %r not found' % href)
+                        self.logger.warn(f'Referenced file {href!r} not found')
                         warned.add(href)
                     continue
                 if href not in warned:
-                    self.logger.warn('Referenced file %r not in manifest' % href)
+                    self.logger.warn(f'Referenced file {href!r} not in manifest')
                     warned.add(href)
                 id, _ = manifest.generate(id='added')
                 guessed = guess_type(href)[0]
@@ -271,13 +296,13 @@ class OEBReader:
                 media_type = media_type.lower()
             fallback = elem.get('fallback')
             if href in manifest.hrefs:
-                self.logger.warn('Duplicate manifest entry for %r' % href)
+                self.logger.warn(f'Duplicate manifest entry for {href!r}')
                 continue
             if not self.oeb.container.exists(href):
-                self.logger.warn('Manifest item %r not found' % href)
+                self.logger.warn(f'Manifest item {href!r} not found')
                 continue
             if id in manifest.ids:
-                self.logger.warn('Duplicate manifest id %r' % id)
+                self.logger.warn(f'Duplicate manifest id {id!r}')
                 id, href = manifest.generate(id, href)
             manifest.add(id, href, media_type, fallback)
         invalid = self._manifest_prune_invalid()
@@ -319,7 +344,7 @@ class OEBReader:
                 continue
             if version >= 2:
                 self.logger.warn(
-                    'Spine-referenced file %r not in spine' % item.href)
+                    f'Spine-referenced file {item.href!r} not in spine')
             spine.add(item, linear=False)
 
     def _spine_from_opf(self, opf):
@@ -328,7 +353,7 @@ class OEBReader:
         for elem in xpath(opf, '/o2:package/o2:spine/o2:itemref'):
             idref = elem.get('idref')
             if idref not in manifest.ids:
-                self.logger.warn('Spine item %r not found' % idref)
+                self.logger.warn(f'Spine item {idref!r} not found')
                 continue
             item = manifest.ids[idref]
             if item.media_type.lower() in OEB_DOCS and hasattr(item.data, 'xpath') and not getattr(item.data, 'tag', '').endswith('}ncx'):
@@ -338,10 +363,10 @@ class OEBReader:
                     item.media_type = XHTML_MIME
                     spine.add(item, elem.get('linear'))
                 else:
-                    self.oeb.log.warn('The item %s is not a XML document.'
-                        ' Removing it from spine.'%item.href)
+                    self.oeb.log.warn(f'The item {item.href} is not a XML document.'
+                        ' Removing it from spine.')
         if len(spine) == 0:
-            raise OEBError("Spine is empty")
+            raise OEBError('Spine is empty')
         self._spine_add_extra()
         for val in xpath(opf, '/o2:package/o2:spine/@page-progression-direction'):
             if val in {'ltr', 'rtl'}:
@@ -360,7 +385,7 @@ class OEBReader:
                         corrected_href = href
                         break
                 if corrected_href is None:
-                    self.logger.warn('Guide reference %r not found' % ref_href)
+                    self.logger.warn(f'Guide reference {ref_href!r} not found')
                     continue
                 ref_href = corrected_href
             typ = elem.get('type')
@@ -399,7 +424,7 @@ class OEBReader:
             if path and path not in self.oeb.manifest.hrefs:
                 path = urlnormalize(path)
             if href and path not in self.oeb.manifest.hrefs:
-                self.logger.warn('TOC reference %r not found' % href)
+                self.logger.warn(f'TOC reference {href!r} not found')
                 gc = xpath(child, 'ncx:navPoint')
                 if not gc:
                     # This node is useless
@@ -448,7 +473,7 @@ class OEBReader:
         ncx = item.data
         title = ''.join(xpath(ncx, 'ncx:docTitle/ncx:text/text()'))
         title = COLLAPSE_RE.sub(' ', title.strip())
-        title = title or unicode_type(self.oeb.metadata.title[0])
+        title = title or str(self.oeb.metadata.title[0])
         toc = self.oeb.toc
         toc.title = title
         navmaps = xpath(ncx, 'ncx:navMap')
@@ -472,7 +497,7 @@ class OEBReader:
                 continue
             path, _ = urldefrag(urlnormalize(href))
             if path not in self.oeb.manifest.hrefs:
-                self.logger.warn('TOC reference %r not found' % href)
+                self.logger.warn(f'TOC reference {href!r} not found')
                 continue
             id = site.get('id')
             toc.add(title, href, id=id)
@@ -486,9 +511,9 @@ class OEBReader:
         item = self.oeb.manifest.hrefs[itempath]
         html = item.data
         if frag:
-            elems = xpath(html, './/*[@id="%s"]' % frag)
+            elems = xpath(html, f'.//*[@id="{frag}"]')
             if not elems:
-                elems = xpath(html, './/*[@name="%s"]' % frag)
+                elems = xpath(html, f'.//*[@name="{frag}"]')
             elem = elems[0] if elems else html
             while elem != html and not xpath(elem, './/h:a[@href]'):
                 elem = elem.getparent()
@@ -626,7 +651,7 @@ class OEBReader:
             writer = OEBWriter()
             writer(self.oeb, tdir)
             path = os.path.join(tdir, unquote(hcover.href))
-            data = render_html_svg_workaround(path, self.logger)
+            data = render_html_svg_workaround(path, self.logger, root=tdir)
             if not data:
                 data = b''
         id, href = self.oeb.manifest.generate('cover', 'cover.jpg')
@@ -635,12 +660,12 @@ class OEBReader:
 
     def _locate_cover_image(self):
         if self.oeb.metadata.cover:
-            id = unicode_type(self.oeb.metadata.cover[0])
+            id = str(self.oeb.metadata.cover[0])
             item = self.oeb.manifest.ids.get(id, None)
             if item is not None and item.media_type in OEB_IMAGES:
                 return item
             else:
-                self.logger.warn('Invalid cover image @id %r' % id)
+                self.logger.warn(f'Invalid cover image @id {id!r}')
         hcover = self.oeb.spine[0]
         if 'cover' in self.oeb.guide:
             href = self.oeb.guide['cover'].href

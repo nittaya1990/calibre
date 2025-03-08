@@ -1,6 +1,3 @@
-# -*- coding: utf-8 -*-
-
-
 __license__ = 'GPL 3'
 __copyright__ = '2010, Hiroshi Miura <miurahr@linux.com>'
 __docformat__ = 'restructuredtext en'
@@ -10,9 +7,9 @@ Decode unicode text to an ASCII representation of the text in Vietnamese.
 
 '''
 
+from calibre.ebooks.unihandecode.unicodepoints import CODEPOINTS
 from calibre.ebooks.unihandecode.unidecoder import Unidecoder
 from calibre.ebooks.unihandecode.vncodepoints import CODEPOINTS as HANCODES
-from calibre.ebooks.unihandecode.unicodepoints import CODEPOINTS
 
 
 class Vndecoder(Unidecoder):

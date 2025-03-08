@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 
 
 __license__ = 'GPL v3'
@@ -8,12 +7,27 @@ __copyright__ = '2013, Kovid Goyal <kovid at kovidgoyal.net>'
 import sys
 
 from qt.core import (
-    QMainWindow, Qt, QApplication, pyqtSignal, QLabel, QIcon, QFormLayout, QSize,
-    QDialog, QSpinBox, QCheckBox, QDialogButtonBox, QToolButton, QMenu, QInputDialog)
+    QApplication,
+    QCheckBox,
+    QDialog,
+    QDialogButtonBox,
+    QFormLayout,
+    QIcon,
+    QInputDialog,
+    QLabel,
+    QMainWindow,
+    QMenu,
+    QSize,
+    QSpinBox,
+    Qt,
+    QToolButton,
+    pyqtSignal,
+)
 
 from calibre.gui2 import error_dialog
-from calibre.gui2.tweak_book import actions, tprefs, editors
+from calibre.gui2.tweak_book import actions, editors, tprefs
 from calibre.gui2.tweak_book.editor.canvas import Canvas
+from calibre.startup import connect_lambda
 from polyglot.builtins import itervalues
 
 
@@ -58,7 +72,7 @@ class ResizeDialog(QDialog):  # {{{
             oval = val / self.aspect_ratio if which == 'width' else val * self.aspect_ratio
             other = getattr(self, '_height' if which == 'width' else '_width')
             other.blockSignals(True)
-            other.setValue(oval)
+            other.setValue(int(oval))
             other.blockSignals(False)
 
     @property
@@ -164,9 +178,7 @@ class Editor(QMainWindow):
         self._is_modified = False  # The image_changed signal will have been triggered causing this editor to be incorrectly marked as modified
 
     def replace_data(self, raw, only_if_different=True):
-        # We ignore only_if_different as it is useless in our case, and
-        # there is no easy way to check two images for equality
-        self.data = raw
+        self.canvas.load_image(raw, only_if_different=only_if_different)
 
     def apply_settings(self, prefs=None, dictionaries_changed=False):
         pass
@@ -232,7 +244,7 @@ class Editor(QMainWindow):
         self.modification_state_changed.emit(True)
         self.fmt_label.setText(' ' + (self.canvas.original_image_format or '').upper())
         im = self.canvas.current_image
-        self.size_label.setText('{0} x {1}{2}'.format(im.width(), im.height(), ' px'))
+        self.size_label.setText('{} x {}{}'.format(im.width(), im.height(), ' px'))
 
     def break_cycles(self):
         self.canvas.break_cycles()
@@ -253,20 +265,20 @@ class Editor(QMainWindow):
         self.action_bar = b = self.addToolBar(_('File actions tool bar'))
         b.setObjectName('action_bar')  # Needed for saveState
         for x in ('undo', 'redo'):
-            b.addAction(getattr(self.canvas, '%s_action' % x))
+            b.addAction(getattr(self.canvas, f'{x}_action'))
         self.edit_bar = b = self.addToolBar(_('Edit actions tool bar'))
         b.setObjectName('edit-actions-bar')
         for x in ('copy', 'paste'):
-            ac = actions['editor-%s' % x]
+            ac = actions[f'editor-{x}']
             setattr(self, 'action_' + x, b.addAction(ac.icon(), x, getattr(self, x)))
         self.update_clipboard_actions()
 
         b.addSeparator()
-        self.action_trim = ac = b.addAction(QIcon(I('trim.png')), _('Trim image'), self.canvas.trim_image)
-        self.action_rotate = ac = b.addAction(QIcon(I('rotate-right.png')), _('Rotate image'), self.canvas.rotate_image)
-        self.action_resize = ac = b.addAction(QIcon(I('resize.png')), _('Resize image'), self.resize_image)
+        self.action_trim = ac = b.addAction(QIcon.ic('trim.png'), _('Trim image'), self.canvas.trim_image)
+        self.action_rotate = ac = b.addAction(QIcon.ic('rotate-right.png'), _('Rotate image'), self.canvas.rotate_image)
+        self.action_resize = ac = b.addAction(QIcon.ic('resize.png'), _('Resize image'), self.resize_image)
         b.addSeparator()
-        self.action_filters = ac = b.addAction(QIcon(I('filter.png')), _('Image filters'))
+        self.action_filters = ac = b.addAction(QIcon.ic('filter.png'), _('Image filters'))
         b.widgetForAction(ac).setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         self.filters_menu = m = QMenu(self)
         ac.setMenu(m)
@@ -309,7 +321,7 @@ class Editor(QMainWindow):
     def resize_image(self):
         im = self.canvas.current_image
         d = ResizeDialog(im.width(), im.height(), self)
-        if d.exec_() == QDialog.DialogCode.Accepted:
+        if d.exec() == QDialog.DialogCode.Accepted:
             self.canvas.resize_image(d.width, d.height)
 
     def sharpen_image(self):
@@ -341,7 +353,7 @@ def launch_editor(path_to_edit, path_is_raw=False):
     t = Editor('raster_image')
     t.data = raw
     t.show()
-    app.exec_()
+    app.exec()
 
 
 if __name__ == '__main__':

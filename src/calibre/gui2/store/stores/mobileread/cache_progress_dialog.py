@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 from __future__ import absolute_import, division, print_function, unicode_literals
 
-
 __license__ = 'GPL 3'
 __copyright__ = '2011, John Schember <john@nachtimwald.com>'
 __docformat__ = 'restructuredtext en'
@@ -24,10 +23,11 @@ class CacheProgressDialog(QDialog, Ui_Dialog):
         self.progress.setMinimum(0)
         self.progress.setMaximum(total if total else 0)
 
-    def exec_(self):
+    def exec(self):
         self.completed = 0
         self.canceled = False
-        QDialog.exec_(self)
+        QDialog.exec(self)
+    exec_ = exec
 
     def open(self):
         self.completed = 0

@@ -5,8 +5,9 @@ __copyright__ = '2011, Seongkyoun Yoo <seongkyoun.yoo at gmail.com>'
 Profile to download The Kyungyhang
 '''
 
-from calibre.web.feeds.news import BasicNewsRecipe
 import re
+
+from calibre.web.feeds.news import BasicNewsRecipe
 
 
 class Kyungyhang(BasicNewsRecipe):
@@ -20,7 +21,7 @@ class Kyungyhang(BasicNewsRecipe):
     remove_javascript = True
 
     preprocess_regexps = [
-        (re.compile("<div class='ad_movFocus'.*</html>",
+        (re.compile(r"<div class='ad_movFocus'.*</html>",
                     re.DOTALL | re.IGNORECASE), lambda match: '</html>'),
     ]
 

@@ -9,7 +9,7 @@ __docformat__ = 'restructuredtext en'
 from collections import OrderedDict
 
 from calibre import random_user_agent
-from calibre.ebooks.metadata.sources.base import Source, Option
+from calibre.ebooks.metadata.sources.base import Option, Source
 
 
 def parse_html(raw):
@@ -43,10 +43,25 @@ def imgurl_from_id(raw, tbnid):
                     return q
 
 
+def parse_google_markup(raw):
+    root = parse_html(raw)
+    # newer markup pages use data-docid not data-tbnid
+    results = root.xpath('//div/@data-tbnid') or root.xpath('//div/@data-docid')
+    ans = OrderedDict()
+    for tbnid in results:
+        try:
+            imgurl = imgurl_from_id(raw, tbnid)
+        except Exception:
+            continue
+        if imgurl:
+            ans[imgurl] = True
+    return list(ans)
+
+
 class GoogleImages(Source):
 
     name = 'Google Images'
-    version = (1, 0, 2)
+    version = (1, 0, 6)
     minimum_calibre_version = (2, 80, 0)
     description = _('Downloads covers from a Google Image search. Useful to find larger/alternate covers.')
     capabilities = frozenset(['cover'])
@@ -88,8 +103,6 @@ class GoogleImages(Source):
             from urllib.parse import urlencode
         except ImportError:
             from urllib import urlencode
-        from collections import OrderedDict
-        ans = OrderedDict()
         br = self.browser
         q = urlencode({'as_q': ('%s %s'%(title, author)).encode('utf-8')})
         if isinstance(q, bytes):
@@ -105,33 +118,39 @@ class GoogleImages(Source):
         # URL scheme
         url = 'https://www.google.com/search?as_st=y&tbm=isch&{}&as_epq=&as_oq=&as_eq=&cr=&as_sitesearch=&safe=images&tbs={}iar:t,ift:jpg'.format(q, sz)
         log('Search URL: ' + url)
+        # See https://github.com/benbusby/whoogle-search/pull/1054 for cookies
+        br.set_simple_cookie('CONSENT', 'PENDING+987', '.google.com', path='/')
+        template = b'\x08\x01\x128\x08\x14\x12+boq_identityfrontenduiserver_20231107.05_p0\x1a\x05en-US \x03\x1a\x06\x08\x80\xf1\xca\xaa\x06'
+        from base64 import standard_b64encode
+        from datetime import date
+        template.replace(b'20231107', date.today().strftime('%Y%m%d').encode('ascii'))
+        br.set_simple_cookie('SOCS', standard_b64encode(template).decode('ascii').rstrip('='), '.google.com', path='/')
+        # br.set_debug_http(True)
         raw = clean_ascii_chars(br.open(url).read().decode('utf-8'))
-        root = parse_html(raw)
-        results = root.xpath('//div/@data-tbnid')  # could also use data-id
-        # from calibre.utils.ipython import ipython
-        # ipython({'root': root, 'raw': raw, 'url': url, 'results': results})
-        for tbnid in results:
-            try:
-                imgurl = imgurl_from_id(raw, tbnid)
-            except Exception:
-                continue
-            if imgurl:
-                ans[imgurl] = True
-        return list(ans)
+        # with open('/t/raw.html', 'w') as f:
+        #     f.write(raw)
+        return parse_google_markup(raw)
 
 
-def test():
+def test_raw():
+    import sys
+    raw = open(sys.argv[-1]).read()
+    for x in parse_google_markup(raw):
+        print(x)
+
+
+def test(title='Star Trek: Section 31: Control', authors=('David Mack',)):
     try:
         from queue import Queue
     except ImportError:
         from Queue import Queue
     from threading import Event
+
     from calibre.utils.logging import default_log
     p = GoogleImages(None)
     p.log = default_log
     rq = Queue()
-    p.download_cover(default_log, rq, Event(), title='The Heroes',
-                     authors=('Joe Abercrombie',))
+    p.download_cover(default_log, rq, Event(), title=title, authors=authors)
     print('Downloaded', rq.qsize(), 'covers')
 
 

@@ -1,5 +1,3 @@
-
-
 __license__   = 'GPL v3'
 __copyright__ = '2008, Kovid Goyal kovid@kovidgoyal.net'
 __docformat__ = 'restructuredtext en'
@@ -7,7 +5,7 @@ __docformat__ = 'restructuredtext en'
 '''
 Conversion to EPUB.
 '''
-from calibre.utils.zipfile import ZipFile, ZIP_STORED
+from calibre.utils.zipfile import ZIP_STORED, ZipFile
 
 
 def rules(stylesheets):
@@ -19,15 +17,15 @@ def rules(stylesheets):
 
 
 def simple_container_xml(opf_path, extra_entries=''):
-    return '''\
+    return f'''\
 <?xml version="1.0"?>
 <container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
    <rootfiles>
-      <rootfile full-path="{0}" media-type="application/oebps-package+xml"/>
+      <rootfile full-path="{opf_path}" media-type="application/oebps-package+xml"/>
       {extra_entries}
    </rootfiles>
 </container>
-    '''.format(opf_path, extra_entries=extra_entries)
+    '''
 
 
 def initialize_container(path_to_container, opf_name='metadata.opf',
@@ -37,8 +35,7 @@ def initialize_container(path_to_container, opf_name='metadata.opf',
     '''
     rootfiles = ''
     for path, mimetype, _ in extra_entries:
-        rootfiles += '<rootfile full-path="{0}" media-type="{1}"/>'.format(
-                path, mimetype)
+        rootfiles += f'<rootfile full-path="{path}" media-type="{mimetype}"/>'
     CONTAINER = simple_container_xml(opf_name, rootfiles).encode('utf-8')
     zf = ZipFile(path_to_container, 'w')
     zf.writestr('mimetype', b'application/epub+zip', compression=ZIP_STORED)

@@ -1,4 +1,3 @@
-
 '''
 Dynamic language lookup of translations for user-visible strings.
 '''
@@ -8,8 +7,10 @@ __copyright__ = '2008, Marshall T. Vandegrift <llasram@gmail.com>'
 
 import io
 from gettext import GNUTranslations
-from calibre.utils.localization import get_lc_messages_path
 from zipfile import ZipFile
+
+from calibre.utils.localization import get_lc_messages_path
+from calibre.utils.resources import get_path
 
 __all__ = ['translate']
 
@@ -23,7 +24,7 @@ def translate(lang, text):
     else:
         mpath = get_lc_messages_path(lang)
         if mpath is not None:
-            with ZipFile(P('localization/locales.zip',
+            with ZipFile(get_path('localization/locales.zip',
                 allow_user_override=False), 'r') as zf:
                 try:
                     buf = io.BytesIO(zf.read(mpath + '/messages.mo'))

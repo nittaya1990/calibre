@@ -45,12 +45,19 @@
            <property name="text">
             <string>&amp;Clear</string>
            </property>
+           <property name="toolTip">
+            <string>Clear the name, template, and documentation boxes</string>
+           </property>
           </widget>
          </item>
          <item>
           <widget class="QPushButton" name="st_delete_button">
            <property name="text">
             <string>D&amp;elete</string>
+           </property>
+           <property name="toolTip">
+            <string>&lt;p&gt;Delete the current stored template. The name is cleared. The template
+and documentation are not cleared to make it easier to store the template under a new name&lt;/p&gt;</string>
            </property>
           </widget>
          </item>
@@ -59,6 +66,9 @@
            <property name="text">
             <string>&amp;Replace</string>
            </property>
+           <property name="toolTip">
+            <string>Replace the template and documentation for the template with the given name.</string>
+           </property>
           </widget>
          </item>
          <item>
@@ -66,20 +76,46 @@
            <property name="text">
             <string>C&amp;reate</string>
            </property>
+           <property name="toolTip">
+            <string>&lt;p&gt;Create a new stored template with the given name. You must enter the template
+text before pushing this button.&lt;/p&gt;</string>
+           </property>
           </widget>
          </item>
          <item>
-          <spacer name="verticalSpacer_2">
-           <property name="orientation">
-            <enum>Qt::Vertical</enum>
+          <widget class="QPushButton" name="st_import_button">
+           <property name="text">
+            <string>Im&amp;port</string>
            </property>
-           <property name="sizeHint" stdset="0">
-            <size>
-             <width>20</width>
-             <height>0</height>
-            </size>
+           <property name="toolTip">
+            <string>&lt;p&gt;Import a stored template from a file created by the Export
+function. The import includes the name, the template, and the documentation.&lt;/p&gt;&lt;p&gt;
+If a stored template with the imported name already exists then you are asked if you want to replace its
+program and documentation with what is in the file.&lt;/p&gt;&lt;p&gt;
+After the import, press the Create or Replace button as appropriate to save the changes.&lt;/p&gt;</string>
            </property>
-          </spacer>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="st_export_button">
+           <property name="text">
+            <string>E&amp;xport</string>
+           </property>
+           <property name="toolTip">
+            <string>&lt;p&gt;Export the current stored template to a file. The file contains
+the name, the template, and the documentation.&lt;/p&gt;</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="st_doc_edit_button">
+           <property name="text">
+            <string>Edit docs</string>
+           </property>
+           <property name="toolTip">
+            <string>Open an editor for function documentation</string>
+           </property>
+          </widget>
          </item>
          <item>
           <widget class="QPushButton" name="st_test_template_button">
@@ -99,7 +135,7 @@
            <property name="sizeHint" stdset="0">
             <size>
              <width>20</width>
-             <height>0</height>
+             <height>10</height>
             </size>
            </property>
           </spacer>
@@ -113,13 +149,6 @@
        <string>&amp;Template functions</string>
       </attribute>
       <layout class="QGridLayout" name="gridLayout">
-       <item row="0" column="0" colspan="2">
-        <widget class="Line" name="line">
-         <property name="orientation">
-          <enum>Qt::Horizontal</enum>
-         </property>
-        </widget>
-       </item>
        <item row="1" column="0">
         <layout class="QGridLayout" name="gridLayout_3">
          <item row="0" column="0">
@@ -131,6 +160,19 @@
          </item>
          <item row="0" column="1" colspan="2" rowspan="2">
           <widget class="QTextBrowser" name="textBrowser"/>
+         </item>
+         <item row="3" column="1">
+          <widget class="QCheckBox" name="show_only_user_defined">
+           <property name="text">
+            <string>Show &amp;only user defined template functions</string>
+           </property>
+           <property name="toolTip">
+            <string>&lt;p&gt;If checked the 'Function' box will show only user defined
+template functions. If unchecked the box will show both system and user defined
+functions. Unchecking can be useful for copying source of a system function to create
+a new related user defined function.&lt;/p&gt;</string>
+           </property>
+          </widget>
          </item>
          <item row="2" column="0">
           <widget class="QLabel" name="label_2">
@@ -152,7 +194,7 @@
            </property>
           </widget>
          </item>
-         <item row="3" column="0">
+         <item row="4" column="0">
           <widget class="QLabel" name="label_3">
            <property name="toolTip">
             <string/>
@@ -165,7 +207,7 @@
            </property>
           </widget>
          </item>
-         <item row="3" column="1">
+         <item row="4" column="1">
           <widget class="QSpinBox" name="argument_count">
            <property name="toolTip">
             <string>Set this to -1 if the function takes a variable number of arguments</string>
@@ -175,23 +217,50 @@
            </property>
           </widget>
          </item>
-         <item row="4" column="1">
+         <item row="5" column="1">
           <widget class="QTextEdit" name="documentation"/>
          </item>
-         <item row="4" column="0">
-          <widget class="QLabel" name="label_4">
-           <property name="text">
-            <string>D&amp;ocumentation:</string>
-           </property>
-           <property name="alignment">
-            <set>Qt::AlignLeading|Qt::AlignLeft|Qt::AlignTop</set>
-           </property>
-           <property name="buddy">
-            <cstring>documentation</cstring>
-           </property>
-          </widget>
+         <item row="5" column="0">
+          <layout class="QVBoxLayout">
+           <item>
+            <widget class="QLabel" name="label_4">
+             <property name="text">
+              <string>D&amp;ocumentation:</string>
+             </property>
+             <property name="alignment">
+              <set>Qt::AlignLeading|Qt::AlignLeft|Qt::AlignTop</set>
+             </property>
+             <property name="buddy">
+              <cstring>documentation</cstring>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QPushButton" name="doc_edit_button">
+             <property name="text">
+              <string>Edit docs</string>
+             </property>
+             <property name="toolTip">
+              <string>Open an editor for function documentation</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <spacer name="verticalSpacer_2">
+             <property name="orientation">
+              <enum>Qt::Vertical</enum>
+             </property>
+               <property name="sizeHint" stdset="0">
+              <size>
+               <width>20</width>
+               <height>0</height>
+              </size>
+             </property>
+            </spacer>
+           </item>
+          </layout>
          </item>
-         <item row="5" column="1">
+         <item row="6" column="1">
           <layout class="QHBoxLayout" name="horizontalLayout_2">
            <item>
             <widget class="QPushButton" name="clear_button">
@@ -244,7 +313,7 @@
            <property name="documentTitle">
             <string notr="true"/>
            </property>
-           <property name="tabStopWidth">
+           <property name="tabStopDistance">
             <number>30</number>
            </property>
           </widget>

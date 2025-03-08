@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 
 
 __license__ = 'GPL v3'
@@ -9,11 +8,33 @@ import os
 import weakref
 from collections import OrderedDict, namedtuple
 from functools import partial
+
 from qt.core import (
-    QAction, QApplication, QCheckBox, QColor, QDialog, QDialogButtonBox, QFont,
-    QGridLayout, QHBoxLayout, QIcon, QKeySequence, QLabel, QMenu, QPainter, QPen,
-    QPixmap, QScrollArea, QSize, QSizePolicy, QStackedLayout, Qt, QToolButton,
-    QVBoxLayout, QWidget, pyqtSignal
+    QAction,
+    QApplication,
+    QCheckBox,
+    QColor,
+    QDialog,
+    QDialogButtonBox,
+    QFont,
+    QGridLayout,
+    QHBoxLayout,
+    QIcon,
+    QKeySequence,
+    QLabel,
+    QMenu,
+    QPainter,
+    QPen,
+    QPixmap,
+    QScrollArea,
+    QSize,
+    QSizePolicy,
+    QStackedLayout,
+    Qt,
+    QToolButton,
+    QVBoxLayout,
+    QWidget,
+    pyqtSignal,
 )
 
 from calibre import fit_image
@@ -26,13 +47,16 @@ from calibre.gui2.languages import LanguagesEdit as LE
 from calibre.gui2.metadata.basic_widgets import PubdateEdit, RatingEdit
 from calibre.gui2.widgets2 import RightClickButton
 from calibre.ptempfile import PersistentTemporaryFile
+from calibre.startup import connect_lambda
 from calibre.utils.date import UNDEFINED_DATE
-from polyglot.builtins import iteritems, itervalues, map, range, unicode_type, zip
+from calibre.utils.icu import lower as icu_lower
+from calibre.utils.localization import ngettext
+from polyglot.builtins import iteritems, itervalues
 
 Widgets = namedtuple('Widgets', 'new old label button')
 
-# Widgets {{{
 
+# Widgets {{{
 
 class LineEdit(EditWithComplete):
 
@@ -45,6 +69,7 @@ class LineEdit(EditWithComplete):
         self.metadata = metadata
         if not is_new:
             self.setReadOnly(True)
+            self.setClearButtonEnabled(False)
         else:
             sep = metadata['is_multiple']['list_to_ui'] if metadata['is_multiple'] else None
             self.set_separator(sep)
@@ -52,7 +77,7 @@ class LineEdit(EditWithComplete):
 
     @property
     def value(self):
-        val = unicode_type(self.text()).strip()
+        val = str(self.text()).strip()
         ism = self.metadata['is_multiple']
         if ism:
             if not val:
@@ -87,7 +112,7 @@ class LineEdit(EditWithComplete):
 
     @property
     def current_val(self):
-        return unicode_type(self.text())
+        return str(self.text())
 
     @current_val.setter
     def current_val(self, val):
@@ -122,6 +147,7 @@ class LanguagesEdit(LE):
         self.textChanged.connect(self.changed)
         if not is_new:
             self.lineEdit().setReadOnly(True)
+            self.lineEdit().setClearButtonEnabled(False)
 
     @property
     def current_val(self):
@@ -216,12 +242,12 @@ class SeriesEdit(LineEdit):
         series_index = mi.get(self.field + '_index', default=1.0)
         val = ''
         if series:
-            val = '%s [%s]' % (series, mi.format_series_index(series_index))
+            val = f'{series} [{mi.format_series_index(series_index)}]'
         self.setText(val)
         self.setCursorPosition(0)
 
     def to_mi(self, mi):
-        val = unicode_type(self.text()).strip()
+        val = str(self.text()).strip()
         try:
             series_index = float(val.rpartition('[')[-1].rstrip(']').strip())
         except:
@@ -239,7 +265,7 @@ class SeriesEdit(LineEdit):
             return
         num = db.get_next_series_num_for(series)
         sidx = fmt_sidx(num)
-        self.setText(self.text() + ' [%s]' % sidx)
+        self.setText(self.text() + f' [{sidx}]')
 
 
 class IdentifiersEdit(LineEdit):
@@ -257,7 +283,7 @@ class IdentifiersEdit(LineEdit):
 
     @as_dict.setter
     def as_dict(self, val):
-        val = ('%s:%s' % (k, v) for k, v in iteritems(val))
+        val = (f'{k}:{v}' for k, v in iteritems(val))
         self.setText(', '.join(val))
         self.setCursorPosition(0)
 
@@ -319,8 +345,9 @@ class CoverView(QWidget):
         self.field = field
         self.metadata = metadata
         self.pixmap = None
-        self.blank = QPixmap(I('blank.png'))
-        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.PolicyFlag.GrowFlag|QSizePolicy.PolicyFlag.ExpandFlag)
+        ic = QIcon.ic('blank.png')
+        self.blank = ic.pixmap(ic.availableSizes()[0])
+        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.MinimumExpanding)
         self.sizePolicy().setHeightForWidth(True)
 
     def mouseDoubleClickEvent(self, ev):
@@ -392,7 +419,7 @@ class CoverView(QWidget):
             f = p.font()
             f.setBold(True)
             p.setFont(f)
-            sz = u'\u00a0%d x %d\u00a0'%(self.pixmap.width(), self.pixmap.height())
+            sz = f'\xa0{self.pixmap.width()} x {self.pixmap.height()}\xa0'
             flags = int(Qt.AlignmentFlag.AlignBottom|Qt.AlignmentFlag.AlignRight|Qt.TextFlag.TextSingleLine)
             szrect = p.boundingRect(sztgt, flags, sz)
             p.fillRect(szrect.adjusted(0, 0, 0, 4), QColor(0, 0, 0, 200))
@@ -458,10 +485,10 @@ class CompareSingle(QWidget):
             if isinstance(neww, SeriesEdit):
                 neww.set_db(db.new_api)
             oldw = cls(field, False, self, m, extra)
-            newl = QLabel('&%s:' % m['name'])
+            newl = QLabel('&{}:'.format(m['name']))
             newl.setBuddy(neww)
             button = RightClickButton(self)
-            button.setIcon(QIcon(I('back.png')))
+            button.setIcon(QIcon.ic('back.png'))
             button.setObjectName(field)
             connect_lambda(button.clicked, self, lambda self: self.revert(self.sender().objectName()))
             button.setToolTip(revert_tooltip % m['name'])
@@ -472,7 +499,7 @@ class CompareSingle(QWidget):
                 m.addAction(button.toolTip()).triggered.connect(button.click)
                 m.actions()[0].setIcon(button.icon())
                 m.addAction(_('Merge identifiers')).triggered.connect(self.merge_identifiers)
-                m.actions()[1].setIcon(QIcon(I('merge.png')))
+                m.actions()[1].setIcon(QIcon.ic('merge.png'))
             elif field == 'tags':
                 button.m = m = QMenu(button)
                 button.setMenu(m)
@@ -480,7 +507,7 @@ class CompareSingle(QWidget):
                 m.addAction(button.toolTip()).triggered.connect(button.click)
                 m.actions()[0].setIcon(button.icon())
                 m.addAction(_('Merge tags')).triggered.connect(self.merge_tags)
-                m.actions()[1].setIcon(QIcon(I('merge.png')))
+                m.actions()[1].setIcon(QIcon.ic('merge.png'))
 
             if cls is CoverView:
                 neww.zoom_requested.connect(self.zoom_requested)
@@ -548,6 +575,13 @@ class CompareSingle(QWidget):
             if val != self.initial_vals[field]:
                 widgets.new.to_mi(self.current_mi)
                 changed = True
+        if changed and not self.current_mi.languages:
+            # this is needed because blank language setting
+            # causes current UI language to be set
+            widgets = self.widgets['languages']
+            neww, oldw = widgets[:2]
+            if oldw.current_val:
+                self.current_mi.languages = oldw.current_val
         return changed
 
 
@@ -607,7 +641,14 @@ class CompareMany(QDialog):
         self.l = l = QVBoxLayout(w)
         s.addWidget(w)
         self.next_called = False
-        self.setWindowIcon(QIcon(I('auto_author_sort.png')))
+
+        # initialize the previous items list, we will use it to store the watched items that were rejected or accepted
+        # when the user clicks on the next or reject button we will add the current item to the previous items list
+        # when the user presses the back button we will pop the last item from the previous items list and set it as current item
+        # also the popped item will be removed from the rejected or accepted items list (and will be unmarked if it was marked)
+        self.previous_items = []
+
+        self.setWindowIcon(QIcon.ic('auto_author_sort.png'))
         self.get_metadata = get_metadata
         self.ids = list(ids)
         self.total = len(self.ids)
@@ -633,40 +674,57 @@ class CompareMany(QDialog):
         self.bb = bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel)
         bb.button(QDialogButtonBox.StandardButton.Cancel).setAutoDefault(False)
         bb.rejected.connect(self.reject)
+
         if self.total > 1:
+
             self.aarb = b = bb.addButton(_('&Accept all remaining'), QDialogButtonBox.ButtonRole.YesRole)
-            b.setIcon(QIcon(I('ok.png'))), b.setAutoDefault(False)
+            b.setIcon(QIcon.ic('ok.png')), b.setAutoDefault(False)
             if accept_all_tooltip:
                 b.setToolTip(accept_all_tooltip)
             b.clicked.connect(self.accept_all_remaining)
             self.rarb = b = bb.addButton(_('Re&ject all remaining'), QDialogButtonBox.ButtonRole.ActionRole)
-            b.setIcon(QIcon(I('minus.png'))), b.setAutoDefault(False)
+            b.setIcon(QIcon.ic('minus.png')), b.setAutoDefault(False)
             if reject_all_tooltip:
                 b.setToolTip(reject_all_tooltip)
             b.clicked.connect(self.reject_all_remaining)
             self.sb = b = bb.addButton(_('R&eject'), QDialogButtonBox.ButtonRole.ActionRole)
             ac = QAction(self)
-            ac.setShortcut(QKeySequence(Qt.Modifier.ALT | Qt.Modifier.SHIFT | Qt.Key.Key_Right))
+            ac.setShortcut(QKeySequence(Qt.KeyboardModifier.AltModifier | Qt.KeyboardModifier.ShiftModifier | Qt.Key.Key_Right))
             ac.triggered.connect(b.click)
             self.addAction(ac)
             b.setToolTip(_('Reject changes and move to next [{}]').format(ac.shortcut().toString(QKeySequence.SequenceFormat.NativeText)))
             connect_lambda(b.clicked, self, lambda self: self.next_item(False))
-            b.setIcon(QIcon(I('minus.png'))), b.setAutoDefault(False)
+            b.setIcon(QIcon.ic('minus.png')), b.setAutoDefault(False)
             if reject_button_tooltip:
                 b.setToolTip(reject_button_tooltip)
             self.next_action = ac = QAction(self)
-            ac.setShortcut(QKeySequence(Qt.Modifier.ALT | Qt.Key.Key_Right))
+            ac.setShortcut(QKeySequence(Qt.KeyboardModifier.AltModifier | Qt.Key.Key_Right))
             self.addAction(ac)
         if action_button is not None:
             self.acb = b = bb.addButton(action_button[0], QDialogButtonBox.ButtonRole.ActionRole)
-            b.setIcon(QIcon(action_button[1]))
+            b.setIcon(QIcon.ic(action_button[1]))
             self.action_button_action = action_button[2]
             b.clicked.connect(self.action_button_clicked)
+
+        # Add a Back button, which allows the user to go back to the previous book cancel any reject/edit/accept that was done to it, and review it again
+        # create a Back action that will be triggered when the user presses the back button or the back shortcut
+        self.back_action = QAction(self)
+        self.back_action.setShortcut(QKeySequence(Qt.KeyboardModifier.AltModifier | Qt.Key.Key_Left))
+        self.back_action.triggered.connect(self.previous_item)
+        self.addAction(self.back_action)
+        # create the back button, set it's name, tooltip, icon and action to call the previous_item method
+        self.back_button = bb.addButton(_('P&revious'), QDialogButtonBox.ButtonRole.ActionRole)
+        self.back_button.setToolTip(_('Move to previous {}').format(self.back_action.shortcut().toString(QKeySequence.SequenceFormat.NativeText)))
+        self.back_button.setIcon(QIcon.ic('back.png'))
+        self.back_button.clicked.connect(self.previous_item)
+        self.back_button.setDefault(True)
+        self.back_button.setAutoDefault(False)
+
         self.nb = b = bb.addButton(_('&Next') if self.total > 1 else _('&OK'), QDialogButtonBox.ButtonRole.ActionRole)
         if self.total > 1:
             b.setToolTip(_('Move to next [%s]') % self.next_action.shortcut().toString(QKeySequence.SequenceFormat.NativeText))
             self.next_action.triggered.connect(b.click)
-        b.setIcon(QIcon(I('forward.png' if self.total > 1 else 'ok.png')))
+        b.setIcon(QIcon.ic('forward.png' if self.total > 1 else 'ok.png'))
         connect_lambda(b.clicked, self, lambda self: self.next_item(True))
         b.setDefault(True), b.setAutoDefault(True)
         self.bbh = h = QHBoxLayout()
@@ -680,14 +738,11 @@ class CompareMany(QDialog):
 
         self.next_item(True)
 
-        desktop = QApplication.instance().desktop()
-        geom = desktop.availableGeometry(parent or self)
+        geom = (parent or self).screen().availableSize()
         width = max(700, min(950, geom.width()-50))
         height = max(650, min(1000, geom.height()-100))
         self.resize(QSize(width, height))
-        geom = gprefs.get('diff_dialog_geom', None)
-        if geom is not None:
-            QApplication.instance().safe_restore_geometry(self, geom)
+        self.restore_geometry(gprefs, 'diff_dialog_geom')
         b.setFocus(Qt.FocusReason.OtherFocusReason)
         self.next_called = False
 
@@ -703,9 +758,9 @@ class CompareMany(QDialog):
         self.action_button_action(self.ids[0])
 
     def accept(self):
-        gprefs.set('diff_dialog_geom', bytearray(self.saveGeometry()))
+        self.save_geometry(gprefs, 'diff_dialog_geom')
         self.compare_widget.save_comments_controls_state()
-        super(CompareMany, self).accept()
+        super().accept()
 
     def reject(self):
         if self.stack.currentIndex() == 1:
@@ -715,31 +770,64 @@ class CompareMany(QDialog):
             'All reviewed changes will be lost! Are you sure you want to Cancel?'),
             'confirm-metadata-diff-dialog-cancel'):
             return
-        gprefs.set('diff_dialog_geom', bytearray(self.saveGeometry()))
+        self.save_geometry(gprefs, 'diff_dialog_geom')
         self.compare_widget.save_comments_controls_state()
-        super(CompareMany, self).reject()
+        super().reject()
 
     @property
     def current_mi(self):
         return self.compare_widget.current_mi
 
+    def show_current_item(self):
+        self.setWindowTitle(self.window_title + _(' [%(num)d of %(tot)d]') % dict(
+            num=(self.total - len(self.ids) + 1), tot=self.total))
+        oldmi, newmi = self.get_metadata(self.ids[0])
+        self.compare_widget(oldmi, newmi)
+        self.update_back_button_state()
+
+    def update_back_button_state(self):
+        enabled = bool(self.previous_items)
+        self.back_action.setEnabled(enabled)
+        self.back_button.setEnabled(enabled)
+
     def next_item(self, accept):
         self.next_called = True
         if not self.ids:
             return self.accept()
+
         if self.current_mi is not None:
             changed = self.compare_widget.apply_changes()
         if self.current_mi is not None:
             old_id = self.ids.pop(0)
+
+            # Save the current book that was just reviewed and accepted or rejected to the previous_items list
+            # this book can be displayed again if the user presses the back button
+            self.previous_items.append(old_id)
+
             if not accept:
                 self.rejected_ids.add(old_id)
             self.accepted[old_id] = (changed, self.current_mi) if accept else (False, None)
         if not self.ids:
             return self.accept()
-        self.setWindowTitle(self.window_title + _(' [%(num)d of %(tot)d]') % dict(
-            num=(self.total - len(self.ids) + 1), tot=self.total))
-        oldmi, newmi = self.get_metadata(self.ids[0])
-        self.compare_widget(oldmi, newmi)
+        self.show_current_item()
+
+    def previous_item(self):
+        if self.previous_items:
+            # get the last book id from the previous items list and remove it from the previous items list
+            # this book id is the last book id that was reviewed and accepted or rejected
+            last_previous_item = self.previous_items.pop()
+
+            # if this book id was rejected, remove it from the rejected ids set
+            if last_previous_item in self.rejected_ids:
+                self.rejected_ids.remove(last_previous_item)
+                self.markq.setChecked(False)
+            # if this book id was accepted, remove it from the accepted dictionary
+            elif last_previous_item in self.accepted:
+                self.accepted.pop(last_previous_item)
+
+            # move the last previous item to the beginning of the pending list
+            self.ids.insert(0, last_previous_item)
+            self.show_current_item()
 
     def accept_all_remaining(self):
         self.next_item(True)
@@ -779,9 +867,11 @@ if __name__ == '__main__':
     ids = sorted(db.all_ids(), reverse=True)
     ids = tuple(zip(ids[0::2], ids[1::2]))
     gm = partial(db.get_metadata, index_is_id=True, get_cover=True, cover_as_data=True)
-    get_metadata = lambda x:list(map(gm, ids[x]))
+
+    def get_metadata(x):
+        return list(map(gm, ids[x]))
     d = CompareMany(list(range(len(ids))), get_metadata, db.field_metadata, db=db)
-    if d.exec_() == QDialog.DialogCode.Accepted:
-        for changed, mi in itervalues(d.accepted):
-            if changed and mi is not None:
-                print(mi)
+    d.exec()
+    for changed, mi in itervalues(d.accepted):
+        if changed and mi is not None:
+            print(mi)

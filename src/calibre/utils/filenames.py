@@ -1,4 +1,3 @@
-
 '''
 Make strings safe for use as ASCII filenames, while trying to preserve as much
 meaning as possible.
@@ -8,15 +7,13 @@ import errno
 import os
 import shutil
 import time
+from contextlib import closing, suppress
 from math import ceil
-from contextlib import suppress, closing
 
 from calibre import force_unicode, isbytestring, prints, sanitize_file_name
-from calibre.constants import (
-    filesystem_encoding, iswindows, preferred_encoding, ismacos
-)
-from calibre.utils.localization import get_udc
-from polyglot.builtins import iteritems, itervalues, unicode_type, range
+from calibre.constants import filesystem_encoding, ismacos, iswindows, preferred_encoding
+from calibre.utils.localization import _, get_udc
+from polyglot.builtins import iteritems, itervalues
 
 
 def ascii_text(orig):
@@ -24,7 +21,7 @@ def ascii_text(orig):
     try:
         ascii = udc.decode(orig)
     except Exception:
-        if isinstance(orig, unicode_type):
+        if isinstance(orig, str):
             orig = orig.encode('ascii', 'replace')
         ascii = orig.decode(preferred_encoding, 'replace')
     if isinstance(ascii, bytes):
@@ -134,6 +131,47 @@ def is_case_sensitive(path):
     return is_case_sensitive
 
 
+def case_ignoring_open_file(path, mode='r'):
+    '''
+    Open an existing file case insensitively, even on case sensitive file systems
+    '''
+    try:
+        return open(path, mode)
+    except FileNotFoundError as err:
+        original_err = err
+
+    def next_component(final_path, components):
+        if not components:
+            return final_path
+        component = components.pop()
+        cl = component.lower()
+        try:
+            matches = {x for x in os.listdir(final_path) if x.lower() == cl}
+        except OSError:
+            raise original_err from None
+        for x in matches:
+            current = os.path.join(final_path, x)
+            try:
+                return next_component(current, list(components))
+            except Exception:
+                continue
+        raise original_err
+
+    if isbytestring(path):
+        path = path.decode(filesystem_encoding)
+    if path.endswith(os.sep):
+        path = path[:-1]
+    if not path:
+        raise ValueError('Path must not point to root')
+
+    components = path.split(os.sep)
+    if len(components) <= 1:
+        raise ValueError(f'Invalid path: {path}')
+    final_path = (components[0].upper() + os.sep) if iswindows else '/'
+    components = list(reversed(components))[:-1]
+    return open(next_component(final_path, components), mode)
+
+
 def case_preserving_open_file(path, mode='wb', mkdir_mode=0o777):
     '''
     Open the file pointed to by path with the specified mode. If any
@@ -163,7 +201,7 @@ def case_preserving_open_file(path, mode='wb', mkdir_mode=0o777):
 
     components = path.split(sep)
     if not components:
-        raise ValueError('Invalid path: %r'%path)
+        raise ValueError(f'Invalid path: {path!r}')
 
     cpath = sep
     if iswindows:
@@ -198,7 +236,7 @@ def case_preserving_open_file(path, mode='wb', mkdir_mode=0o777):
         ans = fpath = cpath
     else:
         fname = components[-1]
-        ans = lopen(os.path.join(cpath, fname), mode)
+        ans = open(os.path.join(cpath, fname), mode)
         # Ensure file and all its metadata is written to disk so that subsequent
         # listdir() has file name in it. I don't know if this is actually
         # necessary, but given the diversity of platforms, best to be safe.
@@ -208,7 +246,7 @@ def case_preserving_open_file(path, mode='wb', mkdir_mode=0o777):
         cl = fname.lower()
         try:
             candidates = [c for c in os.listdir(cpath) if c.lower() == cl]
-        except EnvironmentError:
+        except OSError:
             # The containing directory, somehow disappeared?
             candidates = []
         if len(candidates) == 1:
@@ -259,7 +297,7 @@ def samefile(src, dst):
         # Unix
         try:
             return os.path.samefile(src, dst)
-        except EnvironmentError:
+        except OSError:
             return False
 
     # All other platforms: check for same pathname.
@@ -294,14 +332,14 @@ def windows_hardlink(src, dest):
         try:
             if windows_get_size(dest) == src_size:
                 return
-        except EnvironmentError:
+        except OSError:
             pass
         time.sleep(0.3)
 
     sz = windows_get_size(dest)
     if sz != src_size:
-        msg = 'Creating hardlink from %s to %s failed: %%s' % (src, dest)
-        raise OSError(msg % ('hardlink size: %d not the same as source size' % sz))
+        msg = f'Creating hardlink from {src} to {dest} failed: '
+        raise OSError(msg + (f'hardlink size: {sz} not the same as source size'))
 
 
 def windows_fast_hardlink(src, dest):
@@ -309,8 +347,8 @@ def windows_fast_hardlink(src, dest):
     winutil.create_hard_link(dest, src)
     ssz, dsz = windows_get_size(src), windows_get_size(dest)
     if ssz != dsz:
-        msg = 'Creating hardlink from %s to %s failed: %%s' % (src, dest)
-        raise OSError(msg % ('hardlink size: %d not the same as source size: %s' % (dsz, ssz)))
+        msg = f'Creating hardlink from {src} to {dest} failed: '
+        raise OSError(msg + (f'hardlink size: {dsz} not the same as source size: {ssz}'))
 
 
 def windows_nlinks(path):
@@ -321,7 +359,6 @@ def windows_nlinks(path):
 
 
 class WindowsAtomicFolderMove:
-
     '''
     Move all the files inside a specified folder in an atomic fashion,
     preventing any other process from locking a file while the operation is
@@ -332,6 +369,7 @@ class WindowsAtomicFolderMove:
 
     def __init__(self, path):
         from collections import defaultdict
+
         from calibre_extensions import winutil
         self.handle_map = {}
 
@@ -377,15 +415,15 @@ class WindowsAtomicFolderMove:
 
                 self.close_handles()
                 if e.winerror == winutil.ERROR_SHARING_VIOLATION:
-                    err = IOError(errno.EACCES,
+                    err = OSError(errno.EACCES,
                             _('File is open in another process'))
                     err.filename = f
                     raise err
-                prints('CreateFile failed for: %r' % f)
+                prints(f'CreateFile failed for: {f!r}')
                 raise
             except:
                 self.close_handles()
-                prints('CreateFile failed for: %r' % f)
+                prints(f'CreateFile failed for: {f!r}')
                 raise
             self.handle_map[f] = h
 
@@ -398,17 +436,17 @@ class WindowsAtomicFolderMove:
                 break
         if handle is None:
             if os.path.exists(path):
-                raise ValueError('The file %r did not exist when this move'
-                        ' operation was started'%path)
+                raise ValueError(f'The file {path!r} did not exist when this move'
+                        ' operation was started')
             else:
-                raise ValueError('The file %r does not exist'%path)
+                raise ValueError(f'The file {path!r} does not exist')
 
         with suppress(OSError):
             windows_hardlink(path, dest)
             return
 
         winutil.set_file_pointer(handle, 0, winutil.FILE_BEGIN)
-        with lopen(dest, 'wb') as f:
+        with open(dest, 'wb') as f:
             sz = 1024 * 1024
             while True:
                 raw = winutil.read_file(handle, sz)
@@ -442,6 +480,7 @@ class WindowsAtomicFolderMove:
 
 
 def hardlink_file(src, dest):
+    src, dest = make_long_path_useable(src), make_long_path_useable(dest)
     if iswindows:
         windows_hardlink(src, dest)
         return
@@ -496,21 +535,26 @@ def remove_dir_if_empty(path, ignore_metadata_caches=False):
     try:
         os.rmdir(path)
     except OSError as e:
-        if e.errno == errno.ENOTEMPTY or len(os.listdir(path)) > 0:
+        try:
+            entries = os.listdir(path)
+        except FileNotFoundError:  # something deleted path out from under us
+            return
+        if e.errno == errno.ENOTEMPTY or len(entries) > 0:
             # Some linux systems appear to raise an EPERM instead of an
             # ENOTEMPTY, see https://bugs.launchpad.net/bugs/1240797
             if ignore_metadata_caches:
                 try:
                     found = False
-                    for x in os.listdir(path):
+                    for x in entries:
                         if x.lower() in {'.ds_store', 'thumbs.db'}:
                             found = True
                             x = os.path.join(path, x)
-                            if os.path.isdir(x):
-                                import shutil
-                                shutil.rmtree(x)
-                            else:
-                                os.remove(x)
+                            with suppress(FileNotFoundError):
+                                if os.path.isdir(x):
+                                    import shutil
+                                    shutil.rmtree(x)
+                                else:
+                                    os.remove(x)
                 except Exception:  # We could get an error, if, for example, windows has locked Thumbs.db
                     found = False
                 if found:
@@ -552,8 +596,12 @@ def get_hardlink_function(src, dest):
     if not iswindows:
         return os.link
     from calibre_extensions import winutil
+    if src.startswith(long_path_prefix):
+        src = src[len(long_path_prefix):]
+    if dest.startswith(long_path_prefix):
+        dest = dest[len(long_path_prefix):]
     root = dest[0] + ':\\'
-    if src[0].lower() == dest[0].lower() and hasattr(winutil, 'supports_hardlinks') and winutil.supports_hardlinks(root):
+    if src[0].lower() == dest[0].lower() and winutil.supports_hardlinks(root):
         return windows_fast_hardlink
 
 
@@ -562,6 +610,7 @@ def copyfile_using_links(path, dest, dest_is_dir=True, filecopyfunc=copyfile):
     if dest_is_dir:
         dest = os.path.join(dest, os.path.basename(path))
     hardlink = get_hardlink_function(path, dest)
+    path, dest = make_long_path_useable(path), make_long_path_useable(dest)
     try:
         hardlink(path, dest)
     except Exception:
@@ -575,7 +624,7 @@ def copytree_using_links(path, dest, dest_is_parent=True, filecopyfunc=copyfile)
     hardlink = get_hardlink_function(path, dest)
     try:
         os.makedirs(dest)
-    except EnvironmentError as e:
+    except OSError as e:
         if e.errno != errno.EEXIST:
             raise
     for dirpath, dirnames, filenames in os.walk(path):
@@ -584,7 +633,7 @@ def copytree_using_links(path, dest, dest_is_parent=True, filecopyfunc=copyfile)
         for dname in dirnames:
             try:
                 os.mkdir(os.path.join(dest_base, dname))
-            except EnvironmentError as e:
+            except OSError as e:
                 if e.errno != errno.EEXIST:
                     raise
         for fname in filenames:
@@ -601,10 +650,47 @@ rmtree = shutil.rmtree
 if iswindows:
     long_path_prefix = '\\\\?\\'
 
-    def make_long_path_useable(path):
-        if len(path) > 200 and os.path.isabs(path) and not path.startswith(long_path_prefix):
+    def make_long_path_useable(path, threshold=200):
+        if len(path) > threshold and os.path.isabs(path) and not path.startswith(long_path_prefix):
             path = long_path_prefix + os.path.normpath(path)
         return path
+
+    def is_fat_filesystem(path):
+        try:
+            from calibre_extensions.winutil import filesystem_type_name
+        except ImportError:
+            return False
+        if not path:
+            return False
+        drive = os.path.abspath(path)[0].upper()
+        try:
+            tn = filesystem_type_name(f'{drive}:\\')
+        except OSError:
+            return False
+        # Values I have seen: FAT32, exFAT, NTFS
+        return tn.upper().startswith('FAT')
+
+    def get_long_path_name(path):
+        from calibre_extensions.winutil import get_long_path_name
+        lpath = path
+        if os.path.isabs(lpath) and not lpath.startswith(long_path_prefix):
+            lpath = long_path_prefix + lpath
+        try:
+            return get_long_path_name(lpath)
+        except FileNotFoundError:
+            return path
+        except OSError as e:
+            if e.winerror == 123:  # ERR_INVALID_NAME
+                return path
+            raise
+
 else:
-    def make_long_path_useable(path):
+    def make_long_path_useable(path, threshold=200):
         return path
+
+    def get_long_path_name(path):
+        return path
+
+    def is_fat_filesystem(path):
+        # TODO: Implement for Linux and macOS
+        return False

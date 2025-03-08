@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 
 
 __license__ = 'GPL v3'
@@ -11,15 +10,16 @@ from functools import partial
 from operator import itemgetter
 
 from css_parser.css import CSSRule, CSSStyleDeclaration
-from css_selectors import parse, SelectorSyntaxError
+from css_selectors import Select, SelectorError, SelectorSyntaxError, parse
 
 from calibre import force_unicode
-from calibre.ebooks.oeb.base import OEB_STYLES, OEB_DOCS, XHTML, css_text
+from calibre.ebooks.oeb.base import OEB_DOCS, OEB_STYLES, XHTML, css_text
 from calibre.ebooks.oeb.normalize_css import normalize_filter_css, normalizers
 from calibre.ebooks.oeb.polish.pretty import pretty_script_or_style, pretty_xml_tree, serialize
+from calibre.utils.icu import lower as icu_lower
 from calibre.utils.icu import numeric_sort_key
-from css_selectors import Select, SelectorError
-from polyglot.builtins import iteritems, itervalues, unicode_type, filter
+from calibre.utils.localization import ngettext
+from polyglot.builtins import iteritems, itervalues
 from polyglot.functools import lru_cache
 
 
@@ -425,8 +425,7 @@ def classes_in_rule_list(css_rules):
 def iter_declarations(sheet_or_rule):
     if hasattr(sheet_or_rule, 'cssRules'):
         for rule in sheet_or_rule.cssRules:
-            for x in iter_declarations(rule):
-                yield x
+            yield from iter_declarations(rule)
     elif hasattr(sheet_or_rule, 'style'):
         yield sheet_or_rule.style
     elif isinstance(sheet_or_rule, CSSStyleDeclaration):
@@ -456,10 +455,10 @@ def sort_sheet(container, sheet_or_text):
     ''' Sort the rules in a stylesheet. Note that in the general case this can
     change the effective styles, but for most common sheets, it should be safe.
     '''
-    sheet = container.parse_css(sheet_or_text) if isinstance(sheet_or_text, unicode_type) else sheet_or_text
+    sheet = container.parse_css(sheet_or_text) if isinstance(sheet_or_text, str) else sheet_or_text
 
     def text_sort_key(x):
-        return numeric_sort_key(unicode_type(x or ''))
+        return numeric_sort_key(str(x or ''))
 
     def selector_sort_key(x):
         return (x.specificity, text_sort_key(x.selectorText))
@@ -504,12 +503,16 @@ def rename_class_in_rule_list(css_rules, old_name, new_name):
     # this regex will not match class names inside attribute value selectors
     # and it will match id selectors that contain .old_name but its the best
     # that can be done without implementing a full parser for CSS selectors
-    pat = re.compile(rf'(?<=\.){re.escape(old_name)}\b')
+    pat = re.compile(rf'(?<=\.){re.escape(old_name)}(?:\W|$)')
+
+    def repl(m):
+        return m.group().replace(old_name, new_name)
+
     changed = False
     for rule in css_rules:
         if rule.type == rule.STYLE_RULE:
             old = rule.selectorText
-            q = pat.sub(new_name, old)
+            q = pat.sub(repl, old)
             if q != old:
                 changed = True
                 rule.selectorText = q
@@ -521,11 +524,15 @@ def rename_class_in_rule_list(css_rules, old_name, new_name):
 
 def rename_class_in_doc(container, root, old_name, new_name):
     changed = False
-    pat = re.compile(rf'\b{re.escape(old_name)}\b')
+    pat = re.compile(rf'(?:^|\W){re.escape(old_name)}(?:\W|$)')
+
+    def repl(m):
+        return m.group().replace(old_name, new_name)
+
     for elem in root.xpath('//*[@class]'):
         old = elem.get('class')
         if old:
-            new = pat.sub(new_name, old)
+            new = pat.sub(repl, old)
             if new != old:
                 changed = True
                 elem.set('class', new)

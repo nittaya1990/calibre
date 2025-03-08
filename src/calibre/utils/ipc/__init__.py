@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
 
 
 __license__   = 'GPL v3'
@@ -10,9 +9,7 @@ import errno
 import os
 
 from calibre import force_unicode
-from calibre.constants import (
-    filesystem_encoding, get_windows_username, islinux, iswindows
-)
+from calibre.constants import filesystem_encoding, get_windows_username, islinux, iswindows
 from calibre.utils.filenames import ascii_filename
 from polyglot.functools import lru_cache
 
@@ -23,7 +20,7 @@ def eintr_retry_call(func, *args, **kwargs):
     while True:
         try:
             return func(*args, **kwargs)
-        except EnvironmentError as e:
+        except OSError as e:
             if getattr(e, 'errno', None) == errno.EINTR:
                 continue
             raise

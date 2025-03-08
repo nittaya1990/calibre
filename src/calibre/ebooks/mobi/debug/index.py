@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
 
 
 __license__   = 'GPL v3'
@@ -7,14 +6,12 @@ __copyright__ = '2012, Kovid Goyal <kovid@kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
 
 import struct
-
 from collections import OrderedDict, namedtuple
 
 from calibre.ebooks.mobi.reader.headers import NULL_INDEX
-from calibre.ebooks.mobi.reader.index import (CNCX, parse_indx_header,
-        parse_tagx_section, parse_index_record, INDEX_HEADER_FIELDS)
-from calibre.ebooks.mobi.reader.ncx import (tag_fieldname_map, default_entry)
-from polyglot.builtins import iteritems, range
+from calibre.ebooks.mobi.reader.index import CNCX, INDEX_HEADER_FIELDS, get_tag_section_start, parse_index_record, parse_indx_header, parse_tagx_section
+from calibre.ebooks.mobi.reader.ncx import default_entry, tag_fieldname_map
+from polyglot.builtins import iteritems
 
 File = namedtuple('File',
     'file_number name divtbl_count start_position length')
@@ -54,7 +51,7 @@ def read_variable_len_data(data, header):
         header['tagx_block_size'] = 0
     trailing_bytes = data[idxt_offset+idxt_size:]
     if trailing_bytes.rstrip(b'\0'):
-        raise ValueError('Traling bytes after last IDXT entry: %r' % trailing_bytes.rstrip(b'\0'))
+        raise ValueError('Traling bytes after last IDXT entry: {!r}'.format(trailing_bytes.rstrip(b'\0')))
     header['indices'] = indices
 
 
@@ -71,7 +68,7 @@ def read_index(sections, idx, codec):
         cncx_records = [x.raw for x in sections[off:off+indx_header['ncncx']]]
         cncx = CNCX(cncx_records, codec)
 
-    tag_section_start = indx_header['tagx']
+    tag_section_start = get_tag_section_start(data, indx_header)
     control_byte_count, tags = parse_tagx_section(data[tag_section_start:])
 
     read_variable_len_data(data, indx_header)
@@ -99,24 +96,24 @@ class Index:
         a = ans.append
         if self.header is not None:
             for field in INDEX_HEADER_FIELDS:
-                a('%-12s: %r'%(FIELD_NAMES.get(field, field), self.header[field]))
+                a(f'{FIELD_NAMES.get(field, field):<12}: {self.header[field]!r}')
         ans.extend(['', ''])
-        ans += ['*'*10 + ' Index Record Headers (%d records) ' % len(self.index_headers) + '*'*10]
+        ans += ['*'*10 + f' Index Record Headers ({len(self.index_headers)} records) ' + '*'*10]
         for i, header in enumerate(self.index_headers):
-            ans += ['*'*10 + ' Index Record %d ' % i + '*'*10]
+            ans += ['*'*10 + f' Index Record {i} ' + '*'*10]
             for field in INDEX_HEADER_FIELDS:
-                a('%-12s: %r'%(FIELD_NAMES.get(field, field), header[field]))
+                a(f'{FIELD_NAMES.get(field, field):<12}: {header[field]!r}')
 
         if self.cncx:
             a('*'*10 + ' CNCX ' + '*'*10)
             for offset, val in iteritems(self.cncx):
-                a('%10s: %s'%(offset, val))
+                a(f'{offset:10}: {val}')
             ans.extend(['', ''])
 
         if self.table is not None:
-            a('*'*10 + ' %d Index Entries '%len(self.table) + '*'*10)
+            a('*'*10 + f' {len(self.table)} Index Entries ' + '*'*10)
             for k, v in iteritems(self.table):
-                a('%s: %r'%(k, v))
+                a(f'{k}: {v!r}')
 
         if self.records:
             ans.extend(['', '', '*'*10 + ' Parsed Entries ' + '*'*10])
@@ -135,15 +132,14 @@ class Index:
 class SKELIndex(Index):
 
     def __init__(self, skelidx, records, codec):
-        super(SKELIndex, self).__init__(skelidx, records, codec)
+        super().__init__(skelidx, records, codec)
         self.records = []
 
         if self.table is not None:
             for i, text in enumerate(self.table):
                 tag_map = self.table[text]
                 if set(tag_map) != {1, 6}:
-                    raise ValueError('SKEL Index has unknown tags: %s'%
-                            (set(tag_map)-{1,6}))
+                    raise ValueError(f'SKEL Index has unknown tags: {set(tag_map)-{1,6}}')
                 self.records.append(File(
                     i,  # file_number
                     text,  # name
@@ -156,15 +152,14 @@ class SKELIndex(Index):
 class SECTIndex(Index):
 
     def __init__(self, sectidx, records, codec):
-        super(SECTIndex, self).__init__(sectidx, records, codec)
+        super().__init__(sectidx, records, codec)
         self.records = []
 
         if self.table is not None:
             for i, text in enumerate(self.table):
                 tag_map = self.table[text]
                 if set(tag_map) != {2, 3, 4, 6}:
-                    raise ValueError('Chunk Index has unknown tags: %s'%
-                            (set(tag_map)-{2, 3, 4, 6}))
+                    raise ValueError(f'Chunk Index has unknown tags: {set(tag_map)-{2,3,4,6}}')
 
                 toc_text = self.cncx[tag_map[2][0]]
                 self.records.append(Elem(
@@ -181,15 +176,14 @@ class SECTIndex(Index):
 class GuideIndex(Index):
 
     def __init__(self, guideidx, records, codec):
-        super(GuideIndex, self).__init__(guideidx, records, codec)
+        super().__init__(guideidx, records, codec)
         self.records = []
 
         if self.table is not None:
             for i, text in enumerate(self.table):
                 tag_map = self.table[text]
                 if set(tag_map) not in ({1, 6}, {1, 2, 3}):
-                    raise ValueError('Guide Index has unknown tags: %s'%
-                            tag_map)
+                    raise ValueError(f'Guide Index has unknown tags: {tag_map}')
 
                 title = self.cncx[tag_map[1][0]]
                 self.records.append(GuideRef(
@@ -203,7 +197,7 @@ class GuideIndex(Index):
 class NCXIndex(Index):
 
     def __init__(self, ncxidx, records, codec):
-        super(NCXIndex, self).__init__(ncxidx, records, codec)
+        super().__init__(ncxidx, records, codec)
         self.records = []
 
         if self.table is not None:

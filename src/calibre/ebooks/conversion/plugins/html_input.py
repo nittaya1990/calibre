@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
 
 
 __license__   = 'GPL v3'
@@ -9,15 +8,16 @@ __docformat__ = 'restructuredtext en'
 import os
 import re
 import tempfile
+from contextlib import suppress
 from functools import partial
 from urllib.parse import quote
 
-from calibre.constants import isbsd, islinux
+from calibre.constants import filesystem_encoding, isbsd, islinux
 from calibre.customize.conversion import InputFormatPlugin, OptionRecommendation
-from calibre.utils.filenames import ascii_filename
+from calibre.utils.filenames import ascii_filename, case_ignoring_open_file, get_long_path_name
 from calibre.utils.imghdr import what
-from calibre.utils.localization import get_lang
-from polyglot.builtins import as_unicode, getcwd, unicode_type, zip
+from calibre.utils.localization import __, get_lang
+from polyglot.builtins import as_unicode
 
 
 def sanitize_file_name(x):
@@ -38,6 +38,7 @@ class HTMLInput(InputFormatPlugin):
     description = _('Convert HTML and OPF files to an OEB')
     file_types  = {'opf', 'html', 'htm', 'xhtml', 'xhtm', 'shtm', 'shtml'}
     commit_name = 'html_input'
+    root_dir_for_absolute_links = ''
 
     options = {
         OptionRecommendation(name='breadth_first',
@@ -65,18 +66,35 @@ class HTMLInput(InputFormatPlugin):
                 )
         ),
 
+        OptionRecommendation(name='allow_local_files_outside_root',
+            recommended_value=False, level=OptionRecommendation.LOW,
+            help=_('Normally, resources linked to by the HTML file or its children will only be allowed'
+                   ' if they are in a sub-folder of the original HTML file. This option allows including'
+                   ' local files from any location on your computer. This can be a security risk if you'
+                   ' are converting untrusted HTML and expecting to distribute the result of the conversion.'
+                )
+        ),
+
+
     }
+
+    def set_root_dir_of_input(self, basedir):
+        self.root_dir_of_input = os.path.normcase(get_long_path_name(os.path.abspath(basedir)) + os.sep)
 
     def convert(self, stream, opts, file_ext, log,
                 accelerators):
         self._is_case_sensitive = None
-        basedir = getcwd()
+        basedir = os.getcwd()
         self.opts = opts
 
         fname = None
         if hasattr(stream, 'name'):
-            basedir = os.path.dirname(stream.name)
-            fname = os.path.basename(stream.name)
+            sname = stream.name
+            if isinstance(sname, bytes):
+                sname = sname.decode(filesystem_encoding)
+            basedir = os.path.dirname(sname)
+            fname = os.path.basename(sname)
+        self.set_root_dir_of_input(basedir)
 
         if file_ext != 'opf':
             if opts.dont_package:
@@ -104,20 +122,19 @@ class HTMLInput(InputFormatPlugin):
         return self._is_case_sensitive
 
     def create_oebbook(self, htmlpath, basedir, opts, log, mi):
-        import css_parser
         import logging
         import uuid
+
+        import css_parser
 
         from calibre import guess_type
         from calibre.ebooks.conversion.plumber import create_oebbook
         from calibre.ebooks.html.input import get_filelist
         from calibre.ebooks.metadata import string_to_authors
-        from calibre.ebooks.oeb.base import (
-            BINARY_MIME, OEB_STYLES, DirContainer, rewrite_links, urldefrag,
-            urlnormalize, urlquote, xpath
-        )
+        from calibre.ebooks.oeb.base import BINARY_MIME, OEB_STYLES, DirContainer, rewrite_links, urldefrag, urlnormalize, urlquote, xpath
         from calibre.ebooks.oeb.transforms.metadata import meta_info_to_oeb_metadata
         from calibre.utils.localization import canonicalize_lang
+        self.opts = opts
         css_parser.log.setLevel(logging.WARN)
         self.OEB_STYLES = OEB_STYLES
         oeb = create_oebbook(log, None, opts, self,
@@ -144,7 +161,7 @@ class HTMLInput(InputFormatPlugin):
         if not metadata.title:
             oeb.logger.warn('Title not specified')
             metadata.add('title', self.oeb.translate(__('Unknown')))
-        bookid = unicode_type(uuid.uuid4())
+        bookid = str(uuid.uuid4())
         metadata.add('identifier', bookid, id='uuid_id', scheme='uuid')
         for ident in metadata.identifier:
             if 'id' in ident.attrib:
@@ -228,21 +245,24 @@ class HTMLInput(InputFormatPlugin):
                 continue
             toc.add(title, item.href)
 
-        oeb.container = DirContainer(getcwd(), oeb.log, ignore_opf=True)
+        oeb.container = DirContainer(os.getcwd(), oeb.log, ignore_opf=True)
         return oeb
 
     def link_to_local_path(self, link_, base=None):
         from calibre.ebooks.html.input import Link
-        if not isinstance(link_, unicode_type):
+        if not isinstance(link_, str):
             try:
                 link_ = link_.decode('utf-8', 'error')
             except:
-                self.log.warn('Failed to decode link %r. Ignoring'%link_)
+                self.log.warn(f'Failed to decode link {link_!r}. Ignoring')
                 return None, None
+        if self.root_dir_for_absolute_links and link_.startswith('/'):
+            link_ = link_.lstrip('/')
+            base = self.root_dir_for_absolute_links
         try:
-            l = Link(link_, base if base else getcwd())
+            l = Link(link_, base if base else os.getcwd())
         except:
-            self.log.exception('Failed to process link: %r'%link_)
+            self.log.exception(f'Failed to process link: {link_!r}')
             return None, None
         if l.path is None:
             # Not a local resource
@@ -251,6 +271,13 @@ class HTMLInput(InputFormatPlugin):
         frag = l.fragment
         if not link:
             return None, None
+        link = os.path.abspath(os.path.realpath(link))
+        q = os.path.normcase(get_long_path_name(link))
+        if not q.startswith(self.root_dir_of_input):
+            if not self.opts.allow_local_files_outside_root:
+                if os.path.exists(q):
+                    self.log.warn(f'Not adding {q} as it is outside the document root: {self.root_dir_of_input}')
+                return None, None
         return link, frag
 
     def resource_adder(self, link_, base=None):
@@ -265,7 +292,13 @@ class HTMLInput(InputFormatPlugin):
         except:
             return link_
         if not os.access(link, os.R_OK):
-            return link_
+            corrected = False
+            if getattr(self.opts, 'correct_case_mismatches', False):
+                with suppress(OSError), case_ignoring_open_file(link) as f:
+                    link = f.name
+                    corrected = True
+            if not corrected:
+                return link_
         if os.path.isdir(link):
             self.log.warn(link_, 'is a link to a directory. Ignoring.')
             return link_
@@ -278,13 +311,13 @@ class HTMLInput(InputFormatPlugin):
             bhref = os.path.basename(link)
             id, href = self.oeb.manifest.generate(id='added', href=sanitize_file_name(bhref))
             if media_type == 'text/plain':
-                self.log.warn('Ignoring link to text file %r'%link_)
+                self.log.warn(f'Ignoring link to text file {link_!r}')
                 return None
             if media_type == self.BINARY_MIME:
                 # Check for the common case, images
                 try:
                     img = what(link)
-                except EnvironmentError:
+                except OSError:
                     pass
                 else:
                     if img:
@@ -298,7 +331,7 @@ class HTMLInput(InputFormatPlugin):
             # bhref refers to an already existing file. The read() method of
             # DirContainer will call unquote on it before trying to read the
             # file, therefore we quote it here.
-            if isinstance(bhref, unicode_type):
+            if isinstance(bhref, str):
                 bhref = bhref.encode('utf-8')
             item.html_input_href = as_unicode(quote(bhref))
             if is_stylesheet:

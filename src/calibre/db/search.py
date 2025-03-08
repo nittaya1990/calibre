@@ -1,31 +1,35 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:fdm=marker:ai
 
 
 __license__   = 'GPL v3'
 __copyright__ = '2013, Kovid Goyal <kovid at kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
 
-import regex, weakref, operator
-from functools import partial
+import operator
+import weakref
+from collections import OrderedDict, deque
 from datetime import timedelta
-from collections import deque, OrderedDict
+from functools import partial
 
-from calibre.constants import preferred_encoding, DEBUG
+import regex
+
+from calibre.constants import DEBUG, preferred_encoding
 from calibre.db.utils import force_to_bool
 from calibre.utils.config_base import prefs
-from calibre.utils.date import parse_date, UNDEFINED_DATE, now, dt_as_local
-from calibre.utils.icu import primary_contains, sort_key
-from calibre.utils.localization import lang_map, canonicalize_lang
-from calibre.utils.search_query_parser import SearchQueryParser, ParseException
-from polyglot.builtins import iteritems, unicode_type, string_or_bytes
+from calibre.utils.date import UNDEFINED_DATE, dt_as_local, now, parse_date
+from calibre.utils.icu import lower as icu_lower
+from calibre.utils.icu import primary_contains, primary_no_punc_contains, sort_key
+from calibre.utils.localization import canonicalize_lang, lang_map
+from calibre.utils.search_query_parser import ParseException, SearchQueryParser
+from polyglot.builtins import iteritems, string_or_bytes
 
 CONTAINS_MATCH = 0
 EQUALS_MATCH   = 1
 REGEXP_MATCH   = 2
+ACCENT_MATCH   = 3
+
 
 # Utils {{{
-
 
 def _matchkind(query, case_sensitive=False):
     matchkind = CONTAINS_MATCH
@@ -37,6 +41,9 @@ def _matchkind(query, case_sensitive=False):
             query = query[1:]
         elif query.startswith('~'):
             matchkind = REGEXP_MATCH
+            query = query[1:]
+        elif query.startswith('^'):
+            matchkind = ACCENT_MATCH
             query = query[1:]
 
     if not case_sensitive and matchkind != REGEXP_MATCH:
@@ -53,36 +60,36 @@ def _match(query, value, matchkind, use_primary_find_in_search=True, case_sensit
     else:
         internal_match_ok = False
     for t in value:
-        try:  # ignore regexp exceptions, required because search-ahead tries before typing is finished
-            if not case_sensitive:
-                t = icu_lower(t)
-            if (matchkind == EQUALS_MATCH):
-                if internal_match_ok:
-                    if query == t:
-                        return True
-                    comps = [c.strip() for c in t.split('.') if c.strip()]
-                    for comp in comps:
-                        if sq == comp:
-                            return True
-                elif query[0] == '.':
-                    if t.startswith(query[1:]):
-                        ql = len(query) - 1
-                        if (len(t) == ql) or (t[ql:ql+1] == '.'):
-                            return True
-                elif query == t:
+        if not case_sensitive:
+            t = icu_lower(t)
+        if matchkind == EQUALS_MATCH:
+            if internal_match_ok:
+                if query == t:
                     return True
-            elif matchkind == REGEXP_MATCH:
-                flags = regex.UNICODE | regex.VERSION1 | regex.FULLCASE | (0 if case_sensitive else regex.IGNORECASE)
+                return sq in (c.strip() for c in t.split('.') if c.strip())
+            elif query[0] == '.':
+                if t.startswith(query[1:]):
+                    ql = len(query) - 1
+                    if len(t) == ql or t[ql:ql+1] == '.':
+                        return True
+            elif query == t:
+                return True
+        elif matchkind == REGEXP_MATCH:
+            flags = regex.UNICODE | regex.VERSION1 | regex.FULLCASE | (0 if case_sensitive else regex.IGNORECASE)
+            try:
                 if regex.search(query, t, flags) is not None:
                     return True
-            elif matchkind == CONTAINS_MATCH:
-                if not case_sensitive and use_primary_find_in_search:
-                    if primary_contains(query, t):
-                        return True
-                elif query in t:
+            except regex.error as e:
+                raise ParseException(_('Invalid regular expression: {!r} with error: {}').format(query, str(e)))
+        elif matchkind == ACCENT_MATCH:
+            if primary_contains(query, t):
+                return True
+        elif matchkind == CONTAINS_MATCH:
+            if not case_sensitive and use_primary_find_in_search:
+                if primary_no_punc_contains(query, t):
                     return True
-        except regex.error:
-            pass
+            elif query in t:
+                return True
     return False
 # }}}
 
@@ -101,7 +108,7 @@ class DateSearch:  # {{{
         self.local_today         = {'_today', 'today', icu_lower(_('today'))}
         self.local_yesterday     = {'_yesterday', 'yesterday', icu_lower(_('yesterday'))}
         self.local_thismonth     = {'_thismonth', 'thismonth', icu_lower(_('thismonth'))}
-        self.daysago_pat = regex.compile(r'(%s|daysago|_daysago)$'%_('daysago'), flags=regex.UNICODE | regex.VERSION1)
+        self.daysago_pat = regex.compile(r'({}|daysago|_daysago)$'.format(_('daysago')), flags=regex.UNICODE | regex.VERSION1)
 
     def eq(self, dbdate, query, field_count):
         if dbdate.year == query.year:
@@ -149,7 +156,7 @@ class DateSearch:  # {{{
 
         if query == 'false':
             for v, book_ids in field_iter():
-                if isinstance(v, (bytes, unicode_type)):
+                if isinstance(v, (bytes, str)):
                     if isinstance(v, bytes):
                         v = v.decode(preferred_encoding, 'replace')
                     v = parse_date(v)
@@ -159,7 +166,7 @@ class DateSearch:  # {{{
 
         if query == 'true':
             for v, book_ids in field_iter():
-                if isinstance(v, (bytes, unicode_type)):
+                if isinstance(v, (bytes, str)):
                     if isinstance(v, bytes):
                         v = v.decode(preferred_encoding, 'replace')
                     v = parse_date(v)
@@ -234,9 +241,12 @@ class NumericSearch:  # {{{
         dt = datatype
 
         if is_many and query in {'true', 'false'}:
-            valcheck = lambda x: True
             if datatype == 'rating':
-                valcheck = lambda x: x is not None and x > 0
+                def valcheck(x):
+                    return (x is not None and x > 0)
+            else:
+                def valcheck(x):
+                    return True
             found = set()
             for val, book_ids in field_iter():
                 if valcheck(val):
@@ -245,14 +255,18 @@ class NumericSearch:  # {{{
 
         if query == 'false':
             if location == 'cover':
-                relop = lambda x,y: not bool(x)
+                def relop(x, y):
+                    return (not bool(x))
             else:
-                relop = lambda x,y: x is None
+                def relop(x, y):
+                    return (x is None)
         elif query == 'true':
             if location == 'cover':
-                relop = lambda x,y: bool(x)
+                def relop(x, y):
+                    return bool(x)
             else:
-                relop = lambda x,y: x is not None
+                def relop(x, y):
+                    return (x is not None)
         else:
             for k, relop in iteritems(self.operators):
                 if query.startswith(k):
@@ -262,8 +276,11 @@ class NumericSearch:  # {{{
                 relop = self.operators['=']
 
             if dt == 'rating':
-                cast = lambda x: 0 if x is None else int(x)
-                adjust = lambda x: x // 2
+                def cast(x):
+                    return (0 if x is None else int(x))
+
+                def adjust(x):
+                    return (x // 2)
             else:
                 # Datatype is empty if the source is a template. Assume float
                 cast = float if dt in ('float', 'composite', 'half-rating', '') else int
@@ -295,7 +312,8 @@ class NumericSearch:  # {{{
             try:
                 v = cast(val)
             except Exception:
-                v = None
+                raise ParseException(
+                        _('Non-numeric value in column {0}: {1}').format(location, val))
             if v:
                 v = adjust(v)
             if relop(v, q):
@@ -398,7 +416,7 @@ class SavedSearchQueries:  # {{{
             self._db = weakref.ref(db)
         except TypeError:
             # db could be None
-            self._db = lambda : None
+            self._db = lambda: None
         self.load_from_db()
 
     def load_from_db(self):
@@ -413,7 +431,7 @@ class SavedSearchQueries:  # {{{
         return self._db()
 
     def force_unicode(self, x):
-        if not isinstance(x, unicode_type):
+        if not isinstance(x, str):
             x = x.decode(preferred_encoding, 'replace')
         return x
 
@@ -469,6 +487,8 @@ class Parser(SearchQueryParser):  # {{{
         self.virtual_fields = virtual_fields or {}
         if 'marked' not in self.virtual_fields:
             self.virtual_fields['marked'] = self
+        if 'in_tag_browser' not in self.virtual_fields:
+            self.virtual_fields['in_tag_browser'] = self
         SearchQueryParser.__init__(self, locations, optimize=True, lookup_saved_search=lookup_saved_search, parse_cache=parse_cache)
 
     @property
@@ -637,7 +657,7 @@ class Parser(SearchQueryParser):  # {{{
 
         if location == 'template':
             try:
-                template, sep, query = regex.split('#@#:([tdnb]):', query, flags=regex.IGNORECASE)
+                template, sep, query = regex.split(r'#@#:([tdnb]):', query, flags=regex.IGNORECASE)
                 if sep:
                     sep = sep.lower()
                 else:
@@ -651,11 +671,13 @@ class Parser(SearchQueryParser):  # {{{
             matches = set()
             error_string = '*@*TEMPLATE_ERROR*@*'
             template_cache = {}
+            global_vars = {'_candidates': candidates}
             for book_id in candidates:
                 mi = self.dbcache.get_proxy_metadata(book_id)
                 val = mi.formatter.safe_format(template, {}, error_string, mi,
                                             column_name='search template',
-                                            template_cache=template_cache)
+                                            template_cache=template_cache,
+                                            global_vars=global_vars, database=self.dbcache)
                 if val.startswith(error_string):
                     raise ParseException(val[len(error_string):])
                 if sep == 't':
@@ -936,7 +958,7 @@ class Search:
     def query_is_cacheable(self, sqp, dbcache, query):
         if query:
             for name, value in sqp.get_queried_fields(query):
-                if name == 'template' and '#@#:d:' in value:
+                if name == 'template':
                     return False
                 elif name in dbcache.field_metadata.all_field_keys():
                     fm = dbcache.field_metadata[name]

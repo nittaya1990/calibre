@@ -1,17 +1,17 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 
 
 __license__ = 'GPL v3'
 __copyright__ = '2014, Kovid Goyal <kovid at kovidgoyal.net>'
 
-import os, sys
-from threading import Thread
+import os
+import sys
 from collections import namedtuple
 from multiprocessing.connection import Pipe
+from threading import Thread
 
-from calibre import detect_ncpus, as_unicode, prints
-from calibre.constants import iswindows, DEBUG
+from calibre import as_unicode, detect_ncpus, prints
+from calibre.constants import DEBUG, iswindows
 from calibre.ptempfile import PersistentTemporaryFile
 from calibre.utils import join_with_timeout
 from calibre.utils.ipc import eintr_retry_call
@@ -40,7 +40,7 @@ if iswindows:
     # Note that when running via the "Restart in debug mode" action, stdout is
     # not a console (its already redirected to a log file), so no redirection
     # is required.
-    if getattr(sys, 'gui_app', False) or getattr(sys.stdout, 'isatty', lambda : False)():
+    if getattr(sys, 'gui_app', False) or getattr(sys.stdout, 'isatty', lambda: False)():
         if DEBUG:
             # We are running in a windows console with calibre-debug -g
             import subprocess
@@ -60,11 +60,11 @@ def get_stdout(process):
             if raw:
                 try:
                     sys.stdout.buffer.write(raw)
-                except EnvironmentError:
+                except OSError:
                     pass
             else:
                 time.sleep(0.1)
-        except (EOFError, EnvironmentError):
+        except (EOFError, OSError):
             break
 
 
@@ -294,7 +294,7 @@ class Pool(Thread):
             if worker.process.poll() is None:
                 try:
                     worker.process.terminate()
-                except EnvironmentError:
+                except OSError:
                     pass  # If the process has already been killed
         workers = [w.process for w in self.available_workers + list(self.busy_workers)]
         aw = list(self.available_workers)
@@ -323,14 +323,14 @@ class Pool(Thread):
             if w.poll() is None:
                 try:
                     w.kill()
-                except EnvironmentError:
+                except OSError:
                     pass
         del self.available_workers[:]
         self.busy_workers.clear()
         if hasattr(self, 'cd_file'):
             try:
                 os.remove(self.cd_file.name)
-            except EnvironmentError:
+            except OSError:
                 pass
 
 
@@ -353,7 +353,7 @@ def worker_main(conn):
             break
         if not isinstance(job, Job):
             if isinstance(job, File):
-                with lopen(job.name, 'rb') as f:
+                with open(job.name, 'rb') as f:
                     common_data = f.read()
                 common_data = pickle_loads(common_data)
             else:
@@ -420,7 +420,7 @@ def test():
     p.wait_for_tasks(30)
     results = {k:v.value for k, v in iteritems(get_results(p))}
     if results != expected_results:
-        raise SystemExit('%r != %r' % (expected_results, results))
+        raise SystemExit(f'{expected_results!r} != {results!r}')
     p.shutdown(), p.join()
 
     # Test common_data
@@ -434,7 +434,7 @@ def test():
     p.wait_for_tasks(30)
     results = {k:v.value for k, v in iteritems(get_results(p))}
     if results != expected_results:
-        raise SystemExit('%r != %r' % (expected_results, results))
+        raise SystemExit(f'{expected_results!r} != {results!r}')
     p.shutdown(), p.join()
 
     # Test large common data
@@ -457,7 +457,7 @@ def test():
     for r in itervalues(get_results(p)):
         c += 1
         if not r.traceback or 'ZeroDivisionError' not in r.traceback:
-            raise SystemExit('Unexpected result: %s' % r)
+            raise SystemExit(f'Unexpected result: {r}')
     if c != 1000:
         raise SystemExit('Incorrect number of results')
     p.shutdown(), p.join()

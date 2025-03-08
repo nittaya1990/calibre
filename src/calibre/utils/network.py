@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
 # License: GPLv3 Copyright: 2010, Kovid Goyal <kovid at kovidgoyal.net>
 
 
@@ -28,20 +27,20 @@ class LinuxNetworkStatus:
         #
         # There is no difference in terms of “features” provided between
         # the two APIs from our point of view.
-        self.xdp_call = lambda : new_method_call(DBusAddress(
+        self.xdp_call = lambda: new_method_call(DBusAddress(
             '/org/freedesktop/portal/desktop',
             bus_name='org.freedesktop.portal.Desktop',
-            interface="org.freedesktop.portal.NetworkMonitor"), 'GetConnectivity')
-        self.nm_call = lambda : Properties(DBusAddress('/org/freedesktop/NetworkManager',
+            interface='org.freedesktop.portal.NetworkMonitor'), 'GetConnectivity')
+        self.nm_call = lambda: Properties(DBusAddress('/org/freedesktop/NetworkManager',
                 bus_name='org.freedesktop.NetworkManager',
-                interface="org.freedesktop.NetworkManager")).get('Connectivity')
+                interface='org.freedesktop.NetworkManager')).get('Connectivity')
 
         if self.xdp() is not None:
             self.get_connectivity = self.xdp
         elif self.nm() is not None:
             self.get_connectivity = self.nm
         else:
-            self.get_connectivity = lambda : 4
+            self.get_connectivity = lambda: 4
 
     def connect(self, which='SESSION'):
         from jeepney.io.blocking import open_dbus_connection
@@ -109,3 +108,23 @@ def internet_connected():
         DummyNetworkStatus()
 
     return internet_connected.checker()
+
+
+def is_ipv6_addr(addr):
+    import socket
+    try:
+        socket.inet_pton(socket.AF_INET6, addr)
+    except Exception:
+        return False
+    return True
+
+
+def format_addr_for_url(addr):
+    if is_ipv6_addr(addr):
+        addr = f'[{addr}]'
+    return addr
+
+
+def get_fallback_server_addr():
+    from socket import has_dualstack_ipv6
+    return '::' if has_dualstack_ipv6() else '0.0.0.0'

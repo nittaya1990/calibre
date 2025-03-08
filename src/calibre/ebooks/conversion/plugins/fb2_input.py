@@ -1,15 +1,15 @@
-
-
 __license__   = 'GPL v3'
 __copyright__ = '2008, Anatoly Shipitsin <norguhtar at gmail.com>'
-"""
+'''
 Convert .fb2 files to .lrf
-"""
-import os, re
+'''
+import os
+import re
 
-from calibre.customize.conversion import InputFormatPlugin, OptionRecommendation
 from calibre import guess_type
-from polyglot.builtins import iteritems, getcwd
+from calibre.customize.conversion import InputFormatPlugin, OptionRecommendation
+from calibre.utils.resources import get_path as P
+from polyglot.builtins import iteritems
 
 FB2NS  = 'http://www.gribuser.ru/xml/fictionbook/2.0'
 FB21NS = 'http://www.gribuser.ru/xml/fictionbook/2.1'
@@ -32,19 +32,20 @@ class FB2Input(InputFormatPlugin):
     options = {
     OptionRecommendation(name='no_inline_fb2_toc',
         recommended_value=False, level=OptionRecommendation.LOW,
-        help=_('Do not insert a Table of Contents at the beginning of the book.'
+        help=_('Do not insert a Table of Contents at the beginning of the book'
                 )
         )}
 
     def convert(self, stream, options, file_ext, log,
                 accelerators):
         from lxml import etree
-        from calibre.utils.xml_parse import safe_xml_fromstring
-        from calibre.ebooks.metadata.fb2 import ensure_namespace, get_fb2_data
-        from calibre.ebooks.metadata.opf2 import OPFCreator
-        from calibre.ebooks.metadata.meta import get_metadata
-        from calibre.ebooks.oeb.base import XLINK_NS, XHTML_NS
+
         from calibre.ebooks.chardet import xml_to_unicode
+        from calibre.ebooks.metadata.fb2 import ensure_namespace, get_fb2_data
+        from calibre.ebooks.metadata.meta import get_metadata
+        from calibre.ebooks.metadata.opf2 import OPFCreator
+        from calibre.ebooks.oeb.base import XHTML_NS, XLINK_NS
+        from calibre.utils.xml_parse import safe_xml_fromstring
         self.log = log
         log.debug('Parsing XML...')
         raw = get_fb2_data(stream)[0]
@@ -70,11 +71,13 @@ class FB2Input(InputFormatPlugin):
             css += etree.tostring(s, encoding='unicode', method='text',
                     with_tail=False) + '\n\n'
         if css:
-            import css_parser, logging
+            import logging
+
+            import css_parser
             parser = css_parser.CSSParser(fetcher=None,
                     log=logging.getLogger('calibre.css'))
 
-            XHTML_CSS_NAMESPACE = '@namespace "%s";\n' % XHTML_NS
+            XHTML_CSS_NAMESPACE = f'@namespace "{XHTML_NS}";\n'
             text = XHTML_CSS_NAMESPACE + css
             log.debug('Parsing stylesheet...')
             stylesheet = parser.parseString(text)
@@ -88,7 +91,7 @@ class FB2Input(InputFormatPlugin):
         log.debug('Converting XML to HTML...')
         with open(P('templates/fb2.xsl'), 'rb') as f:
             ss = f.read().decode('utf-8')
-        ss = ss.replace("__FB_NS__", fb_ns)
+        ss = ss.replace('__FB_NS__', fb_ns)
         if options.no_inline_fb2_toc:
             log('Disabling generation of inline FB2 TOC')
             ss = re.compile(r'<!-- BUILD TOC -->.*<!-- END BUILD TOC -->',
@@ -102,17 +105,17 @@ class FB2Input(InputFormatPlugin):
         # Handle links of type note and cite
         notes = {a.get('href')[1:]: a for a in result.xpath('//a[@link_note and @href]') if a.get('href').startswith('#')}
         cites = {a.get('link_cite'): a for a in result.xpath('//a[@link_cite]') if not a.get('href', '')}
-        all_ids = {x for x in result.xpath('//*/@id')}
+        all_ids = set(result.xpath('//*/@id'))
         for cite, a in iteritems(cites):
             note = notes.get(cite, None)
             if note:
                 c = 1
-                while 'cite%d' % c in all_ids:
+                while f'cite{c}' in all_ids:
                     c += 1
                 if not note.get('id', None):
-                    note.set('id', 'cite%d' % c)
+                    note.set('id', f'cite{c}')
                     all_ids.add(note.get('id'))
-                a.set('href', '#%s' % note.get('id'))
+                a.set('href', '#{}'.format(note.get('id')))
         for x in result.xpath('//*[@link_note or @link_cite]'):
             x.attrib.pop('link_note', None)
             x.attrib.pop('link_cite', None)
@@ -120,6 +123,13 @@ class FB2Input(InputFormatPlugin):
         for img in result.xpath('//img[@src]'):
             src = img.get('src')
             img.set('src', self.binary_map.get(src, src))
+
+        # make paragraphs <p> tags
+        has_block_elements = etree.XPath('descendant::*[name()="div" or name()="table"]')
+        for divp in result.xpath('//body/div[@class="paragraph"]'):
+            if not has_block_elements(divp):
+                divp.tag = 'p'
+
         index = transform.tostring(result)
         with open('index.xhtml', 'wb') as f:
             f.write(index.encode('utf-8'))
@@ -138,22 +148,22 @@ class FB2Input(InputFormatPlugin):
             cpath = os.path.abspath('fb2_cover_calibre_mi.jpg')
         else:
             for img in doc.xpath('//f:coverpage/f:image', namespaces=NAMESPACES):
-                href = img.get('{%s}href'%XLINK_NS, img.get('href', None))
+                href = img.get(f'{{{XLINK_NS}}}href', img.get('href', None))
                 if href is not None:
                     if href.startswith('#'):
                         href = href[1:]
                     cpath = os.path.abspath(href)
                     break
 
-        opf = OPFCreator(getcwd(), mi)
-        entries = [(f2, guess_type(f2)[0]) for f2 in os.listdir(u'.')]
+        opf = OPFCreator(os.getcwd(), mi)
+        entries = [(f2, guess_type(f2)[0]) for f2 in os.listdir('.')]
         opf.create_manifest(entries)
         opf.create_spine(['index.xhtml'])
         if cpath:
             opf.guide.set_cover(cpath)
         with open('metadata.opf', 'wb') as f:
             opf.render(f)
-        return os.path.join(getcwd(), 'metadata.opf')
+        return os.path.join(os.getcwd(), 'metadata.opf')
 
     def extract_embedded_content(self, doc):
         from calibre.ebooks.fb2 import base64_decode
@@ -172,8 +182,7 @@ class FB2Input(InputFormatPlugin):
                 try:
                     data = base64_decode(raw)
                 except TypeError:
-                    self.log.exception('Binary data with id=%s is corrupted, ignoring'%(
-                        elem.get('id')))
+                    self.log.exception('Binary data with id={} is corrupted, ignoring'.format(elem.get('id')))
                 else:
                     with open(fname, 'wb') as f:
                         f.write(data)

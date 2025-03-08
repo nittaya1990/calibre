@@ -1,9 +1,8 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 # License: GPL v3 Copyright: 2021, Kovid Goyal <kovid at kovidgoyal.net>
 
-from importlib import import_module
 import sys
+from importlib import import_module
 
 
 def dynamic_load(name, name_map, already_imported, qt_modules, module_names=()):
@@ -23,7 +22,7 @@ def dynamic_load(name, name_map, already_imported, qt_modules, module_names=()):
                     mod_name,
                     'with error:',
                     err,
-                    file=sys.stderr
+                    file=sys.stderr,
                 )
         if mod is not False:
             if name in module_names:

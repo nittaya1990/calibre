@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 # License: GPLv3 Copyright: 2016, Kovid Goyal <kovid at kovidgoyal.net>
 
 
@@ -18,7 +17,8 @@ from calibre.srv.routes import endpoint
 from calibre.srv.utils import get_library_data, http_date
 from calibre.utils.cleantext import clean_xml_chars
 from calibre.utils.date import dt_as_local, is_date_undefined, timestampfromdt
-from polyglot.builtins import iteritems, string_or_bytes, filter, as_bytes, unicode_type
+from calibre.utils.localization import _
+from polyglot.builtins import as_bytes, iteritems, string_or_bytes
 from polyglot.urllib import urlencode
 
 # /mobile {{{
@@ -62,10 +62,10 @@ def build_search_box(num, search, sort, order, ctx, field_metadata, library_id):
 
     num_select = E.select(name='num')
     for option in (5, 10, 25, 100):
-        kwargs = {'value':unicode_type(option)}
+        kwargs = {'value':str(option)}
         if option == num:
             kwargs['SELECTED'] = 'SELECTED'
-        num_select.append(E.option(unicode_type(option), **kwargs))
+        num_select.append(E.option(str(option), **kwargs))
     num_select.tail = ' books matching '
     form.append(num_select)
 
@@ -101,24 +101,23 @@ def build_search_box(num, search, sort, order, ctx, field_metadata, library_id):
 
 def build_navigation(start, num, total, url_base):  # {{{
     end = min((start+num-1), total)
-    tagline = E.span('Books %d to %d of %d'%(start, end, total),
+    tagline = E.span(f'Books {start} to {end} of {total}',
             style='display: block; text-align: center;')
     left_buttons = E.td(class_='button', style='text-align:left')
     right_buttons = E.td(class_='button', style='text-align:right')
 
     if start > 1:
-        for t,s in [('First', 1), ('Previous', max(start-num,1))]:
-            left_buttons.append(E.a(t, href='%s&start=%d'%(url_base, s)))
+        for t,s in [('First', 1), ('Previous', max(start-num, 1))]:
+            left_buttons.append(E.a(t, href=f'{url_base}&start={s}'))
 
     if total > start + num:
         for t,s in [('Next', start+num), ('Last', total-num+1)]:
-            right_buttons.append(E.a(t, href='%s&start=%d'%(url_base, s)))
+            right_buttons.append(E.a(t, href=f'{url_base}&start={s}'))
 
     buttons = E.table(
             E.tr(left_buttons, right_buttons),
             class_='buttons')
     return E.div(tagline, buttons, class_='navigation')
-
 # }}}
 
 
@@ -169,14 +168,14 @@ def build_index(rd, books, num, search, sort, order, start, total, url_base, fie
                     href=ctx.url_for('/legacy/get', what=fmt, book_id=book.id, library_id=library_id, filename=book_filename(rd, book.id, book, fmt))
                 ),
                 class_='button')
-            s.tail = u''
+            s.tail = ''
             data.append(s)
 
         div = E.div(class_='data-container')
         data.append(div)
 
-        series = ('[%s - %s]'%(book.series, book.series_index)) if book.series else ''
-        tags = ('Tags=[%s]'%', '.join(book.tags)) if book.tags else ''
+        series = (f'[{book.series} - {book.series_index}]') if book.series else ''
+        tags = ('Tags=[{}]'.format(', '.join(book.tags))) if book.tags else ''
 
         ctext = ''
         for key in filter(ctx.is_field_displayable, field_metadata.ignorable_field_keys()):
@@ -185,13 +184,12 @@ def build_index(rd, books, num, search, sort, order, start, total, url_base, fie
                 continue
             name, val = book.format_field(key)
             if val:
-                ctext += '%s=[%s] '%(name, val)
+                ctext += f'{name}=[{val}] '
 
-        first = E.span('%s %s by %s' % (book.title, series,
-            authors_to_string(book.authors)), class_='first-line')
+        first = E.span(f'{book.title} {series} by {authors_to_string(book.authors)}', class_='first-line')
         div.append(first)
         ds = '' if is_date_undefined(book.timestamp) else strftime('%d %b, %Y', t=dt_as_local(book.timestamp).timetuple())
-        second = E.span('%s %s %s' % (ds, tags, ctext), class_='second-line')
+        second = E.span(f'{ds} {tags} {ctext}', class_='second-line')
         div.append(second)
 
         books_table.append(E.tr(thumbnail, data))
@@ -201,18 +199,18 @@ def build_index(rd, books, num, search, sort, order, start, total, url_base, fie
     body.append(E.div(
         E.a(_('Switch to the full interface (non-mobile interface)'),
             href=ctx.url_for(None),
-            style="text-decoration: none; color: blue",
+            style='text-decoration: none; color: blue',
             title=_('The full interface gives you many more features, '
                     'but it may not work well on a small screen')),
-        style="text-align:center")
+        style='text-align:center')
     )
     return E.html(
         E.head(
             E.title(__appname__ + ' Library'),
             E.link(rel='icon', href=ctx.url_for('/favicon.png'), type='image/png'),
             E.link(rel='stylesheet', type='text/css', href=ctx.url_for('/static', what='mobile.css')),
-            E.link(rel='apple-touch-icon', href=ctx.url_for("/static", what='calibre.png')),
-            E.meta(name="robots", content="noindex")
+            E.link(rel='apple-touch-icon', href=ctx.url_for('/static', what='calibre.png')),
+            E.meta(name='robots', content='noindex')
         ),  # End head
         body
     )  # End html
@@ -254,9 +252,13 @@ def mobile(ctx, rd):
 @endpoint('/browse/{+rest=""}')
 def browse(ctx, rd, rest):
     if rest.startswith('book/'):
+        try:
+            book_id = int(rest[5:])
+        except Exception:
+            raise HTTPRedirect(ctx.url_for(None))
         # implementation of https://bugs.launchpad.net/calibre/+bug/1698411
         # redirect old server book URLs to new URLs
-        redirect = ctx.url_for(None) + '#book_id=' + rest[5:] + "&amp;panel=book_details"
+        redirect = ctx.url_for(None) + f'#book_id={book_id}&amp;panel=book_details'
         from lxml import etree as ET
         return html(ctx, rd, endpoint,
                  E.html(E.head(
@@ -278,4 +280,11 @@ def stanza(ctx, rd, rest):
 def legacy_get(ctx, rd, what, book_id, library_id, filename):
     # See https://www.mobileread.com/forums/showthread.php?p=3531644 for why
     # this is needed for Kobo browsers
-    return get(ctx, rd, what, book_id, library_id)
+    ua = rd.inheaders.get('User-Agent', '')
+    is_old_kindle = 'Kindle/3' in ua
+    ans = get(ctx, rd, what, book_id, library_id)
+    if is_old_kindle:
+        # Content-Disposition causes downloads to fail when the filename has non-ascii chars in it
+        # https://www.mobileread.com/forums/showthread.php?t=364015
+        rd.outheaders.pop('Content-Disposition', '')
+    return ans

@@ -1,43 +1,64 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:fdm=marker:ai
 
 
 __license__   = 'GPL v3'
 __copyright__ = '2012, Kovid Goyal <kovid at kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
 
-import os, shutil
+import os
+import shutil
 
-from qt.core import (QFontInfo, QFontMetrics, Qt, QFont, QFontDatabase, QPen,
-        QStyledItemDelegate, QSize, QStyle, QStringListModel, pyqtSignal,
-        QDialog, QVBoxLayout, QApplication, QFontComboBox, QPushButton,
-        QToolButton, QGridLayout, QListView, QWidget, QDialogButtonBox, QIcon,
-        QHBoxLayout, QLabel, QLineEdit, QSizePolicy, QAbstractItemView)
+from qt.core import (
+    QAbstractItemView,
+    QDialog,
+    QDialogButtonBox,
+    QFont,
+    QFontComboBox,
+    QFontDatabase,
+    QFontInfo,
+    QFontMetrics,
+    QGridLayout,
+    QHBoxLayout,
+    QIcon,
+    QLabel,
+    QLineEdit,
+    QListView,
+    QPen,
+    QPushButton,
+    QRawFont,
+    QSize,
+    QSizePolicy,
+    QStringListModel,
+    QStyle,
+    QStyledItemDelegate,
+    Qt,
+    QToolButton,
+    QVBoxLayout,
+    QWidget,
+    pyqtSignal,
+)
 
 from calibre.constants import config_dir
-from calibre.gui2 import choose_files, error_dialog, info_dialog, empty_index
-from polyglot.builtins import unicode_type, range
+from calibre.gui2 import choose_files, empty_index, error_dialog, info_dialog
+from calibre.utils.icu import lower as icu_lower
 
 
 def add_fonts(parent):
-    from calibre.utils.fonts.metadata import FontMetadata
     files = choose_files(parent, 'add fonts to calibre',
             _('Select font files'), filters=[(_('TrueType/OpenType Fonts'),
-                ['ttf', 'otf'])], all_files=False)
+                ['ttf', 'otf', 'woff', 'woff2'])], all_files=False)
     if not files:
         return
     families = set()
     for f in files:
-        try:
-            with open(f, 'rb') as stream:
-                fm = FontMetadata(stream)
-        except:
-            import traceback
+        r = QRawFont()
+        r.loadFromFile(f, 11.0, QFont.HintingPreference.PreferDefaultHinting)
+        if r.isValid():
+            families.add(r.familyName())
+        else:
             error_dialog(parent, _('Corrupt font'),
-                    _('Failed to read metadata from the font file: %s')%
-                    f, det_msg=traceback.format_exc(), show=True)
+                    _('Failed to load font from the file: {}').format(f), show=True)
             return
-        families.add(fm.font_family)
     families = sorted(families)
 
     dest = os.path.join(config_dir, 'fonts')
@@ -49,7 +70,7 @@ def add_fonts(parent):
 
 def writing_system_for_font(font):
     has_latin = True
-    systems = QFontDatabase().writingSystems(font.family())
+    systems = QFontDatabase.writingSystems(font.family())
 
     # this just confuses the algorithm below. Vietnamese is Latin with lots of
     # special chars
@@ -71,17 +92,17 @@ def writing_system_for_font(font):
     if not systems:
         return system, has_latin
 
-    if (len(systems) == 1 and systems[0] > QFontDatabase.WritingSystem.Cyrillic):
+    if (len(systems) == 1 and systems[0].value > QFontDatabase.WritingSystem.Cyrillic.value):
         return systems[0], has_latin
 
     if (len(systems) <= 2 and
-        systems[-1] > QFontDatabase.WritingSystem.Armenian and
-        systems[-1] < QFontDatabase.WritingSystem.Vietnamese):
+        systems[-1].value > QFontDatabase.WritingSystem.Armenian.value and
+        systems[-1].value < QFontDatabase.WritingSystem.Vietnamese.value):
         return systems[-1], has_latin
 
     if (len(systems) <= 5 and
-        systems[-1] >= QFontDatabase.WritingSystem.SimplifiedChinese and
-        systems[-1] <= QFontDatabase.WritingSystem.Korean):
+        systems[-1].value >= QFontDatabase.WritingSystem.SimplifiedChinese.value and
+        systems[-1].value <= QFontDatabase.WritingSystem.Korean.value):
         system = systems[-1]
 
     return system, has_latin
@@ -98,7 +119,7 @@ class FontFamilyDelegate(QStyledItemDelegate):
     def do_size_hint(self, option, index):
         text = index.data(Qt.ItemDataRole.DisplayRole) or ''
         font = QFont(option.font)
-        font.setPointSize(QFontInfo(font).pointSize() * 1.5)
+        font.setPointSizeF(QFontInfo(font).pointSize() * 1.5)
         m = QFontMetrics(font)
         return QSize(m.width(text), m.height())
 
@@ -108,13 +129,14 @@ class FontFamilyDelegate(QStyledItemDelegate):
         try:
             self.do_paint(painter, option, index)
         except:
-            pass
+            import traceback
+            traceback.print_exc()
         painter.restore()
 
     def do_paint(self, painter, option, index):
-        text = unicode_type(index.data(Qt.ItemDataRole.DisplayRole) or '')
+        text = str(index.data(Qt.ItemDataRole.DisplayRole) or '')
         font = QFont(option.font)
-        font.setPointSize(QFontInfo(font).pointSize() * 1.5)
+        font.setPointSizeF(QFontInfo(font).pointSize() * 1.5)
         font2 = QFont(font)
         font2.setFamily(text)
 
@@ -123,9 +145,11 @@ class FontFamilyDelegate(QStyledItemDelegate):
             font = font2
 
         r = option.rect
+        color = option.palette.text()
 
         if option.state & QStyle.StateFlag.State_Selected:
-            painter.setPen(QPen(option.palette.highlightedText(), 0))
+            color = option.palette.highlightedText()
+        painter.setPen(QPen(color, 0))
 
         if (option.direction == Qt.LayoutDirection.RightToLeft):
             r.setRight(r.right() - 4)
@@ -136,9 +160,9 @@ class FontFamilyDelegate(QStyledItemDelegate):
         painter.drawText(r, Qt.AlignmentFlag.AlignVCenter|Qt.AlignmentFlag.AlignLeading|Qt.TextFlag.TextSingleLine, text)
 
         if (system != QFontDatabase.WritingSystem.Any):
-            w = painter.fontMetrics().width(text + "  ")
+            w = painter.fontMetrics().horizontalAdvance(text + '  ')
             painter.setFont(font2)
-            sample = QFontDatabase().writingSystemSample(system)
+            sample = QFontDatabase.writingSystemSample(system)
             if (option.direction == Qt.LayoutDirection.RightToLeft):
                 r.setRight(r.right() - w)
             else:
@@ -201,7 +225,7 @@ class FontFamilyDialog(QDialog):
     def __init__(self, current_family, parent=None):
         QDialog.__init__(self, parent)
         self.setWindowTitle(_('Choose font family'))
-        self.setWindowIcon(QIcon(I('font.png')))
+        self.setWindowIcon(QIcon.ic('font.png'))
         from calibre.utils.fonts.scanner import font_scanner
         self.font_scanner = font_scanner
 
@@ -226,17 +250,17 @@ class FontFamilyDialog(QDialog):
         self.bb.rejected.connect(self.reject)
         self.add_fonts_button = afb = self.bb.addButton(_('Add &fonts'),
                 QDialogButtonBox.ButtonRole.ActionRole)
-        afb.setIcon(QIcon(I('plus.png')))
+        afb.setIcon(QIcon.ic('plus.png'))
         afb.clicked.connect(self.add_fonts)
         self.ml = QLabel(_('Choose a font family from the list below:'))
         self.search = QLineEdit(self)
         self.search.setPlaceholderText(_('Search'))
         self.search.returnPressed.connect(self.find)
         self.nb = QToolButton(self)
-        self.nb.setIcon(QIcon(I('arrow-down.png')))
+        self.nb.setIcon(QIcon.ic('arrow-down.png'))
         self.nb.setToolTip(_('Find next'))
         self.pb = QToolButton(self)
-        self.pb.setIcon(QIcon(I('arrow-up.png')))
+        self.pb.setIcon(QIcon.ic('arrow-up.png'))
         self.pb.setToolTip(_('Find previous'))
         self.nb.clicked.connect(self.find_next)
         self.pb.clicked.connect(self.find_previous)
@@ -264,7 +288,7 @@ class FontFamilyDialog(QDialog):
         i = self.view.currentIndex().row()
         if i < 0:
             i = 0
-        q = icu_lower(unicode_type(self.search.text())).strip()
+        q = icu_lower(str(self.search.text())).strip()
         if not q:
             return
         r = (range(i-1, -1, -1) if backwards else range(i+1,
@@ -334,14 +358,14 @@ class FontFamilyChooser(QWidget):
         l.setContentsMargins(0, 0, 0, 0)
         self.setLayout(l)
         self.button = QPushButton(self)
-        self.button.setIcon(QIcon(I('font.png')))
+        self.button.setIcon(QIcon.ic('font.png'))
         self.button.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         l.addWidget(self.button)
         self.default_text = _('Choose &font family')
         self.font_family = None
         self.button.clicked.connect(self.show_chooser)
         self.clear_button = QToolButton(self)
-        self.clear_button.setIcon(QIcon(I('clear_left.png')))
+        self.clear_button.setIcon(QIcon.ic('clear_left.png'))
         self.clear_button.clicked.connect(self.clear_family)
         l.addWidget(self.clear_button)
         self.setToolTip = self.button.setToolTip
@@ -366,18 +390,19 @@ class FontFamilyChooser(QWidget):
 
     def show_chooser(self):
         d = FontFamilyDialog(self.font_family, self)
-        if d.exec_() == QDialog.DialogCode.Accepted:
+        if d.exec() == QDialog.DialogCode.Accepted:
             self.font_family = d.font_family
 
 
 def test():
-    app = QApplication([])
+    from calibre.gui2 import Application
+    app = Application([])
     app
     d = QDialog()
     d.setLayout(QVBoxLayout())
     d.layout().addWidget(FontFamilyChooser(d))
     d.layout().addWidget(QFontComboBox(d))
-    d.exec_()
+    d.exec()
 
 
 if __name__ == '__main__':

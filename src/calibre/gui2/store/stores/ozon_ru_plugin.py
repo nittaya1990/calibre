@@ -8,6 +8,7 @@ __copyright__ = '2011-2013, Roman Mukhin <ramses_ru at hotmail.com>'
 __docformat__ = 'restructuredtext en'
 
 from contextlib import closing
+
 try:
     from urllib.parse import quote_plus
 except ImportError:
@@ -70,7 +71,7 @@ class OzonRUStore(StorePlugin):
             d = WebStoreDialog(self.gui, shop_url, parent, url)
             d.setWindowTitle(self.name)
             d.set_tags(self.config.get('tags', ''))
-            d.exec_()
+            d.exec()
 
     def search(self, query, max_results=15, timeout=60):
         for s in search(query, max_results=max_results, timeout=timeout):

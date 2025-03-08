@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 # License: GPLv3 Copyright: 2017, Kovid Goyal <kovid at kovidgoyal.net>
 
 import atexit
@@ -10,14 +9,13 @@ import tempfile
 import time
 from functools import partial
 
-from calibre.constants import (
-    __appname__, filesystem_encoding, islinux, ismacos, iswindows
-)
-from calibre_extensions import speedup
+from calibre.constants import __appname__, filesystem_encoding, islinux, ismacos, iswindows
 from calibre.utils.monotonic import monotonic
+from calibre_extensions import speedup
 
 if iswindows:
     import msvcrt
+
     from calibre.constants import get_windows_username
     from calibre_extensions import winutil
     excl_file_mode = stat.S_IREAD | stat.S_IWRITE
@@ -33,7 +31,7 @@ def unix_open(path):
         try:
             fd = os.open(path, flags | speedup.O_CLOEXEC, excl_file_mode)
             has_cloexec = True
-        except EnvironmentError as err:
+        except OSError as err:
             # Kernel may not support O_CLOEXEC
             if err.errno != errno.EINVAL:
                 raise
@@ -76,7 +74,7 @@ def retry_for_a_time(timeout, sleep_time, func, error_retry, *args):
     while True:
         try:
             return func(*args)
-        except EnvironmentError as err:
+        except OSError as err:
             if not error_retry(err) or monotonic() > limit:
                 raise
         time.sleep(sleep_time)
@@ -88,10 +86,14 @@ def lock_file(path, timeout=15, sleep_time=0.2):
             timeout, sleep_time, windows_open, windows_retry, path
         )
     f = unix_open(path)
-    retry_for_a_time(
-        timeout, sleep_time, fcntl.flock, unix_retry,
-        f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB
-    )
+    try:
+        retry_for_a_time(
+            timeout, sleep_time, fcntl.flock, unix_retry,
+            f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB
+        )
+    except Exception:
+        f.close()
+        raise
     return f
 
 
@@ -115,11 +117,11 @@ class ExclusiveFile:
 def _clean_lock_file(file_obj):
     try:
         os.remove(file_obj.name)
-    except EnvironmentError:
+    except OSError:
         pass
     try:
         file_obj.close()
-    except EnvironmentError:
+    except OSError:
         pass
 
 
@@ -138,8 +140,9 @@ elif islinux:
 
     def create_single_instance_mutex(name, per_user=True):
         import socket
+
         from calibre.utils.ipc import eintr_retry_call
-        name = '%s-singleinstance-%s-%s' % (
+        name = '{}-singleinstance-{}-{}'.format(
             __appname__, (os.geteuid() if per_user else ''), name
         )
         name = name
@@ -147,7 +150,7 @@ elif islinux:
         sock = socket.socket(family=socket.AF_UNIX)
         try:
             eintr_retry_call(sock.bind, address)
-        except socket.error as err:
+        except OSError as err:
             sock.close()
             if getattr(err, 'errno', None) == errno.EADDRINUSE:
                 return
@@ -160,7 +163,7 @@ elif islinux:
 else:
 
     def singleinstance_path(name, per_user=True):
-        name = '%s-singleinstance-%s-%s.lock' % (
+        name = '{}-singleinstance-{}-{}.lock'.format(
             __appname__, (os.geteuid() if per_user else ''), name
         )
         home = os.path.expanduser('~')
@@ -170,18 +173,18 @@ else:
         for loc in locs:
             if os.access(loc, os.W_OK | os.R_OK | os.X_OK):
                 return os.path.join(loc, ('.' if loc is home else '') + name)
-        raise EnvironmentError(
+        raise OSError(
             'Failed to find a suitable filesystem location for the lock file'
         )
 
     def create_single_instance_mutex(name, per_user=True):
         from calibre.utils.ipc import eintr_retry_call
         path = singleinstance_path(name, per_user)
-        f = lopen(path, 'w')
+        f = open(path, 'w')
         try:
             eintr_retry_call(fcntl.lockf, f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
             return partial(_clean_lock_file, f)
-        except EnvironmentError as err:
+        except OSError as err:
             f.close()
             if err.errno not in (errno.EAGAIN, errno.EACCES):
                 raise
@@ -204,7 +207,7 @@ class SingleInstance:
 
 
 def singleinstance(name):
-    ' Ensure that only a single process holding exists with the specified mutex key '
+    ' Ensure that only a single process exists with the specified mutex key '
     release_mutex = create_single_instance_mutex(name)
     if release_mutex is None:
         return False

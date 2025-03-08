@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>504</width>
-    <height>399</height>
+    <width>611</width>
+    <height>482</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -25,7 +25,7 @@
     </widget>
    </item>
    <item row="1" column="0">
-    <widget class="QTableWidget" name="opt_columns">
+    <widget class="TableWidgetWithMoveByKeyPress" name="opt_columns">
      <property name="alternatingRowColors">
       <bool>true</bool>
      </property>
@@ -39,7 +39,8 @@
      <item>
       <widget class="QToolButton" name="column_up">
        <property name="toolTip">
-        <string>Move column up</string>
+        <string>&lt;p&gt;Click to move the row up 1. Shift+click to move the row up 5.
+Ctrl+click to move the row up 10. Ctrl+Shift+click to move the row to the top.&lt;/p&gt;</string>
        </property>
        <property name="text">
         <string>...</string>
@@ -171,7 +172,8 @@
      <item>
       <widget class="QToolButton" name="column_down">
        <property name="toolTip">
-        <string>Move column down</string>
+        <string>&lt;p&gt;Click to move the row down 1. Shift+click to move the row down 5.
+Ctrl+click to move the row down 10. Ctrl+Shift+click to move the row to the bottom.&lt;/p&gt;</string>
        </property>
        <property name="text">
         <string>...</string>
@@ -191,18 +193,56 @@
     </layout>
    </item>
    <item row="2" column="0" colspan="2">
-    <widget class="QPushButton" name="add_col_button">
-     <property name="text">
-      <string>Add &amp;custom column</string>
-     </property>
-     <property name="icon">
-      <iconset resource="../../../../resources/images.qrc">
-       <normaloff>:/images/plus.png</normaloff>:/images/plus.png</iconset>
-     </property>
-    </widget>
+    <layout class="QHBoxLayout" name="horizontalLayout">
+     <item>
+      <widget class="QPushButton" name="add_col_button">
+       <property name="text">
+        <string>Add &amp;custom column</string>
+       </property>
+       <property name="icon">
+        <iconset resource="../../../../resources/images.qrc">
+         <normaloff>:/images/plus.png</normaloff>:/images/plus.png</iconset>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <spacer name="horizontalSpacer">
+       <property name="orientation">
+        <enum>Qt::Horizontal</enum>
+       </property>
+       <property name="sizeHint" stdset="0">
+        <size>
+         <width>40</width>
+         <height>20</height>
+        </size>
+       </property>
+      </spacer>
+     </item>
+     <item>
+      <widget class="QPushButton" name="show_all_button">
+       <property name="text">
+        <string>&amp;Show all</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="hide_all_button">
+       <property name="text">
+        <string>&amp;Hide all</string>
+       </property>
+      </widget>
+     </item>
+    </layout>
    </item>
   </layout>
  </widget>
+ <customwidgets>
+  <customwidget>
+   <class>TableWidgetWithMoveByKeyPress</class>
+   <extends>QTableWidget</extends>
+   <header>calibre/gui2/preferences.h</header>
+  </customwidget>
+ </customwidgets>
  <resources>
   <include location="../../../../resources/images.qrc"/>
  </resources>

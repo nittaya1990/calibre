@@ -1,13 +1,15 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
 
 
 __license__   = 'GPL v3'
 __copyright__ = '2009, Kovid Goyal <kovid@kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
 
-import re, codecs, sys
-from polyglot.builtins import unicode_type
+import codecs
+import re
+import sys
+
+from calibre import xml_replace_entities
 
 _encoding_pats = (
     # XML declaration
@@ -17,6 +19,7 @@ _encoding_pats = (
     # HTML 4 Pragma directive
     r'''<meta\s+?[^<>]*?content\s*=\s*['"][^'"]*?charset=([-_a-z0-9]+)[^'"]*?['"][^<>]*>(?:\s*</meta>){0,1}''',
 )
+substitute_entities = substitute_entites = xml_replace_entities  # for plugins that might use this
 
 
 def compile_pats(binary):
@@ -34,12 +37,10 @@ class LazyEncodingPats:
         if pats is None:
             pats = tuple(compile_pats(binary))
             setattr(self, attr, pats)
-        for pat in pats:
-            yield pat
+        yield from pats
 
 
 lazy_encoding_pats = LazyEncodingPats()
-ENTITY_PATTERN = re.compile(r'&(\S+?);')
 
 
 def strip_encoding_declarations(raw, limit=50*1024, preserve_newlines=False):
@@ -48,11 +49,13 @@ def strip_encoding_declarations(raw, limit=50*1024, preserve_newlines=False):
     is_binary = isinstance(raw, bytes)
     if preserve_newlines:
         if is_binary:
-            sub = lambda m: b'\n' * m.group().count(b'\n')
+            def sub(m):
+                return (b'\n' * m.group().count(b'\n'))
         else:
-            sub = lambda m: '\n' * m.group().count('\n')
+            def sub(m):
+                return ('\n' * m.group().count('\n'))
     else:
-        sub = b'' if is_binary else u''
+        sub = b'' if is_binary else ''
     for pat in lazy_encoding_pats(is_binary):
         prefix = pat.sub(sub, prefix)
     raw = prefix + suffix
@@ -97,25 +100,16 @@ def find_declared_encoding(raw, limit=50*1024):
                 return ans
 
 
-def substitute_entites(raw):
-    from calibre import xml_entity_to_unicode
-    return ENTITY_PATTERN.sub(xml_entity_to_unicode, raw)
-
-
-_CHARSET_ALIASES = {"macintosh" : "mac-roman", "x-sjis" : "shift-jis"}
+_CHARSET_ALIASES = {'macintosh': 'mac-roman', 'x-sjis': 'shift-jis', 'mac-centraleurope': 'cp1250'}
 
 
 def detect(bytestring):
-    from cchardet import detect as implementation
-    ans = implementation(bytestring)
-    enc = ans.get('encoding')
-    if enc:
-        ans['encoding'] = enc.lower()
-    elif enc is None:
-        ans['encoding'] = ''
-    if ans.get('confidence') is None:
-        ans['confidence'] = 0
-    return ans
+    if isinstance(bytestring, str):
+        bytestring = bytestring.encode('utf-8', 'replace')
+    from calibre_extensions.uchardet import detect as implementation
+    enc = implementation(bytestring).lower()
+    enc = _CHARSET_ALIASES.get(enc, enc)
+    return {'encoding': enc, 'confidence': 1 if enc else 0}
 
 
 def force_encoding(raw, verbose, assume_utf8=False):
@@ -140,7 +134,7 @@ def force_encoding(raw, verbose, assume_utf8=False):
 
 
 def detect_xml_encoding(raw, verbose=False, assume_utf8=False):
-    if not raw or isinstance(raw, unicode_type):
+    if not raw or isinstance(raw, str):
         return raw, None
     for x in ('utf8', 'utf-16-le', 'utf-16-be'):
         bom = getattr(codecs, 'BOM_'+x.upper().replace('-16', '16').replace(
@@ -155,6 +149,11 @@ def detect_xml_encoding(raw, verbose=False, assume_utf8=False):
             encoding = encoding.decode('ascii', 'replace')
             break
     if encoding is None:
+        if assume_utf8:
+            try:
+                return raw.decode('utf-8'), 'utf-8'
+            except UnicodeDecodeError:
+                pass
         encoding = force_encoding(raw, verbose, assume_utf8=assume_utf8)
     if encoding.lower().strip() == 'macintosh':
         encoding = 'mac-roman'
@@ -184,12 +183,12 @@ def xml_to_unicode(raw, verbose=False, strip_encoding_pats=False,
         return '', None
     raw, encoding = detect_xml_encoding(raw, verbose=verbose,
             assume_utf8=assume_utf8)
-    if not isinstance(raw, unicode_type):
+    if not isinstance(raw, str):
         raw = raw.decode(encoding, 'replace')
 
     if strip_encoding_pats:
         raw = strip_encoding_declarations(raw)
     if resolve_entities:
-        raw = substitute_entites(raw)
+        raw = xml_replace_entities(raw)
 
     return raw, encoding

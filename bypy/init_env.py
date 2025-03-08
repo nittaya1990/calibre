@@ -8,10 +8,8 @@ import re
 import subprocess
 import sys
 
-from bypy.constants import (
-    LIBDIR, PREFIX, PYTHON, SRC as CALIBRE_DIR, build_dir, islinux, ismacos,
-    iswindows, worker_env
-)
+from bypy.constants import LIBDIR, PREFIX, PYTHON, build_dir, islinux, ismacos, worker_env
+from bypy.constants import SRC as CALIBRE_DIR
 from bypy.utils import run_shell
 
 dlls = [
@@ -20,48 +18,52 @@ dlls = [
     'Gui',
     'Network',
     # 'NetworkAuth',
-    'Location',
     'PrintSupport',
     'WebChannel',
     # 'WebSockets',
     # 'WebView',
     'Positioning',
-    'PositioningQuick',
     'Sensors',
+    'SpatialAudio',
     'Sql',
     'Svg',
+    'TextToSpeech',
+    'WebChannel',
     'WebEngineCore',
-    'WebEngine',
     'WebEngineWidgets',
     'Widgets',
-    # 'Multimedia',
+    'Multimedia',
+    'MultimediaWidgets',
     'OpenGL',
+    'OpenGLWidgets',
     'Quick',
     'QuickWidgets',
     'Qml',
+    'QmlMeta',
     'QmlModels',
-    # 'MultimediaWidgets',
+    'QmlWorkerScript',
     'Xml',
     # 'XmlPatterns',
 ]
 
 if islinux:
-    dlls += ['X11Extras', 'XcbQpa', 'WaylandClient', 'DBus']
+    dlls += ['XcbQpa', 'WaylandClient', 'WaylandEglClientHwIntegration', 'DBus']
 elif ismacos:
-    dlls += ['MacExtras', 'DBus']
-elif iswindows:
-    dlls += ['WinExtras']
+    dlls += ['DBus']
 
+QT_MAJOR = 6
 QT_DLLS = frozenset(
-    'Qt5' + x for x in dlls
+    f'Qt{QT_MAJOR}' + x for x in dlls
 )
 
 QT_PLUGINS = [
     'imageformats',
     'iconengines',
+    'tls',
+    'multimedia',
+    'texttospeech',
     # 'mediaservice',
     'platforms',
-    'platformthemes',
     # 'playlistformats',
     'sqldrivers',
     # 'webview',
@@ -70,7 +72,9 @@ QT_PLUGINS = [
 
 if islinux:
     QT_PLUGINS += [
+        'egldeviceintegrations',
         'platforminputcontexts',
+        'platformthemes',
         'wayland-decoration-client',
         'wayland-graphics-integration-client',
         'wayland-shell-integration',
@@ -84,20 +88,20 @@ PYQT_MODULES = (
     'QtCore',
     'QtGui',
     'QtNetwork',
-    # 'QtMultimedia', 'QtMultimediaWidgets',
+    'QtMultimedia', 'QtMultimediaWidgets',
+    'QtTextToSpeech',
     'QtPrintSupport',
     'QtSensors',
     'QtSvg',
     'QtWidgets',
+    'QtOpenGL',
+    'QtOpenGLWidgets',
     'QtWebEngine',
     'QtWebEngineCore',
     'QtWebEngineWidgets',
     'QtWebChannel',
 )
 del dlls
-
-if iswindows:
-    PYQT_MODULES += ('QtWinExtras',)
 
 
 def read_cal_file(name):
@@ -111,9 +115,14 @@ def initialize_constants():
     nv = re.search(r'numeric_version\s+=\s+\((\d+), (\d+), (\d+)\)', src)
     calibre_constants['version'
                       ] = '%s.%s.%s' % (nv.group(1), nv.group(2), nv.group(3))
-    calibre_constants['appname'] = re.search(
-        r'__appname__\s+=\s+(u{0,1})[\'"]([^\'"]+)[\'"]', src
-    ).group(2)
+    def get_str_assign(which):
+        pat = r'__appname__\s+=\s+(u{0,1})[\'"]([^\'"]+)[\'"]'.replace('__appname__', which)
+        return re.search(pat, src).group(2)
+
+    calibre_constants['appname'] = get_str_assign('__appname__')
+    calibre_constants['MAIN_APP_UID'] = get_str_assign('MAIN_APP_UID')
+    calibre_constants['VIEWER_APP_UID'] = get_str_assign('VIEWER_APP_UID')
+    calibre_constants['EDITOR_APP_UID'] = get_str_assign('EDITOR_APP_UID')
     epsrc = re.compile(r'entry_points = (\{.*?\})',
                        re.DOTALL).search(read_cal_file('linux.py')).group(1)
     entry_points = eval(epsrc, {'__appname__': calibre_constants['appname']})

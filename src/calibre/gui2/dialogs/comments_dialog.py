@@ -5,20 +5,27 @@ __copyright__ = '2008, Kovid Goyal kovid@kovidgoyal.net'
 __docformat__ = 'restructuredtext en'
 __license__   = 'GPL v3'
 
-from qt.core import Qt, QDialog, QDialogButtonBox, QVBoxLayout, QPlainTextEdit, QSize, QApplication
+from qt.core import QDialog, QDialogButtonBox, QHBoxLayout, QLabel, QPlainTextEdit, QSize, Qt, QVBoxLayout, pyqtSignal
 
-from calibre.gui2 import gprefs, Application
-from calibre.gui2.dialogs.comments_dialog_ui import Ui_CommentsDialog
-from calibre.library.comments import comments_to_html
+from calibre.gui2 import Application, gprefs
+from calibre.gui2.comments_editor import Editor
 from calibre.gui2.widgets2 import Dialog
+from calibre.library.comments import comments_to_html
 
 
-class CommentsDialog(QDialog, Ui_CommentsDialog):
+class CommentsDialog(QDialog):
 
     def __init__(self, parent, text, column_name=None):
         QDialog.__init__(self, parent)
-        Ui_CommentsDialog.__init__(self)
-        self.setupUi(self)
+        self.setObjectName('CommentsDialog')
+        self.setWindowTitle(_('Edit comments'))
+        self.verticalLayout = l = QVBoxLayout(self)
+        self.textbox = tb = Editor(self)
+        self.buttonBox = bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel, self)
+        bb.accepted.connect(self.accept)
+        bb.rejected.connect(self.reject)
+        l.addWidget(tb)
+        l.addWidget(bb)
         # Remove help icon on title bar
         icon = self.windowIcon()
         self.setWindowFlags(self.windowFlags()&(~Qt.WindowType.WindowContextHelpButtonHint))
@@ -27,30 +34,36 @@ class CommentsDialog(QDialog, Ui_CommentsDialog):
         self.textbox.html = comments_to_html(text) if text else ''
         self.textbox.wyswyg_dirtied()
         # self.textbox.setTabChangesFocus(True)
-        self.buttonBox.button(QDialogButtonBox.StandardButton.Ok).setText(_('O&K'))
-        self.buttonBox.button(QDialogButtonBox.StandardButton.Cancel).setText(_('&Cancel'))
 
         if column_name:
             self.setWindowTitle(_('Edit "{0}"').format(column_name))
+        self.restore_geometry(gprefs, 'comments_dialog_geom')
 
-        geom = gprefs.get('comments_dialog_geom', None)
-        if geom is not None:
-            QApplication.instance().safe_restore_geometry(self, geom)
-
-    def save_geometry(self):
-        gprefs.set('comments_dialog_geom', bytearray(self.saveGeometry()))
+    def sizeHint(self):
+        return QSize(650, 600)
 
     def accept(self):
-        self.save_geometry()
+        self.save_geometry(gprefs, 'comments_dialog_geom')
         QDialog.accept(self)
 
     def reject(self):
-        self.save_geometry()
+        self.save_geometry(gprefs, 'comments_dialog_geom')
         QDialog.reject(self)
 
     def closeEvent(self, ev):
-        self.save_geometry()
+        self.save_geometry(gprefs, 'comments_dialog_geom')
         return QDialog.closeEvent(self, ev)
+
+
+class PlainTextEdit(QPlainTextEdit):
+    ctrl_enter_pushed = pyqtSignal()
+
+    def keyPressEvent(self, event):
+        if event.modifiers() & Qt.KeyboardModifier.ControlModifier and event.key() == Qt.Key.Key_Return:
+            event.accept()
+            self.ctrl_enter_pushed.emit()
+        else:
+            super().keyPressEvent(event)
 
 
 class PlainTextDialog(Dialog):
@@ -62,9 +75,16 @@ class PlainTextDialog(Dialog):
 
     def setup_ui(self):
         self.l = l = QVBoxLayout(self)
-        self._text = QPlainTextEdit(self)
+        self._text = PlainTextEdit(self)
+        self._text.ctrl_enter_pushed.connect(self.ctrl_enter_pushed)
         l.addWidget(self._text)
-        l.addWidget(self.bb)
+        hl = QHBoxLayout()
+        hl.addWidget(QLabel(_('Press Ctrl+Enter to accept or Esc to cancel')))
+        hl.addWidget(self.bb)
+        l.addLayout(hl)
+
+    def ctrl_enter_pushed(self):
+        self.accept()
 
     @property
     def text(self):
@@ -81,6 +101,6 @@ class PlainTextDialog(Dialog):
 if __name__ == '__main__':
     app = Application([])
     d = CommentsDialog(None, 'testing', 'Comments')
-    d.exec_()
+    d.exec()
     del d
     del app

@@ -2,17 +2,9 @@
 import json
 import re
 
-import html5lib
 import mechanize
-from lxml import html
 
-from calibre.web.feeds.news import BasicNewsRecipe
-
-
-def classes(classes):
-    q = frozenset(classes.split(' '))
-    return dict(attrs={
-        'class': lambda x: x and frozenset(x.split()).intersection(q)})
+from calibre.web.feeds.news import BasicNewsRecipe, classes
 
 
 def as_article(source, log):
@@ -45,20 +37,20 @@ def get_issue_data(br, log, node_id='1126213', year='2020', volnum='99', issue_v
         return {
             'from': 0,
             'post_filter': {'bool': q},
-            "_source": {
-                "includes": [
-                    "nid", 'path', 'title', 'field_subtitle', 'field_display_authors',
+            '_source': {
+                'includes': [
+                    'nid', 'path', 'title', 'field_subtitle', 'field_display_authors',
                     'fa_node_type_or_subtype',
 
                     'field_issue_sspecial_articles__nid',
                     'field_issue_sspecial_header'
                 ]
             },
-            "query": {
-                "match_all": {}
+            'query': {
+                'match_all': {}
             },
-            'sort': [{'field_sequence': "asc"}, {'fa_normalized_date': "desc"}],
-            "size": size,
+            'sort': [{'field_sequence': 'asc'}, {'fa_normalized_date': 'desc'}],
+            'size': size,
         }
 
     def get_data(data):
@@ -72,15 +64,6 @@ def get_issue_data(br, log, node_id='1126213', year='2020', volnum='99', issue_v
         return data['hits']['hits']
 
     feeds = []
-    issue_data = get_data(make_query(
-        fa_node_type_or_subtype='Issue',
-        field_issue_volume=issue_vol, field_issue_year=year,
-        field_issue_volume_number=volnum
-    ))[0]['_source']
-    main_sec_title = issue_data['title'][0]
-    main_sec_nids = issue_data['field_issue_sspecial_articles__nid']
-    articles_data = get_data(make_query(nid=main_sec_nids, filter=True, size=len(main_sec_nids)))
-    articles = []
 
     def as_article(source):
         title = source['title'][0]
@@ -94,12 +77,23 @@ def get_issue_data(br, log, node_id='1126213', year='2020', volnum='99', issue_v
         url = 'https://www.foreignaffairs.com' + source['path'][0]
         return {'title': title, 'description': desc, 'url': url}
 
-    log(main_sec_title)
-    for entry in articles_data:
-        source = entry['_source']
-        articles.append(as_article(source))
-        log('\t', articles[-1]['title'], articles[-1]['url'])
-    feeds.append((main_sec_title, articles))
+    issue_data = get_data(make_query(
+        fa_node_type_or_subtype='Issue',
+        field_issue_volume=issue_vol, field_issue_year=year,
+        field_issue_volume_number=volnum
+    ))[0]['_source']
+
+    if 'field_issue_sspecial_articles__nid' in issue_data:
+        main_sec_title = issue_data['field_issue_sspecial_header'][0]
+        main_sec_nids = issue_data['field_issue_sspecial_articles__nid']
+        articles_data = get_data(make_query(nid=main_sec_nids, filter=True, size=len(main_sec_nids)))
+        articles = []
+        log(main_sec_title)
+        for entry in articles_data:
+            source = entry['_source']
+            articles.append(as_article(source))
+            log('\t', articles[-1]['title'], articles[-1]['url'])
+        feeds.append((main_sec_title, articles))
 
     articles_data = get_data(make_query(field_issue__nid=node_id, size=50))
     ans = {}
@@ -125,60 +119,76 @@ class ForeignAffairsRecipe(BasicNewsRecipe):
     publisher = u'Council on Foreign Relations'
     category = u'USA, Foreign Affairs'
     description = u'The leading forum for serious discussion of American foreign policy and international affairs.'
-
+    encoding = 'utf-8'
     no_stylesheets = True
     remove_javascript = True
     needs_subscription = 'optional'
+    remove_attributes = ['style', 'height', 'width']
+    masthead_url = 'https://upload.wikimedia.org/wikipedia/commons/thumb/9/9a/Foreign_Affairs_Logo.svg/500px-Foreign_Affairs_Logo.svg.png'
+    extra_css = '''
+        .topper__date, .topper__byline, .figure__caption, .calibre-nuked-tag-figcaption, .font-style-italic { font-size: small; }
+        .topper__subtitle { font-style: italic; color: #202020; }
+        em, blockquote { color: #202020; }
+        img {display:block; margin:0 auto;}
+    '''
 
     INDEX = 'https://www.foreignaffairs.com/magazine'
 
+    recipe_specific_options = {
+        'issue': {
+            'short': 'Enter the Issue Number you want to download ',
+            'long': 'For example, 2024/103/1'
+        }
+    }
+
     keep_only_tags = [
-        classes('article-header article-body article-lead-image article-body-text'),
+        classes('topper__heading-container topper__image-container paywall-content'),
     ]
+
     remove_tags = [
-        classes('loading-indicator paywall article-footer')
+        dict(name=['svg', 'meta']),
+        classes('topper__issue article-newsletter-signup--container dfp-tag-wrapper')
     ]
 
     conversion_options = {'comments': description, 'tags': category, 'language': 'en',
                           'publisher': publisher}
+    ignore_duplicate_articles = {'title', 'url'}
+    remove_empty_feeds = True
 
     def parse_index(self):
+        d = self.recipe_specific_options.get('issue')
+        if d and isinstance(d, str):
+            self.INDEX = 'https://www.foreignaffairs.com/issues/' + d
+
         soup = self.index_to_soup(self.INDEX)
         # get dates
         date = re.split(r'\s\|\s', self.tag_to_string(
             soup.head.title.string))[0]
-        self.title = "Foreign Affairs ({})".format(date)
         self.timefmt = u' [%s]' % date
-        link = soup.find('link', rel='revision', href=True)['href']
+        link = soup.find('link', rel='canonical', href=True)['href']
         year, volnum, issue_vol = link.split('/')[-3:]
-        self.cover_url = (soup.find('img', {'class': 'subscribe-callout-image'})['data-src']
-                          .split("|", 1)[0].replace('issue_small_1x', 'issue_large_2x'))
+        main = soup.find('main', attrs={'id': 'content'})
+        cov = main.find('img', attrs={'srcset': lambda x: x and 'Cover.jpg' in x})
+        if cov:
+            self.cover_url = re.sub(
+                r'_webp_issue_small_\dx',
+                '_webp_issue_large_2x',
+                cov['srcset'].split()[0]
+            )
 
-        cls = soup.find('body')['class']
-        if isinstance(cls, (list, tuple)):
-            cls = ' '.join(cls)
-        node_id = re.search(r'\bpage-node-(\d+)\b', cls).group(1)
+        cls = soup.find('link', attrs={'rel':'shortlink'})['href']
+        node_id = re.search(r'https://www.foreignaffairs.com/node/(\d+)', cls).group(1)
         br = self.cloned_browser
         feeds = get_issue_data(br, self.log, node_id, year, volnum, issue_vol)
         return feeds
 
-    def clean_fa_html(self, root):
-        for svg in tuple(root.iter('{*}svg')):
-            svg.getparent().remove(svg)
-        for meta in tuple(root.iter('{*}meta')):
-            meta.getparent().remove(meta)
-        return root
-
-    def preprocess_raw_html(self, raw_html, url):
-        root = html5lib.parse(raw_html, treebuilder='lxml',
-                              namespaceHTMLElements=False).getroot()
-        self.clean_fa_html(root)
-        return html.tostring(root, encoding='unicode')
-
     def preprocess_html(self, soup):
-        for attr in ('ng-src', 'data-blazy', 'data-src'):
-            for img in soup.findAll('img', attrs={attr: True}):
-                img['src'] = img[attr]
+        for h2 in soup.findAll(**classes('topper__subtitle')):
+            h2.name = 'p'
+        for by in soup.findAll(**classes('topper__byline topper__date font-style-italic')):
+            by.name = 'div'
+        for img in soup.find_all('img', attrs={'srcset': True}):
+            img['src'] = re.sub(r'_webp_small_\dx', '_webp_large_1x', img['srcset'].split()[0])
         return soup
 
     def get_browser(self):

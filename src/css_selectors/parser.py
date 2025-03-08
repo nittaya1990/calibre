@@ -9,14 +9,13 @@
 
 """
 
-import sys
-import re
 import operator
+import re
 import string
+import sys
 
-from css_selectors.errors import SelectorSyntaxError, ExpressionError
-from polyglot.builtins import unicode_type, codepoint_to_chr, range
-
+from css_selectors.errors import ExpressionError, SelectorSyntaxError
+from polyglot.builtins import codepoint_to_chr, unicode_type
 
 utab = {c:c+32 for c in range(ord(u'A'), ord(u'Z')+1)}
 
@@ -73,7 +72,7 @@ class Selector:
         #: +-------------------------+----------------+--------------------------------+
         #: | Invalid pseudo-class    | ``li:marker``  | ``None``                       |
         #: +-------------------------+----------------+--------------------------------+
-        #: | Functinal               | ``a::foo(2)``  | ``FunctionalPseudoElement(…)`` |
+        #: | Functional              | ``a::foo(2)``  | ``FunctionalPseudoElement(…)`` |
         #: +-------------------------+----------------+--------------------------------+
         #:
         # : .. _Lists3: http://www.w3.org/TR/2011/WD-css3-lists-20110524/#marker-pseudoelement

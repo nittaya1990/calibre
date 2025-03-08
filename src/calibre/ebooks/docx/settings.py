@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 
 
 __license__ = 'GPL v3'
@@ -18,4 +17,3 @@ class Settings:
                 self.default_tab_stop = int(self.namespace.get(dts, 'w:val')) / 20
             except (ValueError, TypeError, AttributeError):
                 pass
-

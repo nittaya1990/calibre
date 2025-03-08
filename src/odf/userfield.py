@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# -*- coding: utf-8 -*-
 # Copyright (C) 2006-2009 Søren Roug, European Environment Agency
 #
 # This is free software.  You may redistribute it under the terms
@@ -19,54 +18,54 @@
 #
 # $Id: userfield.py 447 2008-07-10 20:01:30Z roug $
 
-"""Class to show and manipulate user fields in odf documents."""
+'''Class to show and manipulate user fields in odf documents.'''
 
 
 import sys
 import zipfile
 
-from odf.text import UserFieldDecl
 from odf.namespaces import OFFICENS
 from odf.opendocument import load
+from odf.text import UserFieldDecl
 
-OUTENCODING = "utf-8"
+OUTENCODING = 'utf-8'
 
 
 # OpenDocument v.1.0 section 6.7.1
 VALUE_TYPES = {
-    'float': (OFFICENS, u'value'),
-    'percentage': (OFFICENS, u'value'),
-    'currency': (OFFICENS, u'value'),
-    'date': (OFFICENS, u'date-value'),
-    'time': (OFFICENS, u'time-value'),
-    'boolean': (OFFICENS, u'boolean-value'),
-    'string': (OFFICENS, u'string-value'),
+    'float': (OFFICENS, 'value'),
+    'percentage': (OFFICENS, 'value'),
+    'currency': (OFFICENS, 'value'),
+    'date': (OFFICENS, 'date-value'),
+    'time': (OFFICENS, 'time-value'),
+    'boolean': (OFFICENS, 'boolean-value'),
+    'string': (OFFICENS, 'string-value'),
     }
 
 
 class UserFields:
-    """List, view and manipulate user fields."""
+    '''List, view and manipulate user fields.'''
 
     # these attributes can be a filename or a file like object
     src_file = None
     dest_file = None
 
     def __init__(self, src=None, dest=None):
-        """Constructor
+        '''Constructor
 
         src ... source document name, file like object or None for stdin
         dest ... destination document name, file like object or None for stdout
 
-        """
+        '''
         self.src_file = src
         self.dest_file = dest
         self.document = None
 
     def loaddoc(self):
-        if isinstance(self.src_file, (bytes, type(u''))):
+        if isinstance(self.src_file, (bytes, str)):
             # src_file is a filename, check if it is a zip-file
             if not zipfile.is_zipfile(self.src_file):
-                raise TypeError("%s is no odt file." % self.src_file)
+                raise TypeError(f'{self.src_file} is no odt file.')
         elif self.src_file is None:
             # use stdin if no file given
             self.src_file = sys.stdin
@@ -82,21 +81,21 @@ class UserFields:
             self.document.save(self.dest_file)
 
     def list_fields(self):
-        """List (extract) all known user-fields.
+        '''List (extract) all known user-fields.
 
         Returns list of user-field names.
 
-        """
+        '''
         return [x[0] for x in self.list_fields_and_values()]
 
     def list_fields_and_values(self, field_names=None):
-        """List (extract) user-fields with type and value.
+        '''List (extract) user-fields with type and value.
 
         field_names ... list of field names to show or None for all.
 
         Returns list of tuples (<field name>, <field type>, <value>).
 
-        """
+        '''
         self.loaddoc()
         found_fields = []
         all_fields = self.document.getElementsByType(UserFieldDecl)
@@ -115,32 +114,32 @@ class UserFields:
         return found_fields
 
     def list_values(self, field_names):
-        """Extract the contents of given field names from the file.
+        '''Extract the contents of given field names from the file.
 
         field_names ... list of field names
 
         Returns list of field values.
 
-        """
+        '''
         return [x[2] for x in self.list_fields_and_values(field_names)]
 
     def get(self, field_name):
-        """Extract the contents of this field from the file.
+        '''Extract the contents of this field from the file.
 
         Returns field value or None if field does not exist.
 
-        """
+        '''
         values = self.list_values([field_name])
         if not values:
             return None
         return values[0]
 
     def get_type_and_value(self, field_name):
-        """Extract the type and contents of this field from the file.
+        '''Extract the type and contents of this field from the file.
 
         Returns tuple (<type>, <field-value>) or None if field does not exist.
 
-        """
+        '''
         fields = self.list_fields_and_values([field_name])
         if not fields:
             return None
@@ -148,13 +147,13 @@ class UserFields:
         return value_type, value
 
     def update(self, data):
-        """Set the value of user fields. The field types will be the same.
+        '''Set the value of user fields. The field types will be the same.
 
         data ... dict, with field name as key, field value as value
 
         Returns None
 
-        """
+        '''
         self.loaddoc()
         all_fields = self.document.getElementsByType(UserFieldDecl)
         for f in all_fields:

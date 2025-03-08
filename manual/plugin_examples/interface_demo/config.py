@@ -6,7 +6,7 @@ __license__   = 'GPL v3'
 __copyright__ = '2011, Kovid Goyal <kovid@kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
 
-from qt.core import QWidget, QHBoxLayout, QLabel, QLineEdit
+from qt.core import QHBoxLayout, QLabel, QLineEdit, QWidget
 
 from calibre.utils.config import JSONConfig
 

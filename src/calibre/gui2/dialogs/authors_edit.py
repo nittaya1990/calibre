@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 
 
 __license__ = 'GPL v3'
@@ -8,14 +7,26 @@ __copyright__ = '2013, Kovid Goyal <kovid at kovidgoyal.net>'
 from collections import OrderedDict
 
 from qt.core import (
-    QDialog, QGridLayout, QDialogButtonBox, QListWidget, QApplication, Qt,
-    pyqtSignal, QSize, QPushButton, QIcon, QStyledItemDelegate, QLabel, QAbstractItemView)
+    QAbstractItemView,
+    QApplication,
+    QDialog,
+    QDialogButtonBox,
+    QGridLayout,
+    QIcon,
+    QLabel,
+    QListWidget,
+    QPushButton,
+    QSize,
+    QStyledItemDelegate,
+    Qt,
+    pyqtSignal,
+)
 
-from calibre.utils.config_base import tweaks
+from calibre.ebooks.metadata import string_to_authors
 from calibre.gui2 import gprefs
 from calibre.gui2.complete2 import EditWithComplete
-from calibre.ebooks.metadata import string_to_authors
-from polyglot.builtins import unicode_type, range
+from calibre.utils.config_base import tweaks
+from calibre.utils.icu import lower as icu_lower
 
 
 class ItemDelegate(QStyledItemDelegate):
@@ -30,12 +41,12 @@ class ItemDelegate(QStyledItemDelegate):
         return QStyledItemDelegate.sizeHint(self, *args) + QSize(0, 15)
 
     def setEditorData(self, editor, index):
-        name = unicode_type(index.data(Qt.ItemDataRole.DisplayRole) or '')
-        editor.setText(name)
-        editor.lineEdit().selectAll()
+        name = str(index.data(Qt.ItemDataRole.DisplayRole) or '')
+        n = editor.metaObject().userProperty().name()
+        editor.setProperty(n, name)
 
     def setModelData(self, editor, model, index):
-        authors = string_to_authors(unicode_type(editor.text()))
+        authors = string_to_authors(str(editor.text()))
         model.setData(index, authors[0])
         self.edited.emit(index.row())
 
@@ -89,10 +100,10 @@ class List(QListWidget):
 
     def edited(self, i):
         item = self.item(i)
-        q = unicode_type(item.text())
+        q = str(item.text())
         remove = []
         for j in range(self.count()):
-            if i != j and unicode_type(self.item(j).text()) == q:
+            if i != j and str(self.item(j).text()) == q:
                 remove.append(j)
         for x in sorted(remove, reverse=True):
             self.takeItem(x)
@@ -141,13 +152,13 @@ class AuthorsEdit(QDialog):
         l.addWidget(a, 2, 0)
 
         self.ab = b = QPushButton(_('&Add'))
-        b.setIcon(QIcon(I('plus.png')))
+        b.setIcon(QIcon.ic('plus.png'))
         l.addWidget(b, 2, 1)
         b.clicked.connect(self.add_author)
 
         self.db = b = QPushButton(_('&Remove selected'))
         l.addWidget(b, 2, 2)
-        b.setIcon(QIcon(I('minus.png')))
+        b.setIcon(QIcon.ic('minus.png'))
         b.clicked.connect(self.al.delete_selected)
 
         self.bb = bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
@@ -157,27 +168,22 @@ class AuthorsEdit(QDialog):
 
         l.setColumnStretch(0, 10)
         self.resize(self.sizeHint() + QSize(150, 100))
-        geom = gprefs.get('authors-edit-geometry', None)
-        if geom is not None:
-            QApplication.instance().safe_restore_geometry(self, geom)
+        self.restore_geometry(gprefs, 'authors-edit-geometry')
         self.author.setFocus(Qt.FocusReason.OtherFocusReason)
 
-    def save_geometry(self):
-        gprefs.set('authors-edit-geometry', bytearray(self.saveGeometry()))
-
     def accept(self):
-        self.save_geometry()
+        self.save_geometry(gprefs, 'authors-edit-geometry')
         return QDialog.accept(self)
 
     def reject(self):
-        self.save_geometry()
+        self.save_geometry(gprefs, 'authors-edit-geometry')
         return QDialog.reject(self)
 
     @property
     def authors(self):
         ans = []
         for i in range(self.al.count()):
-            ans.append(unicode_type(self.al.item(i).text()))
+            ans.append(str(self.al.item(i).text()))
         return ans or [_('Unknown')]
 
     def add_author(self):
@@ -200,5 +206,5 @@ class AuthorsEdit(QDialog):
 if __name__ == '__main__':
     app = QApplication([])
     d = AuthorsEdit(['kovid goyal', 'divok layog', 'other author'], ['kovid goyal', 'other author'])
-    d.exec_()
+    d.exec()
     print(d.authors)

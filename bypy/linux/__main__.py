@@ -12,42 +12,49 @@ import tarfile
 import time
 from functools import partial
 
-from bypy.constants import (
-    OUTPUT_DIR, PREFIX, SRC as CALIBRE_DIR, is64bit, python_major_minor_version
-)
-from bypy.freeze import (
-    extract_extension_modules, fix_pycryptodome, freeze_python, path_to_freeze_dir
-)
-from bypy.utils import (
-    create_job, get_dll_path, mkdtemp, parallel_build, py_compile, run, walk
-)
+from bypy.constants import LIBDIR, OUTPUT_DIR, PREFIX, python_major_minor_version
+from bypy.constants import SRC as CALIBRE_DIR
+from bypy.freeze import extract_extension_modules, fix_pycryptodome, freeze_python, is_package_dir, path_to_freeze_dir
+from bypy.pkgs.piper import copy_piper_dir
+from bypy.utils import create_job, get_dll_path, mkdtemp, parallel_build, py_compile, run, walk
 
 j = os.path.join
 self_dir = os.path.dirname(os.path.abspath(__file__))
-arch = 'x86_64' if is64bit else 'i686'
-
+machine = (os.uname()[4] or '').lower()
 py_ver = '.'.join(map(str, python_major_minor_version()))
 QT_PREFIX = os.path.join(PREFIX, 'qt')
+FFMPEG_PREFIX = os.path.join(PREFIX, 'ffmpeg', 'lib')
 iv = globals()['init_env']
 calibre_constants = iv['calibre_constants']
 QT_DLLS, QT_PLUGINS, PYQT_MODULES = iv['QT_DLLS'], iv['QT_PLUGINS'], iv['PYQT_MODULES']
 qt_get_dll_path = partial(get_dll_path, loc=os.path.join(QT_PREFIX, 'lib'))
+ffmpeg_get_dll_path = partial(get_dll_path, loc=FFMPEG_PREFIX)
 
 
 def binary_includes():
+    ffmpeg_dlls = tuple(os.path.basename(x).partition('.')[0][3:] for x in glob.glob(os.path.join(FFMPEG_PREFIX, '*.so')))
     return [
-        j(PREFIX, 'bin', x) for x in ('pdftohtml', 'pdfinfo', 'pdftoppm', 'optipng', 'JxrDecApp')] + [
+        j(PREFIX, 'bin', x) for x in ('pdftohtml', 'pdfinfo', 'pdftoppm', 'pdftotext', 'optipng', 'cwebp', 'JxrDecApp')] + [
 
         j(PREFIX, 'private', 'mozjpeg', 'bin', x) for x in ('jpegtran', 'cjpeg')] + [
         ] + list(map(
             get_dll_path,
             ('usb-1.0 mtp expat sqlite3 ffi z lzma openjp2 poppler dbus-1 iconv xml2 xslt jpeg png16'
-             ' webp webpmux webpdemux exslt ncursesw readline chm hunspell-1.7 hyphen'
-             ' icudata icui18n icuuc icuio stemmer gcrypt gpg-error'
+             ' webp webpmux webpdemux sharpyuv exslt ncursesw readline chm hunspell-1.7 hyphen'
+             ' icudata icui18n icuuc icuio stemmer gcrypt gpg-error uchardet graphite2'
+             ' brotlicommon brotlidec brotlienc zstd podofo ssl crypto deflate tiff'
              ' gobject-2.0 glib-2.0 gthread-2.0 gmodule-2.0 gio-2.0 dbus-glib-1').split()
         )) + [
-            get_dll_path('podofo', 3), get_dll_path('bz2', 2), j(PREFIX, 'lib', 'libunrar.so'),
-            get_dll_path('ssl', 2), get_dll_path('crypto', 2), get_dll_path('python' + py_ver, 2),
+            # debian/ubuntu for for some typical stupid reason use libpcre.so.3
+            # instead of libpcre.so.0 like other distros. And Qt's idiotic build
+            # system links against this pcre library despite being told to use
+            # the bundled pcre. Since libpcre doesn't depend on anything other
+            # than libc and libpthread we bundle the Ubuntu one here
+            glob.glob('/usr/lib/*/libpcre.so.3')[0],
+
+            get_dll_path('bz2', 2), j(PREFIX, 'lib', 'libunrar.so'),
+            get_dll_path('python' + py_ver, 2), get_dll_path('jbig', 2),
+
             # We dont include libstdc++.so as the OpenGL dlls on the target
             # computer fail to load in the QPA xcb plugin if they were compiled
             # with a newer version of gcc than the one on the build computer.
@@ -55,7 +62,7 @@ def binary_includes():
             # distros do not have libstdc++.so.6, so it should be safe to leave it out.
             # https://gcc.gnu.org/onlinedocs/libstdc++/manual/abi.html (The current
             # debian stable libstdc++ is  libstdc++.so.6.0.17)
-    ] + list(map(qt_get_dll_path, QT_DLLS))
+    ] + list(map(qt_get_dll_path, QT_DLLS)) + list(map(ffmpeg_get_dll_path, ffmpeg_dlls))
 
 
 class Env:
@@ -78,12 +85,12 @@ def ignore_in_lib(base, items, ignored_dirs=None):
         ignored_dirs = {'.svn', '.bzr', '.git', 'test', 'tests', 'testing'}
     for name in items:
         path = j(base, name)
+        is_kakasi = 'pykakasi' in path
         if os.path.isdir(path):
-            if name in ignored_dirs or not os.path.exists(j(path, '__init__.py')):
-                if name != 'plugins':
-                    ans.append(name)
+            if name != 'plugins' and (name in ignored_dirs or not is_package_dir(path)) and not (is_kakasi and name == 'data'):
+                ans.append(name)
         else:
-            if name.rpartition('.')[-1] not in ('so', 'py'):
+            if name.rpartition('.')[-1] not in ('so', 'py') and not (is_kakasi and name.endswith('.db')):
                 ans.append(name)
     return ans
 
@@ -101,8 +108,13 @@ def import_site_packages(srcdir, dest):
                 src = os.path.abspath(j(srcdir, line))
                 if os.path.exists(src) and os.path.isdir(src):
                     import_site_packages(src, dest)
-        elif os.path.exists(j(f, '__init__.py')):
+        elif is_package_dir(f):
             shutil.copytree(f, j(dest, x), ignore=ignore_in_lib)
+
+
+def copy_piper(env):
+    print('Copying piper...')
+    copy_piper_dir(PREFIX, env.bin_dir)
 
 
 def copy_libs(env):
@@ -114,6 +126,8 @@ def copy_libs(env):
         os.chmod(j(
             dest, os.path.basename(x)),
             stat.S_IRWXU | stat.S_IRGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH)
+    for x in ('ossl-modules',):
+        shutil.copytree(os.path.join(LIBDIR, x), os.path.join(env.lib_dir, x))
 
     base = j(QT_PREFIX, 'plugins')
     dest = j(env.lib_dir, '..', 'plugins')
@@ -150,7 +164,7 @@ def copy_python(env, ext_dir):
         elif os.path.isfile(c):
             shutil.copy2(c, j(dest, x))
     shutil.copytree(j(env.src_root, 'resources'), j(env.base, 'resources'))
-    for pak in glob.glob(j(QT_PREFIX, 'resources', '*.pak')):
+    for pak in glob.glob(j(QT_PREFIX, 'resources', '*')):
         shutil.copy2(pak, j(env.base, 'resources'))
     os.mkdir(j(env.base, 'translations'))
     shutil.copytree(j(QT_PREFIX, 'translations', 'qtwebengine_locales'), j(env.base, 'translations', 'qtwebengine_locales'))
@@ -248,7 +262,7 @@ def strip_files(files, argv_max=(256 * 1024)):
 
 
 def strip_binaries(env):
-    files = {j(env.bin_dir, x) for x in os.listdir(env.bin_dir)} | {
+    files = {j(env.bin_dir, x) for x in os.listdir(env.bin_dir) if x != 'piper'} | {
         x for x in {
             j(os.path.dirname(env.bin_dir), x) for x in os.listdir(env.bin_dir)} if os.path.exists(x)}
     for x in walk(env.lib_dir):
@@ -266,12 +280,13 @@ def strip_binaries(env):
 def create_tarfile(env, compression_level='9'):
     print('Creating archive...')
     base = OUTPUT_DIR
+    arch = 'arm64' if 'arm64' in os.environ['BYPY_ARCH'] else ('i686' if 'i386' in os.environ['BYPY_ARCH'] else 'x86_64')
     try:
         shutil.rmtree(base)
     except EnvironmentError as err:
-        if err.errno != errno.ENOENT:
+        if err.errno not in (errno.ENOENT, errno.EBUSY):
             raise
-    os.mkdir(base)
+    os.makedirs(base, exist_ok=True)  # when base is a mount point deleting it fails with EBUSY
     dist = os.path.join(base, '%s-%s-%s.tar' % (calibre_constants['appname'], calibre_constants['version'], arch))
     with tarfile.open(dist, mode='w', format=tarfile.PAX_FORMAT) as tf:
         cwd = os.getcwd()
@@ -284,7 +299,7 @@ def create_tarfile(env, compression_level='9'):
     print('Compressing archive...')
     ans = dist.rpartition('.')[0] + '.txz'
     start_time = time.time()
-    subprocess.check_call(['xz', '--threads=0', '-f', '-' + compression_level, dist])
+    subprocess.check_call(['xz', '--verbose', '--threads=0', '-f', '-' + compression_level, dist])
     secs = time.time() - start_time
     print('Compressed in %d minutes %d seconds' % (secs // 60, secs % 60))
     os.rename(dist + '.xz', ans)
@@ -299,6 +314,7 @@ def main():
     env = Env()
     copy_libs(env)
     copy_python(env, ext_dir)
+    copy_piper(env)
     build_launchers(env)
     if not args.skip_tests:
         run_tests(j(env.base, 'calibre-debug'), env.base)

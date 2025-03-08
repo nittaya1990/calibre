@@ -1,7 +1,9 @@
 # vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
 from __future__ import unicode_literals
-from calibre.web.feeds.recipes import BasicNewsRecipe
+
 import re
+
+from calibre.web.feeds.recipes import BasicNewsRecipe
 
 
 class bleskRecipe(BasicNewsRecipe):
@@ -25,15 +27,15 @@ class bleskRecipe(BasicNewsRecipe):
     cover_url = 'http://img.blesk.cz/images/blesk/blesk-logo.png'
     remove_javascript = True
     no_stylesheets = True
-    extra_css             = """
-                            """
+    extra_css             = '''
+                            '''
 
     remove_attributes = []
     remove_tags_before = dict(name='div', attrs={'id': ['boxContent']})
     remove_tags_after = dict(name='div', attrs={'class': ['artAuthors']})
-    remove_tags = [dict(name='div',   attrs={'class': ['link_clanek']}),
-                   dict(name='div',   attrs={'id': ['partHeader']}),
-                   dict(name='div',   attrs={'id': ['top_bottom_box', 'lista_top']})]
+    remove_tags = [dict(name='div', attrs={'class': ['link_clanek']}),
+                   dict(name='div', attrs={'id': ['partHeader']}),
+                   dict(name='div', attrs={'id': ['top_bottom_box', 'lista_top']})]
     preprocess_regexps = [(re.compile(r'<div class="(textovytip|related)".*',
                                       re.DOTALL | re.IGNORECASE), lambda match: '</body>')]
 

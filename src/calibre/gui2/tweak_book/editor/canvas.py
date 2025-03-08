@@ -1,29 +1,48 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 
 
 __license__ = 'GPL v3'
 __copyright__ = '2013, Kovid Goyal <kovid at kovidgoyal.net>'
 
-import sys, weakref
+import sys
+import weakref
 from functools import wraps
 from io import BytesIO
 
 from qt.core import (
-    QWidget, QPainter, QColor, QApplication, Qt, QPixmap, QRectF, QTransform,
-    QPointF, QPen, pyqtSignal, QUndoCommand, QUndoStack, QIcon, QImage,
-    QImageWriter)
+    QApplication,
+    QColor,
+    QIcon,
+    QImage,
+    QImageWriter,
+    QPainter,
+    QPen,
+    QPixmap,
+    QPointF,
+    QRect,
+    QRectF,
+    Qt,
+    QTransform,
+    QUndoCommand,
+    QUndoStack,
+    QWidget,
+    pyqtSignal,
+)
 
 from calibre import fit_image
 from calibre.gui2 import error_dialog, pixmap_to_data
-from calibre.gui2.dnd import (
-    image_extensions, dnd_has_extension, dnd_has_image, dnd_get_image, DownloadDialog)
+from calibre.gui2.dnd import DownloadDialog, dnd_get_image, dnd_has_extension, dnd_has_image, image_extensions
 from calibre.gui2.tweak_book import capitalize
-from calibre.utils.imghdr import identify
 from calibre.utils.img import (
-    remove_borders_from_image, gaussian_sharpen_image, gaussian_blur_image, image_to_data, despeckle_image,
-    normalize_image, oil_paint_image
+    despeckle_image,
+    gaussian_blur_image,
+    gaussian_sharpen_image,
+    image_to_data,
+    normalize_image,
+    oil_paint_image,
+    remove_borders_from_image,
 )
+from calibre.utils.imghdr import identify
 
 
 def painter(func):
@@ -39,7 +58,7 @@ def painter(func):
 
 class SelectionState:
 
-    __slots__ = ('last_press_point', 'current_mode', 'rect', 'in_selection', 'drag_corner', 'dragging', 'last_drag_pos')
+    __slots__ = ('current_mode', 'drag_corner', 'dragging', 'in_selection', 'last_drag_pos', 'last_press_point', 'rect')
 
     def __init__(self):
         self.reset()
@@ -88,20 +107,15 @@ def get_selection_rect(img, sr, target):
 
 
 class Trim(Command):
-
     ''' Remove the areas of the image outside the current selection. '''
 
     TEXT = _('Trim image')
 
     def __call__(self, canvas):
-        img = canvas.current_image
-        target = canvas.target
-        sr = canvas.selection_state.rect
-        return img.copy(*get_selection_rect(img, sr, target))
+        return canvas.current_image.copy(*map(int, canvas.rect_for_trim()))
 
 
 class AutoTrim(Trim):
-
     ''' Auto trim borders from the image '''
     TEXT = _('Auto-trim image')
 
@@ -184,7 +198,6 @@ class Normalize(Command):
 
 
 class Replace(Command):
-
     ''' Replace the current image with another image. If there is a selection,
     only the region of the selection is replaced. '''
 
@@ -293,11 +306,13 @@ class Canvas(QWidget):
         self.target = QRectF(0, 0, 0, 0)
 
         self.undo_action = a = self.undo_stack.createUndoAction(self, _('Undo') + ' ')
-        a.setIcon(QIcon(I('edit-undo.png')))
+        a.setIcon(QIcon.ic('edit-undo.png'))
         self.redo_action = a = self.undo_stack.createRedoAction(self, _('Redo') + ' ')
-        a.setIcon(QIcon(I('edit-redo.png')))
+        a.setIcon(QIcon.ic('edit-redo.png'))
 
-    def load_image(self, data):
+    def load_image(self, data, only_if_different=False):
+        if only_if_different and self.original_image_data and not self.is_modified and self.original_image_data == data:
+            return
         self.is_valid = False
         try:
             fmt = identify(data)[0].encode('ascii')
@@ -334,7 +349,7 @@ class Canvas(QWidget):
                 i.save(buf, 'gif')
                 return buf.getvalue()
             else:
-                raise ValueError('Cannot save %s format images' % fmt)
+                raise ValueError(f'Cannot save {fmt} format images')
         return pixmap_to_data(self.current_image, format=fmt, quality=90)
 
     def copy(self):
@@ -494,18 +509,76 @@ class Canvas(QWidget):
         ny = max(miny, min(maxy, ny))
         sr.moveCenter(QPointF(nx, ny))
 
-    def move_selection(self, dp):
+    def preserve_aspect_ratio_after_move(self, orig_rect, hedge, vedge):
+        r = self.selection_state.rect
+
+        def is_equal(a, b):
+            return abs(a - b) < 0.001
+
+        if vedge is None:
+            new_height = r.width() * (orig_rect.height() / orig_rect.width())
+            if not is_equal(new_height, r.height()):
+                delta = (r.height() - new_height) / 2.0
+                r.setTop(max(self.target.top(), r.top() + delta))
+                r.setBottom(min(r.bottom() - delta, self.target.bottom()))
+                if not is_equal(new_height, r.height()):
+                    new_width = r.height() * (orig_rect.width() / orig_rect.height())
+                    delta = r.width() - new_width
+                    r.setLeft(r.left() + delta) if hedge == 'left' else r.setRight(r.right() - delta)
+        elif hedge is None:
+            new_width = r.height() * (orig_rect.width() / orig_rect.height())
+            if not is_equal(new_width, r.width()):
+                delta = (r.width() - new_width) / 2.0
+                r.setLeft(max(self.target.left(), r.left() + delta))
+                r.setRight(min(r.right() - delta, self.target.right()))
+                if not is_equal(new_width, r.width()):
+                    new_height = r.width() * (orig_rect.height() / orig_rect.width())
+                    delta = r.height() - new_height
+                    r.setTop(r.top() + delta) if hedge == 'top' else r.setBottom(r.bottom() - delta)
+        else:
+            buf = 50
+
+            def set_width(new_width):
+                if hedge == 'left':
+                    r.setLeft(max(self.target.left(), min(r.right() - new_width, r.right() - buf)))
+                else:
+                    r.setRight(max(r.left() + buf, min(r.left() + new_width, self.target.right())))
+
+            def set_height(new_height):
+                if vedge == 'top':
+                    r.setTop(max(self.target.top(), min(r.bottom() - new_height, r.bottom() - buf)))
+                else:
+                    r.setBottom(max(r.top() + buf, min(r.top() + new_height, self.target.bottom())))
+
+            fractional_h, fractional_v = r.width() / orig_rect.width(), r.height() / orig_rect.height()
+            smaller_frac = fractional_h if abs(fractional_h - 1) < abs(fractional_v - 1) else fractional_v
+            set_width(orig_rect.width() * smaller_frac)
+            frac = r.width() / orig_rect.width()
+            set_height(orig_rect.height() * frac)
+            if r.height() / orig_rect.height() != frac:
+                set_width(orig_rect.width() * frac)
+
+    def move_selection(self, dp, preserve_aspect_ratio=False):
         dm = self.selection_state.dragging
         if dm is None:
             self.move_selection_rect(dp.x(), dp.y())
         else:
+            orig = QRectF(self.selection_state.rect)
             for edge in dm:
                 if edge is not None:
                     self.move_edge(edge, dp)
+            if preserve_aspect_ratio and dm:
+                self.preserve_aspect_ratio_after_move(orig, dm[0], dm[1])
+
+    def rect_for_trim(self):
+        img = self.current_image
+        target = self.target
+        sr = self.selection_state.rect
+        return get_selection_rect(img, sr, target)
 
     def mousePressEvent(self, ev):
-        if ev.button() == Qt.MouseButton.LeftButton and self.target.contains(ev.pos()):
-            pos = ev.pos()
+        if ev.button() == Qt.MouseButton.LeftButton and self.target.contains(ev.position()):
+            pos = ev.position()
             self.selection_state.last_press_point = pos
             if self.selection_state.current_mode is None:
                 self.selection_state.current_mode = 'select'
@@ -519,6 +592,21 @@ class Canvas(QWidget):
                     self.selection_state.current_mode = 'select'
                     self.selection_state.rect = None
                     self.selection_state_changed.emit(False)
+    @property
+    def selection_rect_in_image_coords(self):
+        if self.selection_state.current_mode == 'selected':
+            left, top, width, height = self.rect_for_trim()
+            return QRect(0, 0, int(width), int(height))
+        return self.current_image.rect()
+
+    def set_selection_size_in_image_coords(self, width, height):
+        self.selection_state.reset()
+        i = self.current_image
+        self.selection_state.rect = QRectF(self.target.left(), self.target.top(),
+                                           width * self.target.width() / i.width(), height * self.target.height() / i.height())
+        self.selection_state.current_mode = 'selected'
+        self.update()
+        self.selection_state_changed.emit(self.has_selection)
 
     def mouseMoveEvent(self, ev):
         changed = False
@@ -526,29 +614,29 @@ class Canvas(QWidget):
             changed = True
         self.selection_state.in_selection = False
         self.selection_state.drag_corner = None
-        pos = ev.pos()
+        pos = ev.position()
         cursor = Qt.CursorShape.ArrowCursor
         try:
-            if not self.target.contains(pos):
-                return
             if ev.buttons() & Qt.MouseButton.LeftButton:
                 if self.selection_state.last_press_point is not None and self.selection_state.current_mode is not None:
                     if self.selection_state.current_mode == 'select':
-                        self.selection_state.rect = QRectF(self.selection_state.last_press_point, pos).normalized()
+                        r = QRectF(self.selection_state.last_press_point, pos).normalized()
+                        r = r.intersected(self.target)
+                        self.selection_state.rect = r
                         changed = True
                     elif self.selection_state.last_drag_pos is not None:
                         self.selection_state.in_selection = True
                         self.selection_state.drag_corner = self.selection_state.dragging
                         dp = pos - self.selection_state.last_drag_pos
                         self.selection_state.last_drag_pos = pos
-                        self.move_selection(dp)
+                        self.move_selection(dp, preserve_aspect_ratio=ev.modifiers() & Qt.KeyboardModifier.AltModifier == Qt.KeyboardModifier.AltModifier)
                         cursor = self.get_cursor()
                         changed = True
             else:
-                if self.selection_state.rect is None or not self.selection_state.rect.contains(pos):
+                if not self.target.contains(QPointF(pos)) or self.selection_state.rect is None or not self.selection_state.rect.contains(QPointF(pos)):
                     return
                 if self.selection_state.current_mode == 'selected':
-                    if self.selection_state.rect is not None and self.selection_state.rect.contains(pos):
+                    if self.selection_state.rect is not None and self.selection_state.rect.contains(QPointF(pos)):
                         self.selection_state.drag_corner = self.get_drag_corner(pos)
                         self.selection_state.in_selection = True
                         cursor = self.get_cursor()
@@ -568,7 +656,8 @@ class Canvas(QWidget):
                 else:
                     self.selection_state.current_mode = 'selected'
                 self.selection_state_changed.emit(self.has_selection)
-            elif self.selection_state.current_mode == 'selected' and self.selection_state.rect is not None and self.selection_state.rect.contains(ev.pos()):
+            elif self.selection_state.current_mode == 'selected' and self.selection_state.rect is not None and self.selection_state.rect.contains(
+                    ev.position()):
                 self.setCursor(self.get_cursor())
             self.update()
 
@@ -692,4 +781,4 @@ if __name__ == '__main__':
     c = Canvas()
     c.load_image(data)
     c.show()
-    app.exec_()
+    app.exec()

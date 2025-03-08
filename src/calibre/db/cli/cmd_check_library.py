@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 # License: GPLv3 Copyright: 2017, Kovid Goyal <kovid at kovidgoyal.net>
 
 
@@ -40,8 +39,8 @@ Perform some checks on the filesystem representing a library. Reports are {0}
         '--report',
         default=None,
         dest='report',
-        help=_("Comma-separated list of reports.\n"
-               "Default: all")
+        help=_('Comma-separated list of reports.\n'
+               'Default: all')
     )
 
     parser.add_option(
@@ -49,8 +48,8 @@ Perform some checks on the filesystem representing a library. Reports are {0}
         '--ignore_extensions',
         default=None,
         dest='exts',
-        help=_("Comma-separated list of extensions to ignore.\n"
-               "Default: all")
+        help=_('Comma-separated list of extensions to ignore.\n'
+               'Default: all')
     )
 
     parser.add_option(
@@ -58,9 +57,16 @@ Perform some checks on the filesystem representing a library. Reports are {0}
         '--ignore_names',
         default=None,
         dest='names',
-        help=_("Comma-separated list of names to ignore.\n"
-               "Default: all")
+        help=_('Comma-separated list of names to ignore.\n'
+               'Default: all')
     )
+    parser.add_option(
+        '--vacuum-fts-db',
+        default=False,
+        action='store_true',
+        help=_('Vacuum the full text search database. This can be very slow and memory intensive, depending on the size of the database.')
+    )
+
     return parser
 
 
@@ -80,7 +86,7 @@ def _print_check_library_results(checker, check, as_csv=False, out=sys.stdout):
     else:
         print(check[1], file=out)
         for i in list:
-            print('    %-40.40s - %-40.40s' % (i[0], i[1]), file=out)
+            print(f'    {i[0]:<40.40} -{i[1]:<40.40}', file=out)
 
 
 def main(opts, args, dbctx):
@@ -114,7 +120,7 @@ def main(opts, args, dbctx):
 
     db = LibraryDatabase(dbctx.library_path)
     prints(_('Vacuuming database...'))
-    db.new_api.vacuum()
+    db.new_api.vacuum(opts.vacuum_fts_db)
     checker = CheckLibrary(dbctx.library_path, db)
     checker.scan_library(names, exts)
     for check in checks:

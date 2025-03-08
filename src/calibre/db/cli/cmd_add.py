@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 # License: GPLv3 Copyright: 2017, Kovid Goyal <kovid at kovidgoyal.net>
 
 
@@ -9,10 +8,7 @@ from contextlib import contextmanager
 from optparse import OptionGroup, OptionValueError
 
 from calibre import prints
-from calibre.db.adding import (
-    cdb_find_in_dir, cdb_recursive_find, compile_rule, create_format_map,
-    run_import_plugins, run_import_plugins_before_metadata
-)
+from calibre.db.adding import cdb_find_in_dir, cdb_recursive_find, compile_rule, create_format_map, run_import_plugins, run_import_plugins_before_metadata
 from calibre.db.utils import find_identical_books
 from calibre.ebooks.metadata import MetaInformation, string_to_authors
 from calibre.ebooks.metadata.book.serialize import read_cover, serialize_cover
@@ -21,7 +17,6 @@ from calibre.ptempfile import TemporaryDirectory
 from calibre.srv.changes import books_added, formats_added
 from calibre.utils.localization import canonicalize_lang
 from calibre.utils.short_uuid import uuid4
-from polyglot.builtins import unicode_type
 
 readonly = False
 version = 0  # change this if you change signature of implementation()
@@ -115,7 +110,7 @@ def book(db, notify_changes, is_remote, args):
     data, fname, fmt, add_duplicates, otitle, oauthors, oisbn, otags, oseries, oseries_index, ocover, oidentifiers, olanguages, oautomerge, request_id = args
     with add_ctx(), TemporaryDirectory('add-single') as tdir, run_import_plugins_before_metadata(tdir):
         if is_remote:
-            with lopen(os.path.join(tdir, fname), 'wb') as f:
+            with open(os.path.join(tdir, fname), 'wb') as f:
                 f.write(data[1])
             path = f.name
         else:
@@ -123,7 +118,7 @@ def book(db, notify_changes, is_remote, args):
         path = run_import_plugins([path])[0]
         fmt = os.path.splitext(path)[1]
         fmt = (fmt[1:] if fmt else None) or 'unknown'
-        with lopen(path, 'rb') as stream:
+        with open(path, 'rb') as stream:
             mi = get_metadata(stream, stream_type=fmt, use_libprs_metadata=True)
         if not mi.title:
             mi.title = os.path.splitext(os.path.basename(path))[0]
@@ -159,7 +154,7 @@ def format_group(db, notify_changes, is_remote, args):
         if is_remote:
             paths = []
             for name, data in formats:
-                with lopen(os.path.join(tdir, os.path.basename(name)), 'wb') as f:
+                with open(os.path.join(tdir, os.path.basename(name.replace('\\', os.sep))), 'wb') as f:
                     f.write(data)
                 paths.append(f.name)
         else:
@@ -168,7 +163,7 @@ def format_group(db, notify_changes, is_remote, args):
         mi = metadata_from_formats(paths)
         if mi.title is None:
             return None, set(), set(), False
-        if cover_data and not mi.cover_data or not mi.cover_data[1]:
+        if cover_data and (not mi.cover_data or not mi.cover_data[1]):
             mi.cover_data = 'jpeg', cover_data
         format_map = create_format_map(paths)
         added_ids, updated_ids, duplicates = do_adding(
@@ -256,15 +251,15 @@ def do_add(
                 cover_data = None
                 for fmt in formats:
                     if fmt.lower().endswith('.opf'):
-                        with lopen(fmt, 'rb') as f:
+                        with open(fmt, 'rb') as f:
                             mi = get_metadata(f, stream_type='opf')
                             if mi.cover_data and mi.cover_data[1]:
                                 cover_data = mi.cover_data[1]
                             elif mi.cover:
                                 try:
-                                    with lopen(mi.cover, 'rb') as f:
+                                    with open(mi.cover, 'rb') as f:
                                         cover_data = f.read()
-                                except EnvironmentError:
+                                except OSError:
                                     pass
 
                 book_title, ids, mids, dups = dbctx.run(
@@ -296,9 +291,9 @@ def do_add(
                     prints('   ', path)
 
         if added_ids:
-            prints(_('Added book ids: %s') % (', '.join(map(unicode_type, added_ids))))
+            prints(_('Added book ids: %s') % (', '.join(map(str, added_ids))))
         if merged_ids:
-            prints(_('Merged book ids: %s') % (', '.join(map(unicode_type, merged_ids))))
+            prints(_('Merged book ids: %s') % (', '.join(map(str, merged_ids))))
 
 
 def option_parser(get_parser, args):
@@ -359,7 +354,7 @@ the folder related options below.
         '--identifier',
         default=[],
         action='append',
-        help=_('Set the identifiers for this book, for e.g. -I asin:XXX -I isbn:YYY')
+        help=_('Set the identifiers for this book, e.g. -I asin:XXX -I isbn:YYY')
     )
     parser.add_option(
         '-T', '--tags', default=None, help=_('Set the tags of the added book(s)')
@@ -405,7 +400,7 @@ the folder related options below.
         try:
             getattr(parser.values, option.dest).append(compile_rule(rule))
         except Exception:
-            raise OptionValueError('%r is not a valid filename pattern' % value)
+            raise OptionValueError(f'{value!r} is not a valid filename pattern')
 
     g.add_option(
         '-1',
@@ -442,7 +437,7 @@ the folder related options below.
         '--ignore', 'ignore',
         _(
             'A filename (glob) pattern, files matching this pattern will be ignored when scanning folders for files.'
-            ' Can be specified multiple times for multiple patterns. For e.g.: *.pdf will ignore all PDF files'
+            ' Can be specified multiple times for multiple patterns. For example: *.pdf will ignore all PDF files'
         )
     )
     fadd(
@@ -463,8 +458,8 @@ def main(opts, args, dbctx):
     lcodes = [canonicalize_lang(x) for x in (opts.languages or '').split(',')]
     lcodes = [x for x in lcodes if x]
     identifiers = (x.partition(':')[::2] for x in opts.identifier)
-    identifiers = dict((k.strip(), v.strip()) for k, v in identifiers
-                       if k.strip() and v.strip())
+    identifiers = {k.strip(): v.strip() for k, v in identifiers
+                       if k.strip() and v.strip()}
     if opts.empty:
         do_add_empty(
             dbctx, opts.title, aut, opts.isbn, tags, opts.series, opts.series_index,

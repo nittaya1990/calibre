@@ -1,13 +1,12 @@
-# -*- coding: utf-8 -*-
-
-
 __license__ = 'GPL 3'
 __copyright__ = '2011, John Schember <john@nachtimwald.com>'
 __docformat__ = 'restructuredtext en'
 
 import os
 import shutil
+import time
 from contextlib import closing
+
 from mechanize import MozillaCookieJar
 
 from calibre import browser
@@ -18,7 +17,7 @@ from calibre.gui2.threaded_jobs import ThreadedJob
 from calibre.ptempfile import PersistentTemporaryDirectory
 from calibre.utils.filenames import ascii_filename
 from calibre.web import get_download_filename_from_response
-from polyglot.builtins import string_or_bytes, as_unicode
+from polyglot.builtins import as_unicode, string_or_bytes
 
 
 class DownloadInfo(MessageBox):
@@ -43,7 +42,7 @@ class DownloadInfo(MessageBox):
 def show_download_info(filename, parent=None):
     if not gprefs.get('show_get_books_download_info', True):
         return
-    DownloadInfo(filename, parent).exec_()
+    DownloadInfo(filename, parent).exec()
 
 
 def get_download_filename(response):
@@ -56,11 +55,12 @@ def get_download_filename(response):
 
 def download_file(url, cookie_file=None, filename=None, create_browser=None):
     if url.startswith('//'):
-        url = 'http:' + url
+        url = 'https:' + url
     try:
         br = browser() if create_browser is None else create_browser()
     except NotImplementedError:
         br = browser()
+    br.set_debug_http(True)
     if cookie_file:
         cj = MozillaCookieJar()
         cj.load(cookie_file)
@@ -103,17 +103,33 @@ class EbookDownload:
     def _add(self, filename, gui, add_to_lib, tags):
         if not add_to_lib or not filename:
             return
-        ext = os.path.splitext(filename)[1][1:].lower()
-        if ext not in BOOK_EXTENSIONS:
-            raise Exception(_('Not a support e-book format.'))
 
         from calibre.ebooks.metadata.meta import get_metadata
-        with open(filename, 'rb') as f:
-            mi = get_metadata(f, ext, force_read_metadata=True)
-        mi.tags.extend(tags)
+        from calibre.ebooks.metadata.worker import run_import_plugins
+        from calibre.ptempfile import TemporaryDirectory
 
-        id = gui.library_view.model().db.create_book_entry(mi)
-        gui.library_view.model().db.add_format_with_hooks(id, ext.upper(), filename, index_is_id=True)
+        with TemporaryDirectory() as tdir:
+            path = run_import_plugins((filename,), time.monotonic_ns(), tdir)[0]
+            ext = os.path.splitext(path)[1][1:].lower()
+            if ext not in BOOK_EXTENSIONS:
+                raise Exception(_('{} is not a supported e-book format').format(ext.upper()))
+            with open(path, 'rb') as f:
+                mi = get_metadata(f, ext, force_read_metadata=True)
+            mi.tags.extend(tags)
+            db = gui.current_db
+            if gprefs.get('tag_map_on_add_rules'):
+                from calibre.ebooks.metadata.tag_mapper import map_tags
+                mi.tags = map_tags(mi.tags, gprefs['tag_map_on_add_rules'])
+            if gprefs.get('author_map_on_add_rules'):
+                from calibre.ebooks.metadata.author_mapper import compile_rules as acr
+                from calibre.ebooks.metadata.author_mapper import map_authors
+                author_map_rules = acr(gprefs['author_map_on_add_rules'])
+                new_authors = map_authors(mi.authors, author_map_rules)
+                if new_authors != mi.authors:
+                    mi.authors = new_authors
+                    mi.author_sort = db.new_api.author_sort_from_authors(mi.authors)
+            book_id = db.create_book_entry(mi)
+            db.new_api.add_format(book_id, ext.upper(), path)
         gui.library_view.model().books_added(1)
         gui.library_view.model().count_changed()
 

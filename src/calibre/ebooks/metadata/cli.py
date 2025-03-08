@@ -1,5 +1,3 @@
-
-
 __license__   = 'GPL v3'
 __copyright__ = '2009, Kovid Goyal kovid@kovidgoyal.net'
 __docformat__ = 'restructuredtext en'
@@ -7,17 +5,18 @@ __docformat__ = 'restructuredtext en'
 '''
 ebook-meta
 '''
-import sys, os
+import os
+import sys
+import unicodedata
 
-from calibre.utils.config import StringConfig
-from calibre.customize.ui import metadata_readers, metadata_writers, force_identifiers
-from calibre.ebooks.metadata.meta import get_metadata, set_metadata
-from calibre.ebooks.metadata import string_to_authors, authors_to_sort_string, \
-                    title_sort, MetaInformation
-from calibre.ebooks.lrf.meta import LRFMetaFile
 from calibre import prints
+from calibre.customize.ui import force_identifiers, metadata_readers, metadata_writers
+from calibre.ebooks.lrf.meta import LRFMetaFile
+from calibre.ebooks.metadata import MetaInformation, authors_to_sort_string, string_to_authors, title_sort
+from calibre.ebooks.metadata.meta import get_metadata, set_metadata
+from calibre.utils.config import StringConfig
 from calibre.utils.date import parse_date
-from polyglot.builtins import iteritems, unicode_type, getcwd
+from polyglot.builtins import iteritems
 
 USAGE=_('%prog ebook_file [options]\n') + \
 _('''
@@ -82,6 +81,9 @@ def config():
     c.add_opt('get_cover', ['--get-cover'],
               help=_('Get the cover from the e-book and save it at as the '
                      'specified file.'))
+    c.add_opt('disallow_rendered_cover', ['--disallow-rendered-cover'], action='store_true', help=_(
+        'For formats like EPUB that use a "default cover" of the first page rendered, disallow such default covers'))
+
     c.add_opt('to_opf', ['--to-opf'],
               help=_('Specify the name of an OPF file. The metadata will '
                      'be written to the OPF file.'))
@@ -108,6 +110,10 @@ def option_parser():
         writers = writers.union(set(w.file_types))
     ft, w = ', '.join(sorted(filetypes())), ', '.join(sorted(writers))
     return config().option_parser(USAGE.format(ft, w))
+
+
+def normalize(x):
+    return unicodedata.normalize('NFC', x)
 
 
 def do_set_metadata(opts, mi, stream, stream_type):
@@ -164,7 +170,7 @@ def do_set_metadata(opts, mi, stream, stream_type):
 
 def main(args=sys.argv):
     parser = option_parser()
-    opts, args = parser.parse_args(args)
+    opts, args = parser.parse_args(list(map(normalize, args)))
     if len(args) < 2:
         parser.print_help()
         prints(_('No file specified'), file=sys.stderr)
@@ -179,11 +185,12 @@ def main(args=sys.argv):
         if getattr(opts, pref.name) is not None:
             trying_to_set = True
             break
-    with open(path, 'rb') as stream:
+    from calibre.ebooks.metadata.epub import epub_metadata_settings
+    with open(path, 'rb') as stream, epub_metadata_settings(allow_rendered_cover=not opts.disallow_rendered_cover):
         mi = get_metadata(stream, stream_type, force_read_metadata=True)
     if trying_to_set:
         prints(_('Original metadata')+'::')
-    metadata = unicode_type(mi)
+    metadata = str(mi)
     if trying_to_set:
         metadata = '\t'+'\n\t'.join(metadata.split('\n'))
     prints(metadata)
@@ -200,7 +207,7 @@ def main(args=sys.argv):
                     lrf.book_id = opts.lrf_bookid
             mi = get_metadata(stream, stream_type, force_read_metadata=True)
         prints('\n' + _('Changed metadata') + '::')
-        metadata = unicode_type(mi)
+        metadata = str(mi)
         metadata = '\t'+'\n\t'.join(metadata.split('\n'))
         prints(metadata)
         if lrf is not None:
@@ -208,7 +215,7 @@ def main(args=sys.argv):
 
     if opts.to_opf is not None:
         from calibre.ebooks.metadata.opf2 import OPFCreator
-        opf = OPFCreator(getcwd(), mi)
+        opf = OPFCreator(os.getcwd(), mi)
         with open(opts.to_opf, 'wb') as f:
             opf.render(f)
         prints(_('OPF created in'), opts.to_opf)

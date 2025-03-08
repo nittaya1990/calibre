@@ -1,15 +1,12 @@
-
-
 __license__ = 'GPL 3'
 __copyright__ = '2009, Kovid Goyal <kovid@kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
 
-import os, re
+import os
+import re
 
-
-from calibre.customize.conversion import (OutputFormatPlugin,
-        OptionRecommendation)
 from calibre import CurrentDir
+from calibre.customize.conversion import OptionRecommendation, OutputFormatPlugin
 
 
 class OEBOutput(OutputFormatPlugin):
@@ -22,13 +19,14 @@ class OEBOutput(OutputFormatPlugin):
     recommendations = {('pretty_print', True, OptionRecommendation.HIGH)}
 
     def convert(self, oeb_book, output_path, input_plugin, opts, log):
-        from polyglot.urllib import unquote
         from lxml import etree
+
+        from polyglot.urllib import unquote
 
         self.log, self.opts = log, opts
         if not os.path.exists(output_path):
             os.makedirs(output_path)
-        from calibre.ebooks.oeb.base import OPF_MIME, NCX_MIME, PAGE_MAP_MIME, OEB_STYLES
+        from calibre.ebooks.oeb.base import NCX_MIME, OEB_STYLES, OPF_MIME, PAGE_MAP_MIME
         from calibre.ebooks.oeb.normalize_css import condense_sheet
         with CurrentDir(output_path):
             results = oeb_book.to_opf2(page_map=True)
@@ -47,13 +45,14 @@ class OEBOutput(OutputFormatPlugin):
                             self.log.exception('Something went wrong while trying to'
                                     ' workaround Pocketbook cover bug, ignoring')
                         self.migrate_lang_code(root)
+                        self.adjust_mime_types(root)
                     raw = etree.tostring(root, pretty_print=True,
                             encoding='utf-8', xml_declaration=True)
                     if key == OPF_MIME:
                         # Needed as I can't get lxml to output opf:role and
                         # not output <opf:metadata> as well
                         raw = re.sub(br'(<[/]{0,1})opf:', br'\1', raw)
-                    with lopen(href, 'wb') as f:
+                    with open(href, 'wb') as f:
                         f.write(raw)
 
             for item in oeb_book.manifest:
@@ -65,9 +64,18 @@ class OEBOutput(OutputFormatPlugin):
                 dir = os.path.dirname(path)
                 if not os.path.exists(dir):
                     os.makedirs(dir)
-                with lopen(path, 'wb') as f:
+                with open(path, 'wb') as f:
                     f.write(item.bytes_representation)
                 item.unload_data_from_memory(memory=path)
+
+    def adjust_mime_types(self, root):
+        from calibre.ebooks.oeb.polish.utils import adjust_mime_for_epub
+        for x in root.xpath('//*[local-name() = "manifest"]/*[local-name() = "item"]'):
+            mt = x.get('media-type')
+            if mt:
+                nmt = adjust_mime_for_epub(filename=os.path.basename(x.get('href') or ''), mime=mt)
+                if nmt != mt:
+                    x.set('media-type', nmt)
 
     def workaround_nook_cover_bug(self, root):  # {{{
         cov = root.xpath('//*[local-name() = "meta" and @name="cover" and'
@@ -75,7 +83,7 @@ class OEBOutput(OutputFormatPlugin):
 
         def manifest_items_with_id(id_):
             return root.xpath('//*[local-name() = "manifest"]/*[local-name() = "item" '
-                ' and @id="%s"]'%id_)
+                f' and @id="{id_}"]')
 
         if len(cov) == 1:
             cov = cov[0]

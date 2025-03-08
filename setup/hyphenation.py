@@ -1,7 +1,5 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:fdm=marker:ai
 # License: GPLv3 Copyright: 2019, Kovid Goyal <kovid at kovidgoyal.net>
-from __future__ import absolute_import, division, print_function, unicode_literals
 
 import glob
 import hashlib
@@ -86,7 +84,7 @@ class Hyphenation(ReVendor):
     NAME = 'hyphenation'
     TAR_NAME = 'hyphenation dictionaries'
     VERSION = 'master'
-    DOWNLOAD_URL = 'https://github.com/LibreOffice/dictionaries/archive/%s.tar.gz' % VERSION
+    DOWNLOAD_URL = f'https://github.com/LibreOffice/dictionaries/archive/{VERSION}.tar.gz'
     CAN_USE_SYSTEM_VERSION = False
 
     def run(self, opts):
@@ -100,7 +98,7 @@ class Hyphenation(ReVendor):
             for dic in dics:
                 with open(os.path.join(output_dir, dic), 'rb') as f:
                     m.update(f.read())
-            hsh = type('')(m.hexdigest())
+            hsh = str(m.hexdigest())
             buf = BytesIO()
             with tarfile.TarFile(fileobj=buf, mode='w') as tf:
                 for dic in dics:

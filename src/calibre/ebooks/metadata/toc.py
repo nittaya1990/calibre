@@ -4,7 +4,10 @@
 __license__   = 'GPL v3'
 __copyright__ = '2010, Kovid Goyal <kovid at kovidgoyal.net>'
 
-import os, glob, re, functools
+import functools
+import glob
+import os
+import re
 from collections import Counter
 
 from lxml import etree
@@ -12,13 +15,12 @@ from lxml.builder import ElementMaker
 
 from calibre.constants import __appname__, __version__
 from calibre.ebooks.chardet import xml_to_unicode
-from calibre.utils.xml_parse import safe_xml_fromstring
 from calibre.utils.cleantext import clean_xml_chars
-from polyglot.builtins import unicode_type, getcwd
+from calibre.utils.xml_parse import safe_xml_fromstring
 from polyglot.urllib import unquote, urlparse
 
-NCX_NS = "http://www.daisy.org/z3986/2005/ncx/"
-CALIBRE_NS = "http://calibre.kovidgoyal.net/2009/metadata"
+NCX_NS = 'http://www.daisy.org/z3986/2005/ncx/'
+CALIBRE_NS = 'http://calibre.kovidgoyal.net/2009/metadata'
 NSMAP = {None: NCX_NS, 'calibre':CALIBRE_NS}
 E = ElementMaker(namespace=NCX_NS, nsmap=NSMAP)
 C = ElementMaker(namespace=CALIBRE_NS, nsmap=NSMAP)
@@ -26,8 +28,9 @@ C = ElementMaker(namespace=CALIBRE_NS, nsmap=NSMAP)
 
 def parse_html_toc(data):
     from html5_parser import parse
-    from calibre.utils.cleantext import clean_xml_chars
     from lxml import etree
+
+    from calibre.utils.cleantext import clean_xml_chars
     if isinstance(data, bytes):
         data = xml_to_unicode(data, strip_encoding_pats=True, resolve_entities=True)[0]
     root = parse(clean_xml_chars(data), maybe_xhtml=True, keep_doctype=False, sanitize_names=True)
@@ -47,7 +50,7 @@ def parse_html_toc(data):
 class TOC(list):
 
     def __init__(self, href=None, fragment=None, text=None, parent=None,
-            play_order=0, base_path=getcwd(), type='unknown', author=None,
+            play_order=0, base_path=os.getcwd(), type='unknown', author=None,
             description=None, toc_thumbnail=None):
         self.href = href
         self.fragment = fragment
@@ -63,9 +66,9 @@ class TOC(list):
         self.toc_thumbnail = toc_thumbnail
 
     def __str__(self):
-        lines = ['TOC: %s#%s %s'%(self.href, self.fragment, self.text)]
+        lines = [f'TOC: {self.href}#{self.fragment} {self.text}']
         for child in self:
-            c = unicode_type(child).splitlines()
+            c = str(child).splitlines()
             for l in c:
                 lines.append('\t'+l)
         return '\n'.join(lines)
@@ -115,8 +118,7 @@ class TOC(list):
         'Depth first iteration over the tree rooted at self'
         yield self
         for obj in self:
-            for i in obj.flat():
-                yield i
+            yield from obj.flat()
 
     @property
     def abspath(self):
@@ -229,7 +231,7 @@ class TOC(list):
 
     def read_html_toc(self, toc):
         self.base_path = os.path.dirname(toc)
-        with lopen(toc, 'rb') as f:
+        with open(toc, 'rb') as f:
             parsed_toc = parse_html_toc(f.read())
         for href, fragment, txt in parsed_toc:
             add = True
@@ -243,10 +245,9 @@ class TOC(list):
     def render(self, stream, uid):
         root = E.ncx(
                 E.head(
-                    E.meta(name='dtb:uid', content=unicode_type(uid)),
-                    E.meta(name='dtb:depth', content=unicode_type(self.depth())),
-                    E.meta(name='dtb:generator', content='%s (%s)'%(__appname__,
-                        __version__)),
+                    E.meta(name='dtb:uid', content=str(uid)),
+                    E.meta(name='dtb:depth', content=str(self.depth())),
+                    E.meta(name='dtb:generator', content=f'{__appname__} ({__version__})'),
                     E.meta(name='dtb:totalPageCount', content='0'),
                     E.meta(name='dtb:maxPageNumber', content='0'),
                 ),
@@ -262,14 +263,14 @@ class TOC(list):
             if not text:
                 text = ''
             c[1] += 1
-            item_id = 'num_%d'%c[1]
+            item_id = f'num_{c[1]}'
             text = clean_xml_chars(text)
             elem = E.navPoint(
                     E.navLabel(E.text(re.sub(r'\s+', ' ', text))),
-                    E.content(src=unicode_type(np.href)+(('#' + unicode_type(np.fragment))
+                    E.content(src=str(np.href)+(('#' + str(np.fragment))
                         if np.fragment else '')),
                     id=item_id,
-                    playOrder=unicode_type(np.play_order)
+                    playOrder=str(np.play_order)
             )
             au = getattr(np, 'author', None)
             if au:

@@ -1,21 +1,23 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 
 
 __license__ = 'GPL v3'
 __copyright__ = '2013, Kovid Goyal <kovid at kovidgoyal.net>'
 
-import os, subprocess
+import os
+import subprocess
 from zipfile import ZipFile
 
 from calibre import CurrentDir
+from calibre.ebooks.oeb.polish.container import OCF_NS, clone_container
+from calibre.ebooks.oeb.polish.container import get_container as _gc
+from calibre.ebooks.oeb.polish.replace import rationalize_folders, rename_files
+from calibre.ebooks.oeb.polish.split import merge, split
 from calibre.ebooks.oeb.polish.tests.base import BaseTest, get_simple_book, get_split_book
-from calibre.ebooks.oeb.polish.container import get_container as _gc, clone_container, OCF_NS
-from calibre.ebooks.oeb.polish.replace import rename_files, rationalize_folders
-from calibre.ebooks.oeb.polish.split import split, merge
+from calibre.ptempfile import TemporaryDirectory, TemporaryFile
 from calibre.utils.filenames import nlinks_file
-from calibre.ptempfile import TemporaryFile, TemporaryDirectory
-from polyglot.builtins import iteritems, itervalues, unicode_type
+from calibre.utils.resources import get_path as P
+from polyglot.builtins import iteritems, itervalues
 
 
 def get_container(*args, **kwargs):
@@ -39,11 +41,12 @@ class ContainerTests(BaseTest):
 
             for c in (c1, c2):
                 for name, path in iteritems(c.name_path_map):
-                    self.assertEqual(2, nlinks_file(path), 'The file %s is not linked' % name)
+                    self.assertEqual(2, nlinks_file(path), f'The file {name} is not linked')
 
             for name in c1.name_path_map:
                 self.assertIn(name, c2.name_path_map)
-                self.assertEqual(c1.open(name).read(), c2.open(name).read(), 'The file %s differs' % name)
+                with c1.open(name) as one, c2.open(name) as two:
+                    self.assertEqual(one.read(), two.read(), f'The file {name} differs')
 
             spine_names = tuple(x[0] for x in c1.spine_names)
             text = spine_names[0]
@@ -53,7 +56,8 @@ class ContainerTests(BaseTest):
             c2.commit_item(text)
             for c in (c1, c2):
                 self.assertEqual(1, nlinks_file(c.name_path_map[text]))
-            self.assertNotEqual(c1.open(text).read(), c2.open(text).read())
+            with c1.open(text) as c1f, c2.open(text) as c2f:
+                self.assertNotEqual(c1f.read(), c2f.read())
 
             name = spine_names[1]
             with c1.open(name, mode='r+b') as f:
@@ -61,7 +65,8 @@ class ContainerTests(BaseTest):
                 f.write(b'    ')
             for c in (c1, c2):
                 self.assertEqual(1, nlinks_file(c.name_path_map[name]))
-            self.assertNotEqual(c1.open(name).read(), c2.open(name).read())
+            with c1.open(text) as c1f, c2.open(text) as c2f:
+                self.assertNotEqual(c1f.read(), c2f.read())
 
             x = base + 'out.' + fmt
             for c in (c1, c2):
@@ -98,7 +103,7 @@ class ContainerTests(BaseTest):
 
         def new_container():
             count[0] += 1
-            tdir = os.mkdir(os.path.join(self.tdir, unicode_type(count[0])))
+            tdir = os.mkdir(os.path.join(self.tdir, str(count[0])))
             return get_container(book, tdir=tdir)
 
         # Test simple opf rename
@@ -231,8 +236,8 @@ class ContainerTests(BaseTest):
         book = get_simple_book()
         c = get_container(book)
         one, two = 'one/one.html', 'two/two.html'
-        c.add_file(one, b'<head><link href="../stylesheet.css"><p><a name="one" href="../two/two.html">1</a><a name="two" href="../two/two.html#one">2</a>')  # noqa
-        c.add_file(two, b'<head><link href="../page_styles.css"><p><a name="one" href="two.html#two">1</a><a name="two" href="../one/one.html#one">2</a><a href="#one">3</a>')  # noqa
+        c.add_file(one, b'<head><link href="../stylesheet.css"><p><a name="one" href="../two/two.html">1</a><a name="two" href="../two/two.html#one">2</a>')  # noqa: E501
+        c.add_file(two, b'<head><link href="../page_styles.css"><p><a name="one" href="two.html#two">1</a><a name="two" href="../one/one.html#one">2</a><a href="#one">3</a>')  # noqa: E501
         merge(c, 'text', (one, two), one)
         self.check_links(c)
         root = c.parsed(one)

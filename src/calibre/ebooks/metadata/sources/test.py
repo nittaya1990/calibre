@@ -6,15 +6,19 @@ __license__   = 'GPL v3'
 __copyright__ = '2011, Kovid Goyal <kovid@kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
 
-import os, tempfile, time
+import os
+import sys
+import tempfile
+import time
 from threading import Event
 
-from calibre.customize.ui import all_metadata_plugins
 from calibre import prints, sanitize_file_name
+from calibre.customize.ui import all_metadata_plugins
 from calibre.ebooks.metadata import check_isbn
-from calibre.ebooks.metadata.sources.base import create_log, get_cached_cover_urls
+from calibre.ebooks.metadata.sources.base import get_cached_cover_urls
 from calibre.ebooks.metadata.sources.prefs import msprefs
-from polyglot.queue import Queue, Empty
+from calibre.utils.logging import ANSIStream, ThreadSafeLog
+from polyglot.queue import Empty, Queue
 
 
 def isbn_test(isbn):
@@ -24,7 +28,7 @@ def isbn_test(isbn):
         misbn = check_isbn(mi.isbn)
         if misbn and misbn == isbn_:
             return True
-        prints('ISBN test failed. Expected: \'%s\' found \'%s\''%(isbn_, misbn))
+        prints("ISBN test failed. Expected: '%s' found '%s'"%(isbn_, misbn))
         return False
 
     return test
@@ -39,13 +43,13 @@ def title_test(title, exact=False):
         if (exact and mt == title) or \
                 (not exact and title in mt):
             return True
-        prints('Title test failed. Expected: \'%s\' found \'%s\''%(title, mt))
+        prints("Title test failed. Expected: '%s' found '%s'"%(title, mt))
         return False
 
     return test
 
 
-def authors_test(authors):
+def authors_test(authors, subset=False):
     authors = {x.lower() for x in authors}
 
     def test(mi):
@@ -62,9 +66,11 @@ def authors_test(authors):
 
             au = {revert_to_fn_ln(x) for x in au}
 
+        if subset and authors.issubset(au):
+            return True
         if au == authors:
             return True
-        prints('Author test failed. Expected: \'%s\' found \'%s\''%(authors, au))
+        prints("Author test failed. Expected: '%s' found '%s'"%(authors, au))
         return False
 
     return test
@@ -77,7 +83,7 @@ def tags_test(tags):
         t = {x.lower() for x in mi.tags}
         if t == tags:
             return True
-        prints('Tags test failed. Expected: \'%s\' found \'%s\''%(tags, t))
+        prints("Tags test failed. Expected: '%s' found '%s'"%(tags, t))
         return False
 
     return test
@@ -91,10 +97,10 @@ def series_test(series, series_index):
         if (ms == series) and (series_index == mi.series_index):
             return True
         if mi.series:
-            prints('Series test failed. Expected: \'%s [%d]\' found \'%s[%d]\''%
+            prints("Series test failed. Expected: '%s [%d]' found '%s[%d]'"%
                         (series, series_index, ms, mi.series_index))
         else:
-            prints('Series test failed. Expected: \'%s [%d]\' found no series'%
+            prints("Series test failed. Expected: '%s [%d]' found no series"%
                         (series, series_index))
         return False
 
@@ -125,10 +131,10 @@ def pubdate_test(year, month, day):
 
 def init_test(tdir_name):
     tdir = tempfile.gettempdir()
-    lf = os.path.join(tdir, tdir_name.replace(' ', '')+'_identify_test.txt')
-    log = create_log(open(lf, 'w'))
     abort = Event()
-    return tdir, lf, log, abort
+    log = ThreadSafeLog(level=ThreadSafeLog.DEBUG)
+    log.outputs = [ANSIStream(sys.stderr)]
+    return tdir, abort, log
 
 
 def dump_log(lf):
@@ -145,8 +151,7 @@ def test_identify(tests):  # {{{
     '''
     from calibre.ebooks.metadata.sources.identify import identify
 
-    tdir, lf, log, abort = init_test('Full Identify')
-    prints('Log saved to', lf)
+    tdir, abort, log = init_test('Full Identify')
 
     times = []
 
@@ -189,9 +194,7 @@ def test_identify(tests):  # {{{
 
         if not possibles:
             prints('ERROR: No results that passed all tests were found')
-            prints('Log saved to', lf)
             log.close()
-            dump_log(lf)
             raise SystemExit(1)
 
         if results[0] is not possibles[0]:
@@ -201,9 +204,6 @@ def test_identify(tests):  # {{{
         log('\n\n')
 
     prints('Average time per query', sum(times)/len(times))
-
-    prints('Full log is at:', lf)
-
 # }}}
 
 
@@ -226,8 +226,7 @@ def test_identify_plugin(name, tests, modify_plugin=lambda plugin:None,  # {{{
     prints('Testing the identify function of', plugin.name)
     prints('Using extra headers:', plugin.browser.addheaders)
 
-    tdir, lf, log, abort = init_test(plugin.name)
-    prints('Log saved to', lf)
+    tdir, abort, log = init_test(plugin.name)
 
     times = []
     for kwargs, test_funcs in tests:
@@ -286,9 +285,6 @@ def test_identify_plugin(name, tests, modify_plugin=lambda plugin:None,  # {{{
 
         if not possibles:
             prints('ERROR: No results that passed all tests were found')
-            prints('Log saved to', lf)
-            log.close()
-            dump_log(lf)
             raise SystemExit(1)
 
         good = [x for x in possibles if plugin.test_fields(x) is
@@ -331,7 +327,4 @@ def test_identify_plugin(name, tests, modify_plugin=lambda plugin:None,  # {{{
                     raise SystemExit(1)
 
     prints('Average time per query', sum(times)/len(times))
-
-    if os.stat(lf).st_size > 10:
-        prints('There were some errors/warnings, see log', lf)
 # }}}

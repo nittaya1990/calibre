@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 
 
 __license__ = 'GPL v3'
@@ -14,8 +13,9 @@ import traceback
 import weakref
 from collections import OrderedDict
 from io import BytesIO
-from qt.core import QObject, Qt, pyqtSignal
 from threading import Thread
+
+from qt.core import QObject, Qt, pyqtSignal
 
 from calibre import as_unicode, prints
 from calibre.constants import DEBUG, filesystem_encoding, ismacos, iswindows
@@ -32,8 +32,10 @@ from calibre.ptempfile import PersistentTemporaryDirectory
 from calibre.utils import join_with_timeout
 from calibre.utils.config import prefs
 from calibre.utils.filenames import make_long_path_useable
+from calibre.utils.icu import lower as icu_lower
 from calibre.utils.ipc.pool import Failure, Pool
-from polyglot.builtins import iteritems, map, string_or_bytes, unicode_type
+from calibre.utils.localization import ngettext
+from polyglot.builtins import iteritems, string_or_bytes
 from polyglot.queue import Empty
 
 
@@ -63,11 +65,7 @@ def validate_source(source, parent=None):  # {{{
 
 
 def resolve_windows_links(paths, hwnd=None):
-    try:
-        from calibre_extensions.winutil import resolve_lnk
-    except ImportError:
-        def resolve_lnk(x, *a):
-            return x
+    from calibre_extensions.winutil import resolve_lnk
     for x in paths:
         if x.lower().endswith('.lnk'):
             try:
@@ -144,7 +142,7 @@ class Adder(QObject):
         if not self.items:
             shutil.rmtree(self.tdir, ignore_errors=True)
         self.setParent(None)
-        self.find_identical_books_data = self.merged_books = self.added_duplicate_info = self.pool = self.items = self.duplicates = self.pd = self.db = self.dbref = self.tdir = self.file_groups = self.scan_thread = None  # noqa
+        self.find_identical_books_data = self.merged_books = self.added_duplicate_info = self.pool = self.items = self.duplicates = self.pd = self.db = self.dbref = self.tdir = self.file_groups = self.scan_thread = None  # noqa: E501
         self.deleteLater()
 
     def tick(self):
@@ -180,7 +178,7 @@ class Adder(QObject):
                             self.file_groups[len(self.file_groups)] = files
         else:
             def find_files(root):
-                if isinstance(root, unicode_type):
+                if isinstance(root, str):
                     root = root.encode(filesystem_encoding)
                 for dirpath, dirnames, filenames in os.walk(root):
                     try:
@@ -196,16 +194,18 @@ class Adder(QObject):
         def extract(source):
             tdir = tempfile.mkdtemp(suffix='_archive', dir=self.tdir)
             if source.lower().endswith('.zip'):
-                from calibre.utils.zipfile import ZipFile
+                from calibre.utils.zipfile import extractall
                 try:
-                    with ZipFile(source) as zf:
-                        zf.extractall(tdir)
+                    extractall(source, tdir)
                 except Exception:
                     prints('Corrupt ZIP file, trying to use local headers')
                     from calibre.utils.localunzip import extractall
                     extractall(source, tdir)
             elif source.lower().endswith('.rar'):
                 from calibre.utils.unrar import extract
+                extract(source, tdir)
+            elif source.lower().endswith('.7z'):
+                from calibre.utils.seven_zip import extract
                 extract(source, tdir)
             return tdir
 
@@ -240,7 +240,7 @@ class Adder(QObject):
                     else:
                         a = self.report.append
                         for f in unreadable_files:
-                            a(_('Could not add %s as you do not have permission to read the file' % f))
+                            a(_('Could not add {} as you do not have permission to read the file').format(f))
                             a('')
         except Exception:
             self.scan_error = traceback.format_exc()
@@ -314,7 +314,7 @@ class Adder(QObject):
             except Failure as err:
                 error_dialog(self.pd, _('Cannot add books'), _(
                 'Failed to add some books, click "Show details" for more information.'),
-                det_msg=unicode_type(err.failure_message) + '\n' + unicode_type(err.details), show=True)
+                det_msg=str(err.failure_message) + '\n' + str(err.details), show=True)
                 self.pd.canceled = True
             else:
                 # All tasks completed
@@ -391,7 +391,7 @@ class Adder(QObject):
 
         self.pd.msg = mi.title
 
-        cover_path = os.path.join(self.tdir, '%s.cdata' % group_id) if has_cover else None
+        cover_path = os.path.join(self.tdir, f'{group_id}.cdata') if has_cover else None
 
         if self.db is None:
             if paths:
@@ -474,7 +474,7 @@ class Adder(QObject):
             # detection/automerge will fail for this book.
             traceback.print_exc()
         if DEBUG:
-            prints('Added', mi.title, 'to db in: %.1f' % (time.time() - st))
+            prints('Added', mi.title, f'to db in: {time.time()-st:.1f}')
 
     def add_formats(self, book_id, paths, mi, replace=True, is_an_add=False):
         fmap = {p.rpartition(os.path.extsep)[-1].lower():p for p in paths}
@@ -524,7 +524,7 @@ class Adder(QObject):
 
     def finish(self):
         if DEBUG:
-            prints('Added %s books in %.1f seconds' % (len(self.added_book_ids or self.items), time.time() - self.start_time))
+            prints(f'Added {len(self.added_book_ids or self.items)} books in {time.time() - self.start_time:.1f} seconds')
         if self.report:
             added_some = self.items or self.added_book_ids
             d = warning_dialog if added_some else error_dialog

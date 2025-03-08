@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 
 
 __license__ = 'GPL v3'
@@ -7,14 +6,14 @@ __copyright__ = '2013, Kovid Goyal <kovid at kovidgoyal.net>'
 
 from functools import partial
 
-from lxml import etree
 from html5lib.constants import cdataElements, rcdataElements
+from lxml import etree
 
-from calibre.ebooks.oeb.polish.tests.base import BaseTest
-from calibre.ebooks.oeb.polish.parsing import parse_html5 as parse
-from calibre.ebooks.oeb.base import XPath, XHTML_NS, SVG_NS, XLINK_NS
+from calibre.ebooks.oeb.base import SVG_NS, XHTML_NS, XLINK_NS, XPath
 from calibre.ebooks.oeb.parse_utils import html5_parse
-from polyglot.builtins import iteritems, range
+from calibre.ebooks.oeb.polish.parsing import parse_html5 as parse
+from calibre.ebooks.oeb.polish.tests.base import BaseTest
+from polyglot.builtins import iteritems
 
 
 def nonvoid_cdata_elements(test, parse_function):
@@ -28,7 +27,7 @@ def nonvoid_cdata_elements(test, parse_function):
             root = parse_function(markup.format(x))
             test.assertEqual(
                 len(XPath('//h:body[@id="test"]')(root)), 1,
-                'Incorrect parsing for <%s/>, parsed markup:\n' % x + etree.tostring(root, encoding='unicode'))
+                f'Incorrect parsing for <{x}/>, parsed markup:\n' + etree.tostring(root, encoding='unicode'))
 
 
 def namespaces(test, parse_function):
@@ -39,27 +38,27 @@ def namespaces(test, parse_function):
         ae(len(matches), 1, err)
         ae(matches[0].prefix, prefix, err)
 
-    markup = ''' <html xmlns="{xhtml}"><head><body id="test"></html> '''.format(xhtml=XHTML_NS)
+    markup = f''' <html xmlns="{XHTML_NS}"><head><body id="test"></html> '''
     root = parse_function(markup)
     ae(
         len(XPath('//h:body[@id="test"]')(root)), 1,
         'Incorrect parsing, parsed markup:\n' + etree.tostring(root, encoding='unicode'))
     match_and_prefix(root, '//h:body[@id="test"]', None)
 
-    markup = '''
-    <html xmlns="{xhtml}"><head><body id="test">
-    <svg:svg xmlns:svg="{svg}"><svg:image xmlns:xlink="{xlink}" xlink:href="xxx"/></svg:svg>
-    '''.format(xhtml=XHTML_NS, svg=SVG_NS, xlink=XLINK_NS)
+    markup = f'''
+    <html xmlns="{XHTML_NS}"><head><body id="test">
+    <svg:svg xmlns:svg="{SVG_NS}"><svg:image xmlns:xlink="{XLINK_NS}" xlink:href="xxx"/></svg:svg>
+    '''
     root = parse_function(markup)
     err = 'Incorrect parsing, parsed markup:\n' + etree.tostring(root, encoding='unicode')
     match_and_prefix(root, '//h:body[@id="test"]', None, err)
     match_and_prefix(root, '//svg:svg', 'svg', err)
     match_and_prefix(root, '//svg:image[@xl:href]', 'svg', err)
 
-    markup = '''
-    <html xmlns="{xhtml}"><head><body id="test">
-    <svg xmlns="{svg}" xmlns:xlink="{xlink}" ><image xlink:href="xxx"/></svg>
-    '''.format(xhtml=XHTML_NS, svg=SVG_NS, xlink=XLINK_NS)
+    markup = f'''
+    <html xmlns="{XHTML_NS}"><head><body id="test">
+    <svg xmlns="{SVG_NS}" xmlns:xlink="{XLINK_NS}" ><image xlink:href="xxx"/></svg>
+    '''
     root = parse_function(markup)
     err = 'Incorrect parsing, parsed markup:\n' + etree.tostring(root, encoding='unicode')
     match_and_prefix(root, '//h:body[@id="test"]', None, err)
@@ -133,7 +132,7 @@ def entities(test, parse_function):
     markup = '<html><p>&nbsp;&apos;</p>'
     root = parse_function(markup)
     err = 'Entities not handled, parsed markup:\n' + etree.tostring(root, encoding='unicode')
-    test.assertEqual('\xa0\'', root.xpath('//*[local-name()="p"]')[0].text, err)
+    test.assertEqual("\xa0'", root.xpath('//*[local-name()="p"]')[0].text, err)
 
 
 def multiple_html_and_body(test, parse_function):
@@ -147,7 +146,7 @@ def multiple_html_and_body(test, parse_function):
 
 
 def attribute_replacement(test, parse_function):
-    markup = '<html><body><svg viewbox="0"></svg><svg xmlns="%s" viewbox="1">' % SVG_NS
+    markup = f'<html><body><svg viewbox="0"></svg><svg xmlns="{SVG_NS}" viewbox="1">'
     root = parse_function(markup)
     err = 'SVG attributes not normalized, parsed markup:\n' + etree.tostring(root, encoding='unicode')
     test.assertEqual(len(XPath('//svg:svg[@viewBox]')(root)), 2, err)
@@ -167,6 +166,13 @@ basic_checks = (nonvoid_cdata_elements, namespaces, space_characters,
 
 class ParsingTests(BaseTest):
 
+    def test_lxml_tostring(self):
+        ' Test for bug in some versions of lxml that causes incorrect serialization of sub-trees'
+        from html5_parser import parse
+        root = parse('<p>a<p>b<p>c')
+        p = root.xpath('//p')[0]
+        self.assertEqual(etree.tostring(p, encoding=str), '<p>a</p>')
+
     def test_conversion_parser(self):
         ' Test parsing with the HTML5 parser used for conversion '
         for test in basic_checks:
@@ -185,14 +191,14 @@ class ParsingTests(BaseTest):
             src = '\n<html>\n<p>\n<svg><image />\n<b></svg>&nbsp'
             root = parse(src, discard_namespaces=ds)
             for tag, lnum in iteritems({'html':2, 'head':3, 'body':3, 'p':3, 'svg':4, 'image':4, 'b':5}):
-                elem = root.xpath('//*[local-name()="%s"]' % tag)[0]
-                self.assertEqual(lnum, elem.sourceline, 'Line number incorrect for %s, source: %s:' % (tag, src))
+                elem = root.xpath(f'//*[local-name()="{tag}"]')[0]
+                self.assertEqual(lnum, elem.sourceline, f'Line number incorrect for {tag}, source: {src}:')
 
         for ds in (False, True):
             src = '\n<html>\n<p b=1 a=2 c=3 d=4 e=5 f=6 g=7 h=8><svg b=1 a=2 c=3 d=4 e=5 f=6 g=7 h=8>\n'
             root = parse(src, discard_namespaces=ds)
             for tag in ('p', 'svg'):
-                for i, (k, v) in enumerate(root.xpath('//*[local-name()="%s"]' % tag)[0].items()):
+                for i, (k, v) in enumerate(root.xpath(f'//*[local-name()="{tag}"]')[0].items()):
                     self.assertEqual(i+1, int(v))
 
         root = parse('<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en-US" xmlns:xml="http://www.w3.org/XML/1998/namespace"><body/></html>')
@@ -204,11 +210,13 @@ class ParsingTests(BaseTest):
 
 def timing():
     import sys
+
+    from html5lib import parse as vanilla
+
     from calibre.ebooks.chardet import xml_to_unicode
     from calibre.utils.monotonic import monotonic
-    from html5lib import parse as vanilla
     filename = sys.argv[-1]
-    with lopen(filename, 'rb') as f:
+    with open(filename, 'rb') as f:
         raw = f.read()
     raw = xml_to_unicode(raw)[0]
 
@@ -219,4 +227,4 @@ def timing():
             f(raw)
             timings.append(monotonic() - st)
         avg = sum(timings)/len(timings)
-        print('Average time for %s: %.2g' % (name, avg))
+        print(f'Average time for {name}: {avg:.2g}')

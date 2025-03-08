@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 
 
 __license__ = 'GPL v3'
@@ -8,10 +7,9 @@ __copyright__ = '2014, Kovid Goyal <kovid at kovidgoyal.net>'
 import textwrap
 from math import ceil
 
-from qt.core import (
-    QWidget, Qt, QStaticText, QTextOption, QSize, QPainter, QTimer, QPalette, QEvent, QTextCursor)
+from qt.core import QEvent, QPainter, QPalette, QSize, QStaticText, Qt, QTextCursor, QTextOption, QTimer, QWidget
 
-from calibre import prints, prepare_string_for_xml
+from calibre import prepare_string_for_xml, prints
 from calibre.gui2 import error_dialog
 from calibre.gui2.tweak_book.widgets import make_highlighted_text
 from calibre.utils.icu import string_length
@@ -70,9 +68,9 @@ class ChoosePopupWidget(QWidget):
             text = make_highlighted_text('color: magenta', text, positions)
             desc = self.descriptions.get(otext)
             if desc:
-                text += ' - <i>%s</i>' % prepare_string_for_xml(desc)
+                text += f' - <i>{prepare_string_for_xml(desc)}</i>'
             color = self.palette().color(QPalette.ColorRole.Text).name()
-            text = '<span style="color: %s">%s</span>' % (color, text)
+            text = f'<span style="color: {color}">{text}</span>'
             st = self.rendered_text_cache[otext] = QStaticText(text)
             st.setTextOption(self.text_option)
             st.setTextFormat(Qt.TextFormat.RichText)
@@ -122,7 +120,7 @@ class ChoosePopupWidget(QWidget):
                 color = pal.color(QPalette.ColorRole.HighlightedText).name()
                 st = QStaticText(st)
                 text = st.text().partition('>')[2]
-                st.setText('<span style="color: %s">%s' % (color, text))
+                st.setText(f'<span style="color: {color}">{text}')
             painter.drawStaticText(self.SIDE_MARGIN, y, st)
             painter.restore()
         painter.end()
@@ -165,7 +163,7 @@ class ChoosePopupWidget(QWidget):
         if self.current_results:
             self.layout()
             QWidget.show(self)
-            self.raise_()
+            self.raise_without_focus()
 
     def hide(self):
         QWidget.hide(self)
@@ -180,11 +178,11 @@ class ChoosePopupWidget(QWidget):
         if key == Qt.Key.Key_Escape:
             self.abort(), ev.accept()
             return True
-        if key == Qt.Key.Key_Tab and not ev.modifiers() & Qt.Modifier.CTRL:
+        if key == Qt.Key.Key_Tab and not ev.modifiers() & Qt.KeyboardModifier.ControlModifier:
             self.choose_next_result(previous=ev.modifiers() & Qt.KeyboardModifier.ShiftModifier)
             ev.accept()
             return True
-        if key == Qt.Key.Key_Backtab and not ev.modifiers() & Qt.Modifier.CTRL:
+        if key == Qt.Key.Key_Backtab and not ev.modifiers() & Qt.KeyboardModifier.ControlModifier:
             self.choose_next_result(previous=ev.modifiers() & Qt.KeyboardModifier.ShiftModifier)
             return True
         if key in (Qt.Key.Key_Up, Qt.Key.Key_Down):

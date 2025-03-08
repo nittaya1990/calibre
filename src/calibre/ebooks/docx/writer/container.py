@@ -1,24 +1,24 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 
 
 __license__ = 'GPL v3'
 __copyright__ = '2013, Kovid Goyal <kovid at kovidgoyal.net>'
 
-import textwrap, os
+import os
+import textwrap
 
 from lxml import etree
 from lxml.builder import ElementMaker
 
 from calibre import guess_type
-from calibre.constants import numeric_version, __appname__
+from calibre.constants import __appname__, numeric_version
 from calibre.ebooks.docx.names import DOCXNamespace
 from calibre.ebooks.metadata import authors_to_string
 from calibre.ebooks.pdf.render.common import PAPER_SIZES
 from calibre.utils.date import utcnow
 from calibre.utils.localization import canonicalize_lang, lang_as_iso639_1
 from calibre.utils.zipfile import ZipFile
-from polyglot.builtins import iteritems, map, unicode_type, native_string_type
+from polyglot.builtins import iteritems, native_string_type
 
 
 def xml2str(root, pretty_print=False, with_tail=False):
@@ -54,7 +54,7 @@ def create_skeleton(opts, namespaces=None):
     namespaces = namespaces or DOCXNamespace().namespaces
 
     def w(x):
-        return '{%s}%s' % (namespaces['w'], x)
+        return '{{{}}}{}'.format(namespaces['w'], x)
     dn = {k:v for k, v in iteritems(namespaces) if k in {'w', 'r', 'm', 've', 'o', 'wp', 'w10', 'wne', 'a', 'pic'}}
     E = ElementMaker(namespace=dn['w'], nsmap=dn)
     doc = E.document()
@@ -65,12 +65,12 @@ def create_skeleton(opts, namespaces=None):
 
     def margin(which):
         val = page_margin(opts, which)
-        return w(which), unicode_type(int(val * 20))
+        return w(which), str(int(val * 20))
     body.append(E.sectPr(
-        E.pgSz(**{w('w'):unicode_type(width), w('h'):unicode_type(height)}),
+        E.pgSz(**{w('w'):str(width), w('h'):str(height)}),
         E.pgMar(**dict(map(margin, 'left top right bottom'.split()))),
         E.cols(**{w('space'):'720'}),
-        E.docGrid(**{w('linePitch'):"360"}),
+        E.docGrid(**{w('linePitch'):'360'}),
     ))
 
     dn = {k:v for k, v in iteritems(namespaces) if k in tuple('wra') + ('wp',)}
@@ -79,15 +79,15 @@ def create_skeleton(opts, namespaces=None):
         E.docDefaults(
             E.rPrDefault(
                 E.rPr(
-                    E.rFonts(**{w('asciiTheme'):"minorHAnsi", w('eastAsiaTheme'):"minorEastAsia", w('hAnsiTheme'):"minorHAnsi", w('cstheme'):"minorBidi"}),
+                    E.rFonts(**{w('asciiTheme'):'minorHAnsi', w('eastAsiaTheme'):'minorEastAsia', w('hAnsiTheme'):'minorHAnsi', w('cstheme'):'minorBidi'}),
                     E.sz(**{w('val'):'22'}),
                     E.szCs(**{w('val'):'22'}),
-                    E.lang(**{w('val'):'en-US', w('eastAsia'):"en-US", w('bidi'):"ar-SA"})
+                    E.lang(**{w('val'):'en-US', w('eastAsia'):'en-US', w('bidi'):'ar-SA'})
                 )
             ),
             E.pPrDefault(
                 E.pPr(
-                    E.spacing(**{w('after'):"0", w('line'):"276", w('lineRule'):"auto"})
+                    E.spacing(**{w('after'):'0', w('line'):'276', w('lineRule'):'auto'})
                 )
             )
         )
@@ -97,7 +97,7 @@ def create_skeleton(opts, namespaces=None):
 
 def update_doc_props(root, mi, namespace):
     def setm(name, text=None, ns='dc'):
-        ans = root.makeelement('{%s}%s' % (namespace.namespaces[ns], name))
+        ans = root.makeelement(f'{{{namespace.namespaces[ns]}}}{name}')
         for child in tuple(root):
             if child.tag == ans.tag:
                 root.remove(child)
@@ -134,7 +134,7 @@ class DocumentRelationships:
     def add_relationship(self, target, rtype, target_mode=None):
         ans = self.get_relationship_id(target, rtype, target_mode)
         if ans is None:
-            ans = 'rId%d' % (len(self.rmap) + 1)
+            ans = f'rId{len(self.rmap) + 1}'
             self.rmap[(target, rtype, target_mode)] = ans
         return ans
 
@@ -160,8 +160,8 @@ class DOCX:
         namespaces = self.namespace.namespaces
         self.opts, self.log = opts, log
         self.document_relationships = DocumentRelationships(self.namespace)
-        self.font_table = etree.Element('{%s}fonts' % namespaces['w'], nsmap={k:namespaces[k] for k in 'wr'})
-        self.numbering = etree.Element('{%s}numbering' % namespaces['w'], nsmap={k:namespaces[k] for k in 'wr'})
+        self.font_table = etree.Element('{{{}}}fonts'.format(namespaces['w']), nsmap={k:namespaces[k] for k in 'wr'})
+        self.numbering = etree.Element('{{{}}}numbering'.format(namespaces['w']), nsmap={k:namespaces[k] for k in 'wr'})
         E = ElementMaker(namespace=namespaces['pr'], nsmap={None:namespaces['pr']})
         self.embedded_fonts = E.Relationships()
         self.fonts = {}
@@ -173,25 +173,25 @@ class DOCX:
         E = ElementMaker(namespace=self.namespace.namespaces['ct'], nsmap={None:self.namespace.namespaces['ct']})
         types = E.Types()
         for partname, mt in iteritems({
-            "/word/footnotes.xml": "application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml",
-            "/word/document.xml": "application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml",
-            "/word/numbering.xml": "application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml",
-            "/word/styles.xml": "application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml",
-            "/word/endnotes.xml": "application/vnd.openxmlformats-officedocument.wordprocessingml.endnotes+xml",
-            "/word/settings.xml": "application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml",
-            "/word/theme/theme1.xml": "application/vnd.openxmlformats-officedocument.theme+xml",
-            "/word/fontTable.xml": "application/vnd.openxmlformats-officedocument.wordprocessingml.fontTable+xml",
-            "/word/webSettings.xml": "application/vnd.openxmlformats-officedocument.wordprocessingml.webSettings+xml",
-            "/docProps/core.xml": "application/vnd.openxmlformats-package.core-properties+xml",
-            "/docProps/app.xml": "application/vnd.openxmlformats-officedocument.extended-properties+xml",
+            '/word/footnotes.xml': 'application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml',
+            '/word/document.xml': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml',
+            '/word/numbering.xml': 'application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml',
+            '/word/styles.xml': 'application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml',
+            '/word/endnotes.xml': 'application/vnd.openxmlformats-officedocument.wordprocessingml.endnotes+xml',
+            '/word/settings.xml': 'application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml',
+            '/word/theme/theme1.xml': 'application/vnd.openxmlformats-officedocument.theme+xml',
+            '/word/fontTable.xml': 'application/vnd.openxmlformats-officedocument.wordprocessingml.fontTable+xml',
+            '/word/webSettings.xml': 'application/vnd.openxmlformats-officedocument.wordprocessingml.webSettings+xml',
+            '/docProps/core.xml': 'application/vnd.openxmlformats-package.core-properties+xml',
+            '/docProps/app.xml': 'application/vnd.openxmlformats-officedocument.extended-properties+xml',
         }):
             types.append(E.Override(PartName=partname, ContentType=mt))
         added = {'png', 'gif', 'jpeg', 'jpg', 'svg', 'xml'}
         for ext in added:
             types.append(E.Default(Extension=ext, ContentType=guess_type('a.'+ext)[0]))
         for ext, mt in iteritems({
-            "rels": "application/vnd.openxmlformats-package.relationships+xml",
-            "odttf": "application/vnd.openxmlformats-officedocument.obfuscatedFont",
+            'rels': 'application/vnd.openxmlformats-package.relationships+xml',
+            'odttf': 'application/vnd.openxmlformats-officedocument.obfuscatedFont',
         }):
             added.add(ext)
             types.append(E.Default(Extension=ext, ContentType=mt))
@@ -209,7 +209,7 @@ class DOCX:
         E = ElementMaker(namespace=self.namespace.namespaces['ep'], nsmap={None:self.namespace.namespaces['ep']})
         props = E.Properties(
             E.Application(__appname__),
-            E.AppVersion('%02d.%04d' % numeric_version[:2]),
+            E.AppVersion(f'{numeric_version[0]:02}.{numeric_version[1]:04}'),
             E.DocSecurity('0'),
             E.HyperlinksChanged('false'),
             E.LinksUpToDate('true'),
@@ -242,10 +242,10 @@ class DOCX:
     def convert_metadata(self, mi):
         namespaces = self.namespace.namespaces
         E = ElementMaker(namespace=namespaces['cp'], nsmap={x:namespaces[x] for x in 'cp dc dcterms xsi'.split()})
-        cp = E.coreProperties(E.revision("1"), E.lastModifiedBy('calibre'))
+        cp = E.coreProperties(E.revision('1'), E.lastModifiedBy('calibre'))
         ts = utcnow().isoformat(native_string_type('T')).rpartition('.')[0] + 'Z'
         for x in 'created modified'.split():
-            x = cp.makeelement('{%s}%s' % (namespaces['dcterms'], x), **{'{%s}type' % namespaces['xsi']:'dcterms:W3CDTF'})
+            x = cp.makeelement('{{{}}}{}'.format(namespaces['dcterms'], x), **{'{{{}}}type'.format(namespaces['xsi']):'dcterms:W3CDTF'})
             x.text = ts
             cp.append(x)
         self.mi = mi

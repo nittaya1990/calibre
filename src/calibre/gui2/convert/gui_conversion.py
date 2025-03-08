@@ -1,6 +1,3 @@
-# -*- coding: utf-8 -*-
-
-
 __license__ = 'GPL 3'
 __copyright__ = '2009, John Schember <john@nachtimwald.com>'
 __docformat__ = 'restructuredtext en'
@@ -8,9 +5,9 @@ __docformat__ = 'restructuredtext en'
 import os
 from optparse import OptionParser
 
-from calibre.customize.conversion import OptionRecommendation, DummyReporter
-from calibre.ebooks.conversion.plumber import Plumber
+from calibre.customize.conversion import DummyReporter, OptionRecommendation
 from calibre.customize.ui import plugin_for_catalog_format
+from calibre.ebooks.conversion.plumber import Plumber
 from calibre.utils.logging import Log
 
 
@@ -56,7 +53,7 @@ def gui_catalog(fmt, title, dbspec, ids, out_file_name, sync, fmt_options, conne
     # Create a minimal OptionParser that we can append to
     parser = OptionParser()
     args = []
-    parser.add_option("--verbose", action="store_true", dest="verbose", default=True)
+    parser.add_option('--verbose', action='store_true', dest='verbose', default=True)
     opts, args = parser.parse_args()
 
     # Populate opts
@@ -71,9 +68,9 @@ def gui_catalog(fmt, title, dbspec, ids, out_file_name, sync, fmt_options, conne
     # Extract the option dictionary to comma-separated lists
     for option in fmt_options:
         if isinstance(fmt_options[option],list):
-            setattr(opts,option, ','.join(fmt_options[option]))
+            setattr(opts, option, ','.join(fmt_options[option]))
         else:
-            setattr(opts,option, fmt_options[option])
+            setattr(opts, option, fmt_options[option])
 
     # Fetch and run the plugin for fmt
     # Returns 0 if successful, 1 if no catalog built

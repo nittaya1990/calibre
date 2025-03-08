@@ -3,36 +3,64 @@
 
 
 import textwrap
+from enum import IntEnum
+
 from qt.core import (
-    QAction, QApplication, QBrush, QCheckBox, QCoreApplication, QDialog, QGridLayout,
-    QHBoxLayout, QIcon, QKeySequence, QLabel, QListView, QModelIndex, QPalette,
-    QPixmap, QPushButton, QShortcut, QSize, QSplitter, Qt, QTimer, QToolButton,
-    QVBoxLayout, QWidget, pyqtSignal, QDialogButtonBox
+    QAction,
+    QApplication,
+    QBrush,
+    QCheckBox,
+    QDialog,
+    QDialogButtonBox,
+    QGridLayout,
+    QHBoxLayout,
+    QIcon,
+    QKeySequence,
+    QLabel,
+    QListView,
+    QModelIndex,
+    QPalette,
+    QPixmap,
+    QPushButton,
+    QShortcut,
+    QSize,
+    QSplitter,
+    Qt,
+    QTimer,
+    QToolButton,
+    QVBoxLayout,
+    QWidget,
+    pyqtSignal,
 )
 
 from calibre import fit_image
-from calibre.gui2 import NO_URL_FORMATTING, gprefs
-from calibre.gui2.book_details import (
-    create_open_cover_with_menu, css, details_context_menu_event, render_html,
-    set_html
-)
+from calibre.db.constants import RESOURCE_URL_SCHEME
+from calibre.gui2 import BOOK_DETAILS_DISPLAY_DEBOUNCE_DELAY, NO_URL_FORMATTING, gprefs
+from calibre.gui2.book_details import DropMixin, create_open_cover_with_menu, details_context_menu_event, render_html, resolved_css, set_html
 from calibre.gui2.ui import get_gui
 from calibre.gui2.widgets import CoverView
 from calibre.gui2.widgets2 import Dialog, HTMLDisplay
-from polyglot.builtins import unicode_type
+from calibre.startup import connect_lambda
 
 
 class Cover(CoverView):
 
     open_with_requested = pyqtSignal(object)
     choose_open_with_requested = pyqtSignal()
+    copy_to_clipboard_requested = pyqtSignal()
+    download_cover = pyqtSignal()
 
     def __init__(self, parent, show_size=False):
         CoverView.__init__(self, parent, show_size=show_size)
 
+    def copy_to_clipboard(self):
+        self.copy_to_clipboard_requested.emit()
+
     def build_context_menu(self):
         ans = CoverView.build_context_menu(self)
         create_open_cover_with_menu(self, ans)
+        download = ans.addAction(QIcon.ic('download-metadata.png'), _('Download cover from internet'))
+        download.triggered.connect(self.download_cover)
         return ans
 
     def open_with(self, entry):
@@ -60,9 +88,7 @@ class Configure(Dialog):
         Dialog.__init__(self, _('Configure the Book details window'), 'book-details-popup-conf', parent)
 
     def setup_ui(self):
-        from calibre.gui2.preferences.look_feel import (
-            DisplayedFields, move_field_down, move_field_up
-        )
+        from calibre.gui2.preferences.look_feel_tabs import DisplayedFields, move_field_down, move_field_up
         self.l = QVBoxLayout(self)
         self.field_display_order = fdo = QListView(self)
         self.model = DisplayedFields(self.db, fdo, pref_name='popup_book_display_fields')
@@ -76,19 +102,22 @@ class Configure(Dialog):
         v = QVBoxLayout()
         self.mub = b = QToolButton(self)
         connect_lambda(b.clicked, self, lambda self: move_field_up(fdo, self.model))
-        b.setIcon(QIcon(I('arrow-up.png')))
+        b.setIcon(QIcon.ic('arrow-up.png'))
         b.setToolTip(_('Move the selected field up'))
         v.addWidget(b), v.addStretch(10)
         self.mud = b = QToolButton(self)
-        b.setIcon(QIcon(I('arrow-down.png')))
+        b.setIcon(QIcon.ic('arrow-down.png'))
         b.setToolTip(_('Move the selected field down'))
         connect_lambda(b.clicked, self, lambda self: move_field_down(fdo, self.model))
         v.addWidget(b)
         h.addLayout(v)
 
         self.l.addLayout(h)
-        self.l.addWidget(QLabel('<p>' + _(
-            'Note that <b>comments</b> will always be displayed at the end, regardless of the order you assign here')))
+        txt = QLabel('<p>' + _(
+            'Note: <b>comments</b>-like columns will always be displayed at '
+            'the end unless their "Heading position" is "Show heading to the side"')+'</p>')
+        txt.setWordWrap(True)
+        self.l.addWidget(txt)
 
         b = self.bb.addButton(_('Restore &defaults'), QDialogButtonBox.ButtonRole.ActionRole)
         b.clicked.connect(self.restore_defaults)
@@ -115,34 +144,58 @@ class Configure(Dialog):
 
 class Details(HTMLDisplay):
 
-    def __init__(self, book_info, parent=None):
+    notes_resource_scheme = RESOURCE_URL_SCHEME
+
+    def __init__(self, book_info, parent=None, allow_context_menu=True, is_locked=False):
         HTMLDisplay.__init__(self, parent)
         self.book_info = book_info
         self.edit_metadata = getattr(parent, 'edit_metadata', None)
-        self.setDefaultStyleSheet(css())
+        self.setDefaultStyleSheet(resolved_css())
+        self.allow_context_menu = allow_context_menu
+        self.is_locked = is_locked
+
+    def get_base_qurl(self):
+        return getattr(self.book_info, 'base_url_for_current_book', None)
 
     def sizeHint(self):
         return QSize(350, 350)
 
     def contextMenuEvent(self, ev):
-        details_context_menu_event(self, ev, self.book_info, edit_metadata=self.edit_metadata)
+        if self.allow_context_menu:
+            details_context_menu_event(self, ev, self.book_info,
+                           edit_metadata=None if self.is_locked else self.edit_metadata)
 
 
-class BookInfo(QDialog):
+class DialogNumbers(IntEnum):
+    Slaved = 0
+    Locked = 1
+    DetailsLink = 2
+
+
+class BookInfo(QDialog, DropMixin):
 
     closed = pyqtSignal(object)
     open_cover_with = pyqtSignal(object, object)
 
-    def __init__(self, parent, view, row, link_delegate):
+    def __init__(self, parent, view, row, link_delegate, dialog_number=None,
+                 library_id=None, library_path=None, book_id=None):
         QDialog.__init__(self, parent)
+        DropMixin.__init__(self)
+        self.files_dropped.connect(self.on_files_dropped)
+        self.remote_file_dropped.connect(self.on_remote_file_dropped)
+        self.dialog_number = dialog_number
+        self.library_id = library_id
         self.marked = None
         self.gui = parent
         self.splitter = QSplitter(self)
         self._l = l = QVBoxLayout(self)
         self.setLayout(l)
         l.addWidget(self.splitter)
+        self.setAcceptDrops(True)
 
         self.cover = Cover(self, show_size=gprefs['bd_overlay_cover_size'])
+        self.cover.copy_to_clipboard_requested.connect(self.copy_cover_to_clipboard)
+        self.cover.download_cover.connect(self.download_cover)
         self.cover.resizeEvent = self.cover_view_resized
         self.cover.cover_changed.connect(self.cover_changed)
         self.cover.open_with_requested.connect(self.open_with)
@@ -151,7 +204,9 @@ class BookInfo(QDialog):
         self.cover.sizeHint = self.details_size_hint
         self.splitter.addWidget(self.cover)
 
-        self.details = Details(parent.book_details.book_info, self)
+        self.details = Details(parent.book_details.book_info, self,
+                               allow_context_menu=library_path is None,
+                               is_locked=dialog_number == DialogNumbers.Locked)
         self.details.anchor_clicked.connect(self.on_link_clicked)
         self.link_delegate = link_delegate
         self.details.setAttribute(Qt.WidgetAttribute.WA_OpaquePaintEvent, False)
@@ -173,72 +228,136 @@ class BookInfo(QDialog):
         hl.setContentsMargins(0, 0, 0, 0)
         l2.addLayout(hl, l2.rowCount(), 0, 1, -1)
         hl.addWidget(self.fit_cover), hl.addStretch()
-        self.clabel = QLabel('<div style="text-align: right"><a href="calibre:conf" title="{}" style="text-decoration: none">{}</a>'.format(
-            _('Configure this view'), _('Configure')))
-        self.clabel.linkActivated.connect(self.configure)
-        hl.addWidget(self.clabel)
-        self.previous_button = QPushButton(QIcon(I('previous.png')), _('&Previous'), self)
-        self.previous_button.clicked.connect(self.previous)
-        l2.addWidget(self.previous_button, l2.rowCount(), 0)
-        self.next_button = QPushButton(QIcon(I('next.png')), _('&Next'), self)
-        self.next_button.clicked.connect(self.next)
-        l2.addWidget(self.next_button, l2.rowCount() - 1, 1)
+        if self.dialog_number == DialogNumbers.Slaved:
+            self.previous_button = QPushButton(QIcon.ic('previous.png'), _('&Previous'), self)
+            self.previous_button.clicked.connect(self.previous)
+            l2.addWidget(self.previous_button, l2.rowCount(), 0)
+            self.next_button = QPushButton(QIcon.ic('next.png'), _('&Next'), self)
+            self.next_button.clicked.connect(self.next)
+            l2.addWidget(self.next_button, l2.rowCount() - 1, 1)
+            self.ns = QShortcut(QKeySequence('Alt+Right'), self)
+            self.ns.activated.connect(self.next)
+            self.ps = QShortcut(QKeySequence('Alt+Left'), self)
+            self.ps.activated.connect(self.previous)
+            self.next_button.setToolTip(_('Next [%s]')%
+                    str(self.ns.key().toString(QKeySequence.SequenceFormat.NativeText)))
+            self.previous_button.setToolTip(_('Previous [%s]')%
+                    str(self.ps.key().toString(QKeySequence.SequenceFormat.NativeText)))
 
-        self.view = view
         self.path_to_book = None
         self.current_row = None
-        self.refresh(row)
-        self.view.model().new_bookdisplay_data.connect(self.slave)
-        self.fit_cover.stateChanged.connect(self.toggle_cover_fit)
-        self.ns = QShortcut(QKeySequence('Alt+Right'), self)
-        self.ns.activated.connect(self.next)
-        self.ps = QShortcut(QKeySequence('Alt+Left'), self)
-        self.ps.activated.connect(self.previous)
-        self.next_button.setToolTip(_('Next [%s]')%
-                unicode_type(self.ns.key().toString(QKeySequence.SequenceFormat.NativeText)))
-        self.previous_button.setToolTip(_('Previous [%s]')%
-                unicode_type(self.ps.key().toString(QKeySequence.SequenceFormat.NativeText)))
+        self.slave_connected = False
+        self.slave_debounce_timer = t = QTimer(self)
+        t.setInterval(BOOK_DETAILS_DISPLAY_DEBOUNCE_DELAY)
+        t.setSingleShot(True)
+        t.timeout.connect(self._debounce_refresh)
+        if library_path is not None:
+            self.view = None
+            db = get_gui().library_broker.get_library(library_path)
+            dbn = db.new_api
+            if not dbn.has_id(book_id):
+                raise ValueError(_("Book {} doesn't exist").format(book_id))
+            mi = dbn.get_metadata(book_id, get_cover=False)
+            mi.cover_data = [None, dbn.cover(book_id, as_image=True)]
+            mi.path = None
+            mi.format_files = {}
+            mi.formats = []
+            mi.marked = ''
+            mi.field_metadata = db.field_metadata
+            mi.external_library_path = library_path
+            self.refresh(row, mi)
+        else:
+            self.view = view
+            if dialog_number == DialogNumbers.Slaved:
+                self.slave_connected = True
+                self.view.model().new_bookdisplay_data.connect(self.slave)
+            if book_id:
+                db = get_gui().current_db
+                dbn = db.new_api
+                mi = dbn.get_metadata(book_id, get_cover=False)
+                mi.cover_data = [None, dbn.cover(book_id, as_image=True)]
+                mi.path = dbn._field_for('path', book_id)
+                mi.format_files = dbn.format_files(book_id)
+                mi.marked = db.data.get_marked(book_id)
+                mi.field_metadata = db.field_metadata
+                self.refresh(row, mi)
+            else:
+                self.refresh(row)
 
-        geom = QCoreApplication.instance().desktop().availableGeometry(self)
-        screen_height = geom.height() - 100
-        screen_width = geom.width() - 100
-        self.resize(max(int(screen_width/2), 700), screen_height)
-        saved_layout = gprefs.get('book_info_dialog_layout', None)
-        if saved_layout is not None:
-            try:
-                QApplication.instance().safe_restore_geometry(self, saved_layout[0])
-                self.splitter.restoreState(saved_layout[1])
-            except Exception:
-                pass
-        from calibre.gui2.ui import get_gui
-        ema = get_gui().iactions['Edit Metadata'].menuless_qaction
-        a = self.ema = QAction('edit metadata', self)
-        a.setShortcut(ema.shortcut())
-        self.addAction(a)
-        a.triggered.connect(self.edit_metadata)
+            ema = get_gui().iactions['Edit Metadata'].menuless_qaction
+            a = self.ema = QAction('edit metadata', self)
+            a.setShortcut(ema.shortcut())
+            self.addAction(a)
+            a.triggered.connect(self.edit_metadata)
+            vb = get_gui().iactions['View'].menuless_qaction
+            a = self.vba = QAction('view book', self)
+            a.setShortcut(vb.shortcut())
+            a.triggered.connect(self.view_book)
+            self.addAction(a)
+            self.clabel = QLabel('<div style="text-align: right"><a href="calibre:conf" title="{}" style="text-decoration: none">{}</a>'.format(
+                _('Configure this view'), _('Configure')))
+            self.clabel.linkActivated.connect(self.configure)
+            hl.addWidget(self.clabel)
+        self.fit_cover.stateChanged.connect(self.toggle_cover_fit)
+        self.restore_geometry(gprefs, self.geometry_string('book_info_dialog_geometry'))
+        try:
+            self.splitter.restoreState(gprefs.get(self.geometry_string('book_info_dialog_splitter_state')))
+        except Exception:
+            pass
+
+    def on_files_dropped(self, event, paths):
+        gui = get_gui()
+        gui.iactions['Add Books'].files_dropped_on_book(event, paths)
+
+    def on_remote_file_dropped(self, event, url):
+        gui = get_gui()
+        gui.iactions['Add Books'].remote_file_dropped_on_book(event, url)
+
+    def geometry_string(self, txt):
+        if self.dialog_number is None or self.dialog_number == DialogNumbers.Slaved:
+            return txt
+        return txt + '_' + str(int(self.dialog_number))
+
+    def sizeHint(self):
+        try:
+            geom = self.screen().availableSize()
+            screen_height = geom.height() - 100
+            screen_width = geom.width() - 100
+            return QSize(max(int(screen_width/2), 700), screen_height)
+        except Exception:
+            return QSize(800, 600)
+
+    def view_book(self):
+        if self.current_row is not None:
+            book_id = self.view.model().id(self.current_row)
+            get_gui().iactions['View']._view_calibre_books((book_id,))
 
     def edit_metadata(self):
         if self.current_row is not None:
             book_id = self.view.model().id(self.current_row)
-            get_gui().iactions['Edit Metadata'].edit_metadata_for([self.current_row], [book_id], bulk=False)
+            em = get_gui().iactions['Edit Metadata']
+            with em.different_parent(self):
+                em.edit_metadata_for([self.current_row], [book_id], bulk=False)
 
     def configure(self):
         d = Configure(get_gui().current_db, self)
-        if d.exec_() == QDialog.DialogCode.Accepted:
+        if d.exec() == QDialog.DialogCode.Accepted:
             if self.current_row is not None:
                 mi = self.view.model().get_book_display_info(self.current_row)
                 if mi is not None:
                     self.refresh(self.current_row, mi=mi)
 
     def on_link_clicked(self, qurl):
-        link = unicode_type(qurl.toString(NO_URL_FORMATTING))
-        self.link_delegate(link)
+        link = str(qurl.toString(NO_URL_FORMATTING))
+        self.link_delegate(link, self)
 
     def done(self, r):
-        saved_layout = (bytearray(self.saveGeometry()), bytearray(self.splitter.saveState()))
-        gprefs.set('book_info_dialog_layout', saved_layout)
+        self.save_geometry(gprefs, self.geometry_string('book_info_dialog_geometry'))
+        gprefs[self.geometry_string('book_info_dialog_splitter_state')] = bytearray(self.splitter.saveState())
         ret = QDialog.done(self, r)
-        self.view.model().new_bookdisplay_data.disconnect(self.slave)
+        if self.slave_connected:
+            self.view.model().new_bookdisplay_data.disconnect(self.slave)
+        self.slave_debounce_timer.stop()  # OK if it isn't running
         self.view = self.link_delegate = self.gui = None
         self.closed.emit(self)
         return ret
@@ -263,6 +382,11 @@ class BookInfo(QDialog):
         QTimer.singleShot(1, self.resize_cover)
 
     def slave(self, mi):
+        self._mi_for_debounce = mi
+        self.slave_debounce_timer.start()  # start() will automatically reset the timer if it was already running
+
+    def _debounce_refresh(self):
+        mi, self._mi_for_debounce = self._mi_for_debounce, None
         self.refresh(mi.row_number, mi)
 
     def move(self, delta=1):
@@ -286,7 +410,7 @@ class BookInfo(QDialog):
             self.cover.set_marked(self.marked)
             return
         pixmap = self.cover_pixmap
-        if self.fit_cover.isChecked():
+        if self.fit_cover.isChecked() and not pixmap.isNull():
             scaled, new_width, new_height = fit_image(pixmap.width(),
                     pixmap.height(), self.cover.size().width()-10,
                     self.cover.size().height()-10)
@@ -301,6 +425,17 @@ class BookInfo(QDialog):
         self.cover.set_pixmap(pixmap)
         self.cover.set_marked(self.marked)
         self.update_cover_tooltip()
+
+    def copy_cover_to_clipboard(self):
+        if self.cover_pixmap is not None:
+            QApplication.instance().clipboard().setPixmap(self.cover_pixmap)
+
+    def download_cover(self):
+        from calibre.gui2.book_details import download_cover
+        if self.current_row is not None:
+            book_id = self.view.model().id(self.current_row)
+            if pmap := download_cover(self, book_id, self.cover_pixmap):
+                self.cover_changed(pmap)
 
     def update_cover_tooltip(self):
         tt = ''
@@ -329,11 +464,15 @@ class BookInfo(QDialog):
             # Indicates books was deleted from library, or row numbers have
             # changed
             return
-
-        self.previous_button.setEnabled(False if row == 0 else True)
-        self.next_button.setEnabled(False if row == self.view.model().rowCount(QModelIndex())-1 else True)
+        if self.dialog_number == DialogNumbers.Slaved:
+            self.previous_button.setEnabled(False if row == 0 else True)
+            self.next_button.setEnabled(False if row == self.view.model().rowCount(QModelIndex())-1 else True)
+            self.setWindowTitle(mi.title + ' ' + _('(the current book)'))
+        elif self.library_id is not None:
+            self.setWindowTitle(mi.title + ' ' + _('(from {})').format(self.library_id))
+        else:
+            self.setWindowTitle(mi.title + ' ' + _('(will not change)'))
         self.current_row = row
-        self.setWindowTitle(mi.title)
         self.cover_pixmap = QPixmap.fromImage(mi.cover_data[1])
         self.path_to_book = getattr(mi, 'path', None)
         try:
@@ -343,7 +482,7 @@ class BookInfo(QDialog):
         self.cover_pixmap.setDevicePixelRatio(dpr)
         self.marked = mi.marked
         self.resize_cover()
-        html = render_html(mi, True, self, pref_name='popup_book_display_fields')
+        html = render_html(mi, True, self, pref_name='popup_book_display_fields')[0]
         set_html(mi, html, self.details)
         self.update_cover_tooltip()
 
@@ -365,6 +504,6 @@ if __name__ == '__main__':
     app.current_db = db()
     get_gui.ans = app
     d = Configure(app.current_db)
-    d.exec_()
+    d.exec()
     del d
     del app

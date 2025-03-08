@@ -1,4 +1,3 @@
-
 __license__   = 'GPL v3'
 __copyright__ = '2008, Kovid Goyal kovid@kovidgoyal.net'
 __docformat__ = 'restructuredtext en'
@@ -9,20 +8,24 @@ forced at "likely" locations to conform to size limitations. This transform
 assumes a prior call to the flatcss transform.
 '''
 
-import os, functools, collections, re, copy
+import collections
+import copy
+import functools
+import os
+import re
 from collections import OrderedDict
 
-from lxml.etree import XPath as _XPath
+from css_selectors import Select, SelectorError
 from lxml import etree
+from lxml.etree import XPath as _XPath
 
 from calibre import as_unicode, force_unicode
 from calibre.ebooks.epub import rules
-from calibre.ebooks.oeb.base import (OEB_STYLES, XPNSMAP as NAMESPACES,
-        urldefrag, rewrite_links, XHTML, urlnormalize)
+from calibre.ebooks.oeb.base import OEB_STYLES, XHTML, rewrite_links, urldefrag, urlnormalize
+from calibre.ebooks.oeb.base import XPNSMAP as NAMESPACES
 from calibre.ebooks.oeb.polish.split import do_split
-from polyglot.builtins import iteritems, range, map, unicode_type
+from polyglot.builtins import iteritems
 from polyglot.urllib import unquote
-from css_selectors import Select, SelectorError
 
 XPath = functools.partial(_XPath, namespaces=NAMESPACES)
 
@@ -119,32 +122,32 @@ class Split:
                         elem.set('pb_before', '1' if before else '0')
                         page_breaks.add(elem)
             except SelectorError as err:
-                self.log.warn('Ignoring page breaks specified with invalid CSS selector: %r (%s)' % (selector, as_unicode(err)))
+                self.log.warn(f'Ignoring page breaks specified with invalid CSS selector: {selector!r} ({as_unicode(err)})')
 
         for i, elem in enumerate(item.data.iter('*')):
             try:
-                elem.set('pb_order', unicode_type(i))
+                elem.set('pb_order', str(i))
             except TypeError:  # Can't set attributes on comment nodes etc.
                 continue
 
         page_breaks = list(page_breaks)
-        page_breaks.sort(key=lambda x:int(x.get('pb_order')))
+        page_breaks.sort(key=lambda x: int(x.get('pb_order')))
         page_break_ids, page_breaks_ = [], []
         for i, x in enumerate(page_breaks):
-            x.set('id', x.get('id', 'calibre_pb_%d'%i))
+            x.set('id', x.get('id', f'calibre_pb_{i}'))
             id = x.get('id')
             try:
-                xp = XPath('//*[@id="%s"]'%id)
+                xp = XPath(f'//*[@id="{id}"]')
             except:
                 try:
-                    xp = XPath("//*[@id='%s']"%id)
+                    xp = XPath(f"//*[@id='{id}']")
                 except:
                     # The id has both a quote and an apostrophe or some other
                     # Just replace it since I doubt its going to work anywhere else
                     # either
-                    id = 'calibre_pb_%d'%i
+                    id = f'calibre_pb_{i}'
                     x.set('id', id)
-                    xp = XPath('//*[@id=%r]'%id)
+                    xp = XPath(f'//*[@id={id!r}]')
             page_breaks_.append((xp, x.get('pb_before', '0') == '1'))
             page_break_ids.append(id)
 
@@ -212,13 +215,13 @@ class FlowSplitter:
 
         if self.max_flow_size > 0:
             lt_found = False
-            self.log('\tLooking for large trees in %s...'%item.href)
+            self.log(f'\tLooking for large trees in {item.href}...')
             trees = list(self.trees)
             self.tree_map = {}
             for i, tree in enumerate(trees):
                 size = len(tostring(tree.getroot()))
                 if size > self.max_flow_size:
-                    self.log('\tFound large tree #%d'%i)
+                    self.log(f'\tFound large tree #{i}')
                     lt_found = True
                     self.split_trees = []
                     self.split_to_size(tree)
@@ -231,7 +234,7 @@ class FlowSplitter:
 
         self.was_split = len(self.trees) > 1
         if self.was_split:
-            self.log('\tSplit into %d parts'%len(self.trees))
+            self.log(f'\tSplit into {len(self.trees)} parts')
         self.commit()
 
     def split_on_page_breaks(self, orig_tree):
@@ -250,8 +253,7 @@ class FlowSplitter:
                 tree = self.trees[i]
                 elem = pattern(tree)
                 if elem:
-                    self.log.debug('\t\tSplitting on page-break at id=%s'%
-                                elem[0].get('id'))
+                    self.log.debug('\t\tSplitting on page-break at id={}'.format(elem[0].get('id')))
                     before_tree, after_tree = self.do_split(tree, elem[0], before)
                     self.trees[i:i+1] = [before_tree, after_tree]
                     break
@@ -307,10 +309,10 @@ class FlowSplitter:
         return True
 
     def split_text(self, text, root, size):
-        self.log.debug('\t\t\tSplitting text of length: %d'%len(text))
+        self.log.debug(f'\t\t\tSplitting text of length: {len(text)}')
         rest = text.replace('\r', '')
-        parts = re.split('\n\n', rest)
-        self.log.debug('\t\t\t\tFound %d parts'%len(parts))
+        parts = rest.split('\n\n')
+        self.log.debug(f'\t\t\t\tFound {len(parts)} parts')
         if max(map(len, parts)) > size:
             raise SplitError('Cannot split as file contains a <pre> tag '
                 'with a very large paragraph', root)
@@ -364,11 +366,10 @@ class FlowSplitter:
             elif size <= self.max_flow_size:
                 self.split_trees.append(t)
                 self.log.debug(
-                    '\t\t\tCommitted sub-tree #%d (%d KB)'%(
-                               len(self.split_trees), size/1024.))
+                    f'\t\t\tCommitted sub-tree #{len(self.split_trees)} ({size/1024.0} KB)')
             else:
                 self.log.debug(
-                        '\t\t\tSplit tree still too large: %d KB' % (size/1024.))
+                        f'\t\t\tSplit tree still too large: {size/1024.0} KB')
                 self.split_to_size(t)
 
     def find_split_point(self, root):
@@ -423,7 +424,7 @@ class FlowSplitter:
         '''
         if not self.was_split:
             return
-        self.anchor_map = collections.defaultdict(lambda :self.base%0)
+        self.anchor_map = collections.defaultdict(lambda: self.base%0)
         self.files = []
 
         for i, tree in enumerate(self.trees):
@@ -433,7 +434,7 @@ class FlowSplitter:
                 for anchor in elem.get('id', ''), elem.get('name', ''):
                     if anchor != '' and anchor not in self.anchor_map:
                         self.anchor_map[anchor] = self.files[-1]
-            for elem in root.xpath('//*[@%s]'%SPLIT_POINT_ATTR):
+            for elem in root.xpath(f'//*[@{SPLIT_POINT_ATTR}]'):
                 elem.attrib.pop(SPLIT_POINT_ATTR, '0')
 
         spine_pos = self.item.spine_position

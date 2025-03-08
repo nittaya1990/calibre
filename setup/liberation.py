@@ -1,7 +1,5 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:fdm=marker:ai
 # License: GPLv3 Copyright: 2019, Kovid Goyal <kovid at kovidgoyal.net>
-from __future__ import absolute_import, division, print_function, unicode_literals
 
 import glob
 import os
@@ -14,8 +12,8 @@ class LiberationFonts(ReVendor):
     description = 'Download the Liberation fonts'
     NAME = 'liberation_fonts'
     TAR_NAME = 'liberation-fonts'
-    VERSION = '2.1.3'
-    DOWNLOAD_URL = 'https://github.com/liberationfonts/liberation-fonts/files/6026893/liberation-fonts-ttf-%s.tar.gz' % VERSION
+    VERSION = '2.1.5'
+    DOWNLOAD_URL = 'https://github.com/liberationfonts/liberation-fonts/files/7261482/liberation-fonts-ttf-2.1.5.tar.gz'
 
     @property
     def vendored_dir(self):

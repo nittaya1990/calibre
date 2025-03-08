@@ -4,10 +4,10 @@ Editing e-books
 ========================
 
 calibre has an integrated e-book editor that can be used to edit books in the
-EPUB and AZW3 (Kindle) formats. The editor shows you the HTML and CSS that is
-used internally inside the book files, with a live preview that updates as you
-make changes. It also contains various automated tools to perform common
-cleanup and fixing tasks.
+EPUB, KEPUB (Kobo) and AZW3 (Kindle) formats. The editor shows you the HTML and
+CSS that is used internally inside the book files, with a live preview that
+updates as you make changes. It also contains various automated tools to
+perform common cleanup and fixing tasks.
 
 You can use this editor by right clicking on any book in calibre and selecting
 :guilabel:`Edit book`.
@@ -26,16 +26,15 @@ Basic workflow
 ---------------
 
 .. note::
-    A video tour of the calibre E-book editor is available `here
-    <https://calibre-ebook.com/demo#tutorials>`_.
+    A video tour of the calibre E-book editor is available :website:`here <demo#tutorials>`.
 
 When you first open a book with the Edit book tool, you will be presented with
 a list of files on the left. These are the individual HTML files, stylesheets,
 images, etc. that make up the content of the book. Simply double click on a
 file to start editing it. Note that if you want to do anything more
 sophisticated than making a few small tweaks, you will need to know `HTML
-Tutorial <http://html.net/tutorials/html/>`_ and `CSS Tutorial
-<http://html.net/tutorials/css/>`_.
+Tutorial <https://www.w3schools.com/Html/default.asp>`_ and `CSS Tutorial
+<https://www.w3schools.com/css/default.asp>`_.
 
 As you make changes to the HTML or CSS in the editor, the changes will be
 previewed, live, in the preview panel to the right. When you are happy with how
@@ -50,7 +49,7 @@ you created the checkpoint. To create a checkpoint, use :guilabel:`Edit->Create
 checkpoint`. Checkpoints will also be automatically created for you whenever you
 run any automated tool like global search and replace. The checkpointing
 functionality is in addition to the normal undo/redo mechanism when editing
-individual files. Checkpoints are useful for when changes are spread over
+individual files. Checkpoints are needed for when changes are spread over
 multiple files in the book.
 
 That is the basic work flow for editing books -- Open a file, make changes,
@@ -61,7 +60,7 @@ The File browser
 ------------------
 
 .. image:: images/files_browser.png
-    :alt: The File browser
+    :alt: The File browser showing files in the book
     :class: float-left-img
 
 The :guilabel:`File browser` gives you an overview of the various files inside
@@ -127,14 +126,21 @@ links and references to the merged files. Note that merging files can sometimes
 cause text styling to change, since the individual files could have used
 different stylesheets.
 
+You can also select text files and then drag and drop the text files onto
+another text file to merge the dropped text files into the target text file.
+
 Changing text file order
 ^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 You can re-arrange the order in which text (HTML) files are opened when reading
-the book by simply dragging and dropping them in the Files browser. For the
-technically inclined, this is called re-ordering the book spine. Note that you
-have to drop the items *between* other items, not on top of them, this can be a
-little fiddly until you get used to it.
+the book by simply dragging and dropping them in the :guilabel:`File browser` or clicking
+on the file to move and then pressing the :kbd:`Ctrl+Shift` modifiers with the
+:kbd:`Up`, :kbd:`Down`, :kbd:`Home` or :kbd:`End` keys. For the technically
+inclined, this is called re-ordering the book spine.
+
+Note that you have to drop the items *between* other items, not on top of them,
+this can be a little fiddly until you get used to it. Dropping on top of
+another file will cause the files to be merged.
 
 Marking the cover
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -514,7 +520,7 @@ You can create a checkpoint via :guilabel:`Edit->Create checkpoint`. And go back
 to a previous checkpoint with :guilabel:`Edit->Revert to ...`
 
 The check pointing functionality is in addition to the normal Undo/redo
-mechanism when editing individual files. Checkpoints are particularly useful
+mechanism when editing individual files. Checkpoints are needed
 for when changes are spread over multiple files in the book or when you wish to
 be able to revert a large group of related changes as a whole.
 
@@ -529,7 +535,7 @@ The Live preview panel
 ------------------------
 
 .. image:: images/live-preview.png
-    :alt: The Live preview panel
+    :alt: The Live preview panel showing a rendering of the current file
     :class: float-left-img
 
 The :guilabel:`File preview` gives you an overview of the various files inside
@@ -590,7 +596,7 @@ The Live CSS panel
 ---------------------
 
 .. image:: images/live_css.png
-    :alt: The Live CSS panel
+    :alt: The Live CSS panel showing the styles for the current element
     :class: float-left-img
 
 
@@ -673,6 +679,14 @@ common in your book and to run a simple search and replace on individual words.
     tool is open, you should click the :guilabel:`Refresh` button in the Spell
     check tool. If you do not do this and continue to use the Spell check tool,
     you could lose the changes you have made in the editor.
+
+.. note::
+   To exclude an individual file from being spell checked when running the
+   spell check tool, you can use the :guilabel:`Exclude files` button or
+   add the following comment just under the opening tag in the file::
+
+        <!-- calibre-no-spell-check -->
+
 
 Adding new dictionaries
 ###########################
@@ -783,7 +797,7 @@ entries the :guilabel:`Source` column to jump to where the link is defined and
 entries in the :guilabel:`Target` column to jump to where the link points.
 
 .. image:: images/reports-ss.png
-    :alt: The Reports tool
+    :alt: The Reports tool with information and statistics about the book
     :align: center
     :class: fit-img
 
@@ -803,7 +817,8 @@ The HTML editor has very sophisticated syntax highlighting. Features include:
     * As you move your cursor through the HTML, the matching HTML tags are
       highlighted, and you can jump to the opening or closing tag with the
       keyboard shortcuts :kbd:`Ctrl+{` and :kbd:`Ctrl+}`. Similarly, you
-      can select the contents of a tag with :kbd:`Ctrl+Alt+T`.
+      can select the contents of a tag with :kbd:`Ctrl+Alt+T` or
+      :kbd:`Ctrl+Shift+T`.
     * Invalid HTML is highlighted with a red underline
     * Spelling errors in the text inside HTML tags and attributes such as title
       are highlighted. The spell checking is language aware, based on the value

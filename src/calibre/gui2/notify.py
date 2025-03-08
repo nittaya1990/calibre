@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
 
 
 __license__   = 'GPL v3'
@@ -11,8 +10,8 @@ import sys
 from contextlib import suppress
 from functools import lru_cache
 
-from calibre.constants import DEBUG, __appname__, get_osx_version, islinux, ismacos
-from polyglot.builtins import unicode_type
+from calibre.constants import DEBUG, MAIN_APP_UID, __appname__, get_osx_version, islinux, ismacos, iswindows
+from calibre.utils.resources import get_image_path as I
 
 
 class Notifier:
@@ -126,12 +125,12 @@ class DBUSNotifier(Notifier):
             self.address, 'AddNotification', 'sa{sv}', (
                 str(replaces_id or 0),
                 {
-                "title": ('s', summary),
-                "body": ('s', body),
-                "icon": (
+                'title': ('s', summary),
+                'body': ('s', body),
+                'icon': (
                     '(sv)',
                     (
-                        "bytes",
+                        'bytes',
                         ('ay', icon(data=True))
                     )
                 ),
@@ -164,7 +163,7 @@ class QtNotifier(Notifier):
             try:
                 hide = False
                 try:
-                    if not isinstance(body, unicode_type):
+                    if not isinstance(body, str):
                         body = body.decode('utf-8')
                     if ismacos and not self.systray.isVisible():
                         self.systray.show()
@@ -176,6 +175,40 @@ class QtNotifier(Notifier):
                         self.systray.hide()
             except Exception:
                 pass
+
+
+class WinToastNotifier:
+
+    def __init__(self):
+        try:
+            from calibre_extensions.wintoast import initialize_toast
+        except ImportError:
+            self.ok = False
+        else:
+            from qt.core import QApplication
+            app = QApplication.instance()
+            auid = getattr(app, 'windows_app_uid', MAIN_APP_UID)
+            appname = __appname__
+            if app is not None:
+                appname = app.applicationName() or appname
+            try:
+                initialize_toast(appname, auid)
+            except Exception as err:
+                self.ok = False
+                print('Failed to initialize_toast with error:', err, file=sys.stderr)
+            else:
+                self.ok = True
+
+    def __call__(self, body, summary=None, replaces_id=None, timeout=0):
+        if summary:
+            title, message = summary, body
+        else:
+            title, message = '', body
+        from calibre_extensions.wintoast import notify
+        try:
+            notify(title, message, icon())
+        except Exception as err:
+            print('Failed to send toast notification with error:', err, file=sys.stderr)
 
 
 class DummyNotifier(Notifier):
@@ -223,6 +256,10 @@ def get_notifier(systray=None):
             # We dont use Qt's systray based notifier as it uses Growl and is
             # broken with different versions of Growl
             ans = DummyNotifier()
+    elif iswindows:
+        ans = WinToastNotifier()
+        if not ans.ok:
+            ans = None
     if ans is None:
         ans = QtNotifier(systray)
         if not ans.ok:
@@ -233,6 +270,12 @@ def get_notifier(systray=None):
 def hello():
     n = get_notifier()
     n('hello')
+
+
+def develop_win():
+    from calibre_extensions.wintoast import initialize_toast, notify
+    initialize_toast(__appname__, MAIN_APP_UID)
+    notify('calibre notification', 'hello world', icon())
 
 
 if __name__ == '__main__':

@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
 
 
 __license__   = 'GPL v3'
@@ -9,6 +8,7 @@ __docformat__ = 'restructuredtext en'
 
 def base64_decode(raw):
     from io import BytesIO
+
     from polyglot.binary import from_base64_bytes
 
     # First try the python implementation as it is faster

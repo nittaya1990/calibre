@@ -5,6 +5,7 @@ www.mainichi.jp
 '''
 
 import re
+
 from calibre.web.feeds.news import BasicNewsRecipe
 
 
@@ -21,8 +22,8 @@ class MainichiDailyScienceNews(BasicNewsRecipe):
     remove_javascript = True
     masthead_title = u'MAINICHI DAILY NEWS'
 
-    remove_tags_before = {'class': "NewsTitle"}
-    remove_tags_after = {'class': "NewsBody clr"}
+    remove_tags_before = {'class': 'NewsTitle'}
+    remove_tags_after = {'class': 'NewsBody clr'}
 
     def parse_feeds(self):
 

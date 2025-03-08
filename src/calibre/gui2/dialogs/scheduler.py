@@ -1,5 +1,3 @@
-
-
 __license__   = 'GPL v3'
 __copyright__ = '2008, Kovid Goyal kovid@kovidgoyal.net'
 __docformat__ = 'restructuredtext en'
@@ -8,26 +6,57 @@ __docformat__ = 'restructuredtext en'
 Scheduler for automated recipe downloads
 '''
 
-from datetime import timedelta
-import calendar, textwrap
+import calendar
+import textwrap
 from collections import OrderedDict
+from contextlib import suppress
+from datetime import timedelta
 
 from qt.core import (
-    QDialog, Qt, QTime, QObject, QMenu, QHBoxLayout, QAction, QIcon, QMutex, QApplication,
-    QTimer, pyqtSignal, QWidget, QGridLayout, QCheckBox, QTimeEdit, QLabel,
-    QLineEdit, QDoubleSpinBox, QSize, QTreeView, QSizePolicy, QToolButton,
-    QFrame, QVBoxLayout, QTabWidget, QSpacerItem, QGroupBox,
-    QRadioButton, QStackedWidget, QSpinBox, QPushButton, QDialogButtonBox
+    QAction,
+    QCheckBox,
+    QDialog,
+    QDialogButtonBox,
+    QDoubleSpinBox,
+    QFormLayout,
+    QFrame,
+    QGridLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QIcon,
+    QLabel,
+    QLineEdit,
+    QMenu,
+    QObject,
+    QPushButton,
+    QRadioButton,
+    QRecursiveMutex,
+    QSize,
+    QSizePolicy,
+    QSpacerItem,
+    QSpinBox,
+    QStackedWidget,
+    Qt,
+    QTabWidget,
+    QTime,
+    QTimeEdit,
+    QTimer,
+    QToolButton,
+    QTreeView,
+    QVBoxLayout,
+    QWidget,
+    pyqtSignal,
 )
 
-from calibre.gui2 import config as gconf, error_dialog, gprefs
-from calibre.gui2.search_box import SearchBox2
-from calibre.web.feeds.recipes.model import RecipeModel
-from calibre.utils.date import utcnow
-from calibre.utils.network import internet_connected
 from calibre import force_unicode
-from calibre.utils.localization import get_lang, canonicalize_lang
-from polyglot.builtins import iteritems, unicode_type, range, map
+from calibre.gui2 import config as gconf
+from calibre.gui2 import error_dialog, gprefs
+from calibre.gui2.search_box import SearchBox2
+from calibre.utils.date import utcnow
+from calibre.utils.localization import canonicalize_lang, get_lang
+from calibre.utils.network import internet_connected
+from calibre.web.feeds.recipes.model import RecipeModel
+from polyglot.builtins import iteritems
 
 
 def convert_day_time_schedule(val):
@@ -57,8 +86,8 @@ class RecipesView(QTreeView):
         QTreeView.currentChanged(self, current, previous)
         self.parent().current_changed(current, previous)
 
-# Time/date widgets {{{
 
+# Time/date widgets {{{
 
 class Base(QWidget):
 
@@ -114,8 +143,8 @@ class DaysOfWeek(Base):
 
     @property
     def schedule(self):
-        days_of_week = tuple([i for i, d in enumerate(self.days) if
-            d.isChecked()])
+        days_of_week = tuple(i for i, d in enumerate(self.days) if
+            d.isChecked())
         t = self.time.time()
         hour, minute = t.hour(), t.minute()
         return 'days_of_week', (days_of_week, int(hour), int(minute))
@@ -160,7 +189,7 @@ class DaysOfMonth(Base):
 
     @property
     def schedule(self):
-        parts = [x.strip() for x in unicode_type(self.days.text()).split(',') if
+        parts = [x.strip() for x in str(self.days.text()).split(',') if
                 x.strip()]
         try:
             days_of_month = tuple(map(int, parts))
@@ -229,7 +258,7 @@ class SchedulerDialog(QDialog):
         self.commit_on_change = True
         self.previous_urn = None
 
-        self.setWindowIcon(QIcon(I('scheduler.png')))
+        self.setWindowIcon(QIcon.ic('scheduler.png'))
         self.l = l = QGridLayout(self)
 
         # Left panel
@@ -239,7 +268,7 @@ class SchedulerDialog(QDialog):
         self.search.initialize('scheduler_search_history')
         self.search.setMinimumContentsLength(15)
         self.go_button = b = QToolButton(self)
-        b.setText(_("Go"))
+        b.setText(_('Go'))
         b.clicked.connect(self.search.do_search)
         h.addWidget(s), h.addWidget(b)
         self.recipes = RecipesView(self)
@@ -249,7 +278,7 @@ class SchedulerDialog(QDialog):
         self.recipes.setModel(self.recipe_model)
         self.recipes.setFocus(Qt.FocusReason.OtherFocusReason)
         self.recipes.item_activated.connect(self.download_clicked)
-        self.setWindowTitle(_("Schedule news download [{} sources]").format(self.recipe_model.showing_count))
+        self.setWindowTitle(_('Schedule news download [{} sources]').format(self.recipe_model.showing_count))
         self.search.search.connect(self.recipe_model.search)
         self.recipe_model.searched.connect(self.search.search_done, type=Qt.ConnectionType.QueuedConnection)
         self.recipe_model.searched.connect(self.search_done)
@@ -267,9 +296,8 @@ class SchedulerDialog(QDialog):
 
         # First Tab (scheduling)
         self.tab = QWidget()
-        self.detail_box.addTab(self.tab, _("&Schedule"))
+        self.detail_box.addTab(self.tab, _('&Schedule'))
         self.tab.v = vt = QVBoxLayout(self.tab)
-        vt.setContentsMargins(0, 0, 0, 0)
         self.blurb = la = QLabel('blurb')
         la.setWordWrap(True), la.setOpenExternalLinks(True)
         vt.addWidget(la)
@@ -278,14 +306,14 @@ class SchedulerDialog(QDialog):
         f.setFrameShape(QFrame.Shape.StyledPanel)
         f.setFrameShadow(QFrame.Shadow.Raised)
         f.v = vf = QVBoxLayout(f)
-        self.schedule = s = QCheckBox(_("&Schedule for download:"), f)
+        self.schedule = s = QCheckBox(_('&Schedule for download:'), f)
         self.schedule.stateChanged[int].connect(self.toggle_schedule_info)
         vf.addWidget(s)
         f.h = h = QHBoxLayout()
         vf.addLayout(h)
-        self.days_of_week = QRadioButton(_("&Days of  week"), f)
-        self.days_of_month = QRadioButton(_("Da&ys of month"), f)
-        self.every_x_days = QRadioButton(_("Every &x days"), f)
+        self.days_of_week = QRadioButton(_('&Days of  week'), f)
+        self.days_of_month = QRadioButton(_('Da&ys of month'), f)
+        self.every_x_days = QRadioButton(_('Every &x days'), f)
         self.days_of_week.setChecked(True)
         h.addWidget(self.days_of_week), h.addWidget(self.days_of_month), h.addWidget(self.every_x_days)
         self.schedule_stack = ss = QStackedWidget(f)
@@ -297,23 +325,24 @@ class SchedulerDialog(QDialog):
         self.last_downloaded = la = QLabel(f)
         la.setWordWrap(True)
         vf.addWidget(la)
+        self.rla = la = QLabel(_('For the scheduling to work, you must leave calibre running.'))
+        la.setWordWrap(True)
+        vf.addWidget(la)
         self.account = acc = QGroupBox(self.tab)
-        acc.setTitle(_("&Account"))
+        acc.setTitle(_('&Account'))
         vt.addWidget(acc)
         acc.g = g = QGridLayout(acc)
-        acc.unla = la = QLabel(_("&Username:"))
+        acc.unla = la = QLabel(_('&Username:'))
         self.username = un = QLineEdit(self)
         la.setBuddy(un)
         g.addWidget(la), g.addWidget(un, 0, 1)
-        acc.pwla = la = QLabel(_("&Password:"))
+        acc.pwla = la = QLabel(_('&Password:'))
         self.password = pw = QLineEdit(self)
         pw.setEchoMode(QLineEdit.EchoMode.Password), la.setBuddy(pw)
         g.addWidget(la), g.addWidget(pw, 1, 1)
-        self.show_password = spw = QCheckBox(_("&Show password"), self.account)
+        self.show_password = spw = QCheckBox(_('&Show password'), self.account)
         spw.stateChanged[int].connect(self.set_pw_echo_mode)
         g.addWidget(spw, 2, 0, 1, 2)
-        self.rla = la = QLabel(_("For the scheduling to work, you must leave calibre running."))
-        vt.addWidget(la)
         for b, c in iteritems(self.SCHEDULE_TYPES):
             b = getattr(self, b)
             b.toggled.connect(self.schedule_type_selected)
@@ -321,65 +350,58 @@ class SchedulerDialog(QDialog):
 
         # Second tab (advanced settings)
         self.tab2 = t2 = QWidget()
-        self.detail_box.addTab(self.tab2, _("&Advanced"))
-        self.tab2.g = g = QGridLayout(t2)
-        g.setContentsMargins(0, 0, 0, 0)
-        self.add_title_tag = tt = QCheckBox(_("Add &title as tag"), t2)
-        g.addWidget(tt, 0, 0, 1, 2)
-        t2.la = la = QLabel(_("&Extra tags:"))
+        self.detail_box.addTab(self.tab2, _('&Advanced'))
+        self.tab2.g = g = QFormLayout(t2)
+        g.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
+        self.add_title_tag = tt = QCheckBox(_('Add &title as tag'), t2)
+        g.addRow(tt)
         self.custom_tags = ct = QLineEdit(self)
-        la.setBuddy(ct)
-        g.addWidget(la), g.addWidget(ct, 1, 1)
-        t2.la2 = la = QLabel(_("&Keep at most:"))
-        la.setToolTip(_("Maximum number of copies (issues) of this recipe to keep.  Set to 0 to keep all (disable)."))
+        g.addRow(_('&Extra tags:'), ct)
         self.keep_issues = ki = QSpinBox(t2)
         tt.toggled['bool'].connect(self.keep_issues.setEnabled)
-        ki.setMaximum(100000), la.setBuddy(ki)
+        ki.setMaximum(100000)
         ki.setToolTip(_(
-            "<p>When set, this option will cause calibre to keep, at most, the specified number of issues"
-            " of this periodical. Every time a new issue is downloaded, the oldest one is deleted, if the"
-            " total is larger than this number.\n<p>Note that this feature only works if you have the"
-            " option to add the title as tag checked, above.\n<p>Also, the setting for deleting periodicals"
-            " older than a number of days, below, takes priority over this setting."))
-        ki.setSpecialValueText(_("all issues")), ki.setSuffix(_(" issues"))
-        g.addWidget(la), g.addWidget(ki, 2, 1)
-        si = QSpacerItem(20, 40, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
-        g.addItem(si, 3, 1, 1, 1)
+            '<p>When set, this option will cause calibre to keep, at most, the specified number of issues'
+            ' of this periodical. Every time a new issue is downloaded, the oldest one is deleted, if the'
+            ' total is larger than this number.\n<p>Note that this feature only works if you have the'
+            ' option to add the title as tag checked, above.\n<p>Also, the setting for deleting periodicals'
+            ' older than a number of days, below, takes priority over this setting.'))
+        ki.setSpecialValueText(_('all issues')), ki.setSuffix(_(' issues'))
+        g.addRow(_('&Keep at most:'), ki)
+        self.recipe_specific_widgets = {}
 
         # Bottom area
         self.hb = h = QHBoxLayout()
         self.l.addLayout(h, 2, 1, 1, 1)
-        self.labt = la = QLabel(_("Delete downloaded &news older than:"))
+        self.labt = la = QLabel(_('Delete downloaded &news older than:'))
         self.old_news = on = QSpinBox(self)
         on.setToolTip(_(
-            "<p>Delete downloaded news older than the specified number of days. Set to zero to disable.\n"
-            "<p>You can also control the maximum number of issues of a specific periodical that are kept"
-            " by clicking the Advanced tab for that periodical above."))
-        on.setSpecialValueText(_("never delete")), on.setSuffix(_(" days"))
+            '<p>Delete downloaded news older than the specified number of days. Set to zero to disable.\n'
+            '<p>You can also control the maximum number of issues of a specific periodical that are kept'
+            ' by clicking the Advanced tab for that periodical above.'))
+        on.setSpecialValueText(_('never delete')), on.setSuffix(_(' days'))
         on.setMaximum(1000), la.setBuddy(on)
         on.setValue(gconf['oldest_news'])
         h.addWidget(la), h.addWidget(on)
-        self.download_all_button = b = QPushButton(QIcon(I('news.png')), _("Download &all scheduled"), self)
-        b.setToolTip(_("Download all scheduled news sources at once"))
+        self.download_all_button = b = QPushButton(QIcon.ic('news.png'), _('Download &all scheduled'), self)
+        b.setToolTip(_('Download all scheduled news sources at once'))
         b.clicked.connect(self.download_all_clicked)
         self.l.addWidget(b, 3, 0, 1, 1)
         self.bb = bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel, self)
         bb.accepted.connect(self.accept), bb.rejected.connect(self.reject)
         self.download_button = b = bb.addButton(_('&Download now'), QDialogButtonBox.ButtonRole.ActionRole)
-        b.setIcon(QIcon(I('arrow-down.png'))), b.setVisible(False)
+        b.setIcon(QIcon.ic('arrow-down.png')), b.setVisible(False)
         b.clicked.connect(self.download_clicked)
         self.l.addWidget(bb, 3, 1, 1, 1)
 
-        geom = gprefs.get('scheduler_dialog_geometry')
-        if geom is not None:
-            QApplication.instance().safe_restore_geometry(self, geom)
+        self.restore_geometry(gprefs, 'scheduler_dialog_geometry')
 
     def sizeHint(self):
         return QSize(800, 600)
 
     def set_pw_echo_mode(self, state):
         self.password.setEchoMode(QLineEdit.EchoMode.Normal
-                if state == Qt.CheckState.Checked else QLineEdit.EchoMode.Password)
+                if Qt.CheckState(state) == Qt.CheckState.Checked else QLineEdit.EchoMode.Password)
 
     def schedule_type_selected(self, *args):
         for i, st in enumerate(self.SCHEDULE_TYPES):
@@ -425,15 +447,12 @@ class SchedulerDialog(QDialog):
     def accept(self):
         if not self.commit():
             return False
-        self.save_geometry()
+        self.save_geometry(gprefs, 'scheduler_dialog_geometry')
         return QDialog.accept(self)
 
     def reject(self):
-        self.save_geometry()
+        self.save_geometry(gprefs, 'scheduler_dialog_geometry')
         return QDialog.reject(self)
-
-    def save_geometry(self):
-        gprefs.set('scheduler_dialog_geometry', bytearray(self.saveGeometry()))
 
     def download_clicked(self, *args):
         self.commit()
@@ -456,7 +475,7 @@ class SchedulerDialog(QDialog):
             return True
 
         if self.account.isVisible():
-            un, pw = map(unicode_type, (self.username.text(), self.password.text()))
+            un, pw = map(str, (self.username.text(), self.password.text()))
             un, pw = un.strip(), pw.strip()
             if not un and not pw and self.schedule.isChecked():
                 if not getattr(self, 'subscription_optional', False):
@@ -479,10 +498,14 @@ class SchedulerDialog(QDialog):
         add_title_tag = self.add_title_tag.isChecked()
         keep_issues = '0'
         if self.keep_issues.isEnabled():
-            keep_issues = unicode_type(self.keep_issues.value())
-        custom_tags = unicode_type(self.custom_tags.text()).strip()
+            keep_issues = str(self.keep_issues.value())
+        custom_tags = str(self.custom_tags.text()).strip()
         custom_tags = [x.strip() for x in custom_tags.split(',')]
-        self.recipe_model.customize_recipe(urn, add_title_tag, custom_tags, keep_issues)
+        from calibre.web.feeds.recipes.collection import RecipeCustomization
+        recipe_specific_options = None
+        if self.recipe_specific_widgets:
+            recipe_specific_options = {name: w.text().strip() for name, w in self.recipe_specific_widgets.items() if w.text().strip()}
+        self.recipe_model.customize_recipe(urn, RecipeCustomization(add_title_tag, custom_tags, keep_issues, recipe_specific_options))
         return True
 
     def initialize_detail_box(self, urn):
@@ -520,13 +543,13 @@ class SchedulerDialog(QDialog):
 
         self.blurb.setText('''
         <p>
-        <b>%(title)s</b><br>
-        %(cb)s %(author)s<br/>
-        %(description)s
+        <b>{title}</b><br>
+        {cb} {author}<br/>
+        {description}
         </p>
-        '''%dict(title=recipe.get('title'), cb=_('Created by: '),
+        '''.format(**dict(title=recipe.get('title'), cb=_('Created by: '),
             author=recipe.get('author', _('Unknown')),
-            description=recipe.get('description', '')))
+            description=recipe.get('description', ''))))
         self.download_button.setToolTip(
                 _('Download %s now')%recipe.get('title'))
         scheduled = schedule_info is not None
@@ -554,16 +577,30 @@ class SchedulerDialog(QDialog):
         rb.setChecked(True)
         self.schedule_stack.setCurrentIndex(sch_widget)
         self.schedule_stack.currentWidget().initialize(typ, sch)
-        add_title_tag, custom_tags, keep_issues = customize_info
-        self.add_title_tag.setChecked(add_title_tag)
-        self.custom_tags.setText(', '.join(custom_tags))
+        self.add_title_tag.setChecked(customize_info.add_title_tag)
+        self.custom_tags.setText(', '.join(customize_info.custom_tags))
         self.last_downloaded.setText(_('Last downloaded:') + ' ' + ld_text)
-        try:
-            keep_issues = int(keep_issues)
-        except:
-            keep_issues = 0
-        self.keep_issues.setValue(keep_issues)
+        self.keep_issues.setValue(customize_info.keep_issues)
         self.keep_issues.setEnabled(self.add_title_tag.isChecked())
+        g = self.tab2.layout()
+        for x in self.recipe_specific_widgets.values():
+            g.removeRow(x)
+        self.recipe_specific_widgets = {}
+        raw = recipe.get('options')
+        if raw:
+            import json
+            rsom = json.loads(raw)
+            rso = customize_info.recipe_specific_options
+            for name, metadata in rsom.items():
+                w = QLineEdit(self)
+                if 'default' in metadata:
+                    w.setPlaceholderText(_('Default if unspecified: {}').format(metadata['default']))
+                w.setClearButtonEnabled(True)
+                w.setText(str(rso.get(name, '')).strip())
+                w.setToolTip(str(metadata.get('long', '')))
+                title = '&' + str(metadata.get('short') or name).replace('&', '&&') + ':'
+                g.addRow(title, w)
+                self.recipe_specific_widgets[name] = w
 
 
 class Scheduler(QObject):
@@ -573,7 +610,7 @@ class Scheduler(QObject):
     delete_old_news = pyqtSignal(object)
     start_recipe_fetch = pyqtSignal(object)
 
-    def __init__(self, parent, db):
+    def __init__(self, parent):
         QObject.__init__(self, parent)
         self.internet_connection_failed = False
         self._parent = parent
@@ -585,20 +622,20 @@ class Scheduler(QObject):
         d.setModal(False)
 
         self.recipe_model = RecipeModel()
-        self.db = db
-        self.lock = QMutex(QMutex.RecursionMode.Recursive)
+        self.lock = QRecursiveMutex()
         self.download_queue = set()
 
         self.news_menu = QMenu()
-        self.news_icon = QIcon(I('news.png'))
-        self.scheduler_action = QAction(QIcon(I('scheduler.png')), _('Schedule news download'), self)
+        self.news_icon = QIcon.ic('news.png')
+        self.scheduler_action = QAction(QIcon.ic('scheduler.png'), _('Schedule news download'), self)
         self.news_menu.addAction(self.scheduler_action)
         self.scheduler_action.triggered[bool].connect(self.show_dialog)
-        self.cac = QAction(QIcon(I('user_profile.png')), _('Add or edit a custom news source'), self)
+        self.cac = QAction(QIcon.ic('user_profile.png'), _('Add or edit a custom news source'), self)
         self.cac.triggered[bool].connect(self.customize_feeds)
         self.news_menu.addAction(self.cac)
         self.news_menu.addSeparator()
         self.all_action = self.news_menu.addAction(
+                QIcon.ic('download-metadata.png'),
                 _('Download all scheduled news sources'),
                 self.download_all_scheduled)
 
@@ -608,14 +645,24 @@ class Scheduler(QObject):
         self.oldest = gconf['oldest_news']
         QTimer.singleShot(5 * 1000, self.oldest_check)
 
-    def database_changed(self, db):
-        self.db = db
+    @property
+    def db(self):
+        from calibre.gui2.ui import get_gui
+        gui = get_gui()
+        with suppress(AttributeError):
+            ans = gui.current_db
+            if not ans.new_api.is_doing_rebuild_or_vacuum:
+                return ans
 
     def oldest_check(self):
         if self.oldest > 0:
             delta = timedelta(days=self.oldest)
+            db = self.db
+            if db is None:
+                QTimer.singleShot(5 * 1000, self.oldest_check)
+                return
             try:
-                ids = list(self.db.tags_older_than(_('News'),
+                ids = list(db.tags_older_than(_('News'),
                     delta, must_have_authors=['calibre']))
             except:
                 # Happens if library is being switched
@@ -630,7 +677,7 @@ class Scheduler(QObject):
         try:
             d = SchedulerDialog(self.recipe_model)
             d.download.connect(self.download_clicked)
-            d.exec_()
+            d.exec()
             gconf['oldest_news'] = self.oldest = d.old_news.value()
             d.break_cycles()
         finally:
@@ -640,7 +687,7 @@ class Scheduler(QObject):
         from calibre.gui2.dialogs.custom_recipes import CustomRecipes
         d = CustomRecipes(self.recipe_model, self._parent)
         try:
-            d.exec_()
+            d.exec()
         finally:
             d.deleteLater()
 
@@ -653,15 +700,15 @@ class Scheduler(QObject):
             un = pw = None
             if account_info is not None:
                 un, pw = account_info
-            add_title_tag, custom_tags, keep_issues = customize_info
             arg = {
                     'username': un,
                     'password': pw,
-                    'add_title_tag':add_title_tag,
-                    'custom_tags':custom_tags,
+                    'add_title_tag':customize_info.add_title_tag,
+                    'custom_tags':customize_info.custom_tags,
                     'title':recipe.get('title',''),
                     'urn':urn,
-                    'keep_issues':keep_issues
+                    'keep_issues':str(customize_info.keep_issues),
+                    'recipe_specific_options': customize_info.recipe_specific_options,
                    }
             self.download_queue.add(urn)
             self.start_recipe_fetch.emit(arg)
@@ -731,5 +778,5 @@ if __name__ == '__main__':
     from calibre.gui2 import Application
     app = Application([])
     d = SchedulerDialog(RecipeModel())
-    d.exec_()
+    d.exec()
     del app

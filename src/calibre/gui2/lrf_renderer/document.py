@@ -1,18 +1,16 @@
-
-
 __license__   = 'GPL v3'
 __copyright__ = '2008, Kovid Goyal <kovid at kovidgoyal.net>'
 
-import collections, itertools, glob
+import collections
+import glob
+import itertools
 
-from qt.core import (
-    Qt, QByteArray, pyqtSignal, QGraphicsRectItem, QGraphicsScene, QPen,
-    QBrush, QColor, QFontDatabase, QGraphicsItem, QGraphicsLineItem)
+from qt.core import QBrush, QByteArray, QColor, QFontDatabase, QGraphicsItem, QGraphicsLineItem, QGraphicsRectItem, QGraphicsScene, QPen, Qt, pyqtSignal
 
-from calibre.gui2.lrf_renderer.text import TextBlock, FontLoader, COLOR, PixmapItem
-from calibre.ebooks.lrf.objects import RuledLine as _RuledLine
 from calibre.ebooks.lrf.objects import Canvas as __Canvas
-from polyglot.builtins import unicode_type
+from calibre.ebooks.lrf.objects import RuledLine as _RuledLine
+from calibre.gui2.lrf_renderer.text import COLOR, FontLoader, PixmapItem, TextBlock
+from calibre.utils.resources import get_path as P
 
 
 class Color(QColor):
@@ -156,7 +154,7 @@ class _Canvas(QGraphicsRectItem):
             max_width  = min(br.width(), self.max_x-x)
             if br.height() > max_height or br.width() > max_width:
                 p = ib.pixmap()
-                ib.setPixmap(p.scaled(max_width, max_height, Qt.AspectRatioMode.IgnoreAspectRatio,
+                ib.setPixmap(p.scaled(int(max_width), int(max_height), Qt.AspectRatioMode.IgnoreAspectRatio,
                                       Qt.TransformationMode.SmoothTransformation))
                 br = ib.boundingRect()
             ib.setParentItem(self)
@@ -218,7 +216,7 @@ class Header(Canvas):
 
     def __init__(self, font_loader, header, page_style, logger, opts, ruby_tags, link_activated):
         Canvas.__init__(self, font_loader, header, logger, opts, ruby_tags, link_activated,
-                        page_style.textwidth,  page_style.headheight)
+                        page_style.textwidth, page_style.headheight)
         if opts.visual_debug:
             self.setPen(QPen(Qt.GlobalColor.blue, 1, Qt.PenStyle.DashLine))
 
@@ -418,7 +416,7 @@ class Document(QGraphicsScene):
             fdata = QByteArray(lrf.font_map[font].data)
             id = QFontDatabase.addApplicationFontFromData(fdata)
             if id != -1:
-                font_map[font] = [unicode_type(i) for i in QFontDatabase.applicationFontFamilies(id)][0]
+                font_map[font] = [str(i) for i in QFontDatabase.applicationFontFamilies(id)][0]
 
         if load_substitutions:
             base = P('fonts/liberation/*.ttf')

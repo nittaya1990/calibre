@@ -1,19 +1,18 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
 
 
 __license__   = 'GPL v3'
 __copyright__ = '2010, Kovid Goyal <kovid@kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
 
-from qt.core import QAbstractListModel, Qt, QIcon, QItemSelectionModel
+from qt.core import QAbstractItemView, QAbstractListModel, QIcon, QItemSelectionModel, Qt
 
 from calibre import force_unicode
+from calibre.gui2 import error_dialog, gprefs, warning_dialog
+from calibre.gui2.preferences import AbortCommit, ConfigWidgetBase, test_widget
 from calibre.gui2.preferences.toolbar_ui import Ui_Form
-from calibre.gui2 import gprefs, warning_dialog, error_dialog
-from calibre.gui2.preferences import ConfigWidgetBase, test_widget, AbortCommit
+from calibre.startup import connect_lambda
 from calibre.utils.icu import primary_sort_key
-from polyglot.builtins import unicode_type
 
 
 def sort_key_for_action(ac):
@@ -41,12 +40,12 @@ class BaseModel(QAbstractListModel):
         if name == 'Donate':
             return FakeAction(
                 'Donate', _('Donate'), 'donate.png', tooltip=_('Donate to support the development of calibre'),
-                dont_add_to=frozenset(['context-menu', 'context-menu-device']))
+                dont_add_to=frozenset(['context-menu', 'context-menu-device', 'searchbar']))
         if name == 'Location Manager':
             return FakeAction('Location Manager', _('Location Manager'), 'reader.png',
                     _('Switch between library and device views'),
                     dont_add_to=frozenset(['menubar', 'toolbar',
-                        'toolbar-child', 'context-menu',
+                        'toolbar-child', 'context-menu', 'searchbar',
                         'context-menu-device']))
         if name is None:
             return FakeAction('--- '+('Separator')+' ---',
@@ -77,7 +76,7 @@ class BaseModel(QAbstractListModel):
             ic = action[1]
             if ic is None:
                 ic = 'blank.png'
-            return (QIcon(I(ic)))
+            return (QIcon.ic(ic))
         if role == Qt.ItemDataRole.ToolTipRole and action[2] is not None:
             return (action[2])
         return None
@@ -164,25 +163,29 @@ class CurrentModel(BaseModel):
         self.key = key
         self.gui = gui
 
-    def move(self, idx, delta):
+    def move_single(self, idx, delta):
         row = idx.row()
         nrow = (row + delta + len(self._data)) % len(self._data)
-        if nrow < 0 or nrow >= len(self._data):
-            return
-        t = self._data[row]
-        self._data[row] = self._data[nrow]
-        self._data[nrow] = t
-        ni = self.index(nrow)
-        self.dataChanged.emit(idx, idx)
-        self.dataChanged.emit(ni, ni)
-        return ni
+        if row + delta < 0:
+            x = self._data.pop(row)
+            self._data.append(x)
+        elif row + delta >= len(self._data):
+            x = self._data.pop(row)
+            self._data.insert(0, x)
+        else:
+            self._data[row], self._data[nrow] = self._data[nrow], self._data[row]
 
     def move_many(self, indices, delta):
+        rows = [i.row() for i in indices]
+        items = [self._data[x.row()] for x in indices]
+        self.beginResetModel()
         indices = sorted(indices, key=lambda i: i.row(), reverse=delta > 0)
+        for item in items:
+            self.move_single(self.index(self._data.index(item)), delta)
+        self.endResetModel()
         ans = {}
-        for idx in indices:
-            ni = self.move(idx, delta)
-            ans[idx.row()] = ni
+        for item, row in zip(items, rows):
+            ans[row] = self.index(self._data.index(item))
         return ans
 
     def add(self, names):
@@ -237,7 +240,7 @@ class CurrentModel(BaseModel):
     def restore_defaults(self):
         current = gprefs.defaults[self.gprefs_name]
         self.beginResetModel()
-        self._data =  [self.name_to_action(x, self.gui) for x in current]
+        self._data = [self.name_to_action(x, self.gui) for x in current]
         self.endResetModel()
 
 
@@ -247,6 +250,7 @@ class ConfigWidget(ConfigWidgetBase, Ui_Form):
             ('toolbar', _('The main toolbar')),
             ('toolbar-device', _('The main toolbar when a device is connected')),
             ('toolbar-child', _('The optional second toolbar')),
+            ('searchbar', _('The buttons on the search bar')),
             ('menubar', _('The menubar')),
             ('menubar-device', _('The menubar when a device is connected')),
             ('context-menu', _('The context menu for the books in the '
@@ -270,7 +274,7 @@ class ConfigWidget(ConfigWidgetBase, Ui_Form):
             current_model = CurrentModel(key, gui)
             self.models[key] = (all_model, current_model)
         self.what.setCurrentIndex(0)
-        self.what.currentIndexChanged[int].connect(self.what_changed)
+        self.what.currentIndexChanged.connect(self.what_changed)
         self.what_changed(0)
 
         self.add_action_button.clicked.connect(self.add_action)
@@ -291,7 +295,7 @@ class ConfigWidget(ConfigWidgetBase, Ui_Form):
         self.help_text.setText(tt)
 
     def what_changed(self, idx):
-        key = unicode_type(self.what.itemData(idx) or '')
+        key = str(self.what.itemData(idx) or '')
         if key == 'blank':
             self.actions_widget.setVisible(False)
             self.spacer_widget.setVisible(True)
@@ -354,11 +358,13 @@ class ConfigWidget(ConfigWidgetBase, Ui_Form):
             m = self.current_actions.model()
             idx_map = m.move_many(x, delta)
             newci = idx_map.get(i)
-            if newci is not None:
-                sm.setCurrentIndex(newci, QItemSelectionModel.SelectionFlag.ClearAndSelect)
             sm.clear()
             for idx in idx_map.values():
                 sm.select(idx, QItemSelectionModel.SelectionFlag.Select)
+            if newci is not None:
+                sm.setCurrentIndex(newci, QItemSelectionModel.SelectionFlag.SelectCurrent)
+            if newci is not None:
+                self.current_actions.scrollTo(newci, QAbstractItemView.ScrollHint.EnsureVisible)
             self.changed_signal.emit()
 
     def commit(self):

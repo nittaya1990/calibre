@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:fdm=marker:ai
 #
 # Copyright (C) 2006 Søren Roug, European Environment Agency
 #
@@ -26,17 +25,16 @@ import os
 import re
 
 from lxml.etree import fromstring, tostring
+from odf.draw import Frame as odFrame
+from odf.draw import Image as odImage
+from odf.namespaces import DCNS, METANS, OFFICENS
+from odf.opendocument import load as odLoad
 
-from calibre.ebooks.metadata import (
-    MetaInformation, authors_to_string, check_isbn, string_to_authors
-)
+from calibre.ebooks.metadata import MetaInformation, authors_to_string, check_isbn, string_to_authors
 from calibre.utils.date import isoformat, parse_date
 from calibre.utils.imghdr import identify
 from calibre.utils.localization import canonicalize_lang, lang_as_iso639_1
 from calibre.utils.zipfile import ZipFile, safe_replace
-from odf.draw import Frame as odFrame, Image as odImage
-from odf.namespaces import DCNS, METANS, OFFICENS
-from odf.opendocument import load as odLoad
 from polyglot.builtins import as_unicode
 
 fields = {
@@ -60,6 +58,14 @@ fields = {
 }
 
 
+def uniq(vals):
+    ''' Remove all duplicates from vals, while preserving order.  '''
+    vals = vals or ()
+    seen = set()
+    seen_add = seen.add
+    return [x for x in vals if x not in seen and not seen_add(x)]
+
+
 def get_metadata(stream, extract_cover=True):
     whitespace = re.compile(r'\s+')
 
@@ -72,9 +78,14 @@ def get_metadata(stream, extract_cover=True):
 
         def find(field):
             ns, tag = fields[field]
-            ans = root.xpath('//ns0:{}'.format(tag), namespaces={'ns0': ns})
+            ans = root.xpath(f'//ns0:{tag}', namespaces={'ns0': ns})
             if ans:
                 return normalize(tostring(ans[0], method='text', encoding='unicode', with_tail=False)).strip()
+
+        def find_all(field):
+            ns, tag = fields[field]
+            for x in root.xpath(f'//ns0:{tag}', namespaces={'ns0': ns}):
+                yield normalize(tostring(x, method='text', encoding='unicode', with_tail=False)).strip()
 
         mi = MetaInformation(None, [])
         title = find('title')
@@ -89,13 +100,15 @@ def get_metadata(stream, extract_cover=True):
         lang = find('language')
         if lang and canonicalize_lang(lang):
             mi.languages = [canonicalize_lang(lang)]
-        kw = find('keyword') or find('keywords')
-        if kw:
-            mi.tags = [x.strip() for x in kw.split(',') if x.strip()]
+        keywords = []
+        for q in ('keyword', 'keywords'):
+            for kw in find_all(q):
+                keywords += [x.strip() for x in kw.split(',') if x.strip()]
+        mi.tags = uniq(keywords)
         data = {}
         for tag in root.xpath('//ns0:user-defined', namespaces={'ns0': fields['user-defined'][0]}):
-            name = (tag.get('{%s}name' % METANS) or '').lower()
-            vtype = tag.get('{%s}value-type' % METANS) or 'string'
+            name = (tag.get(f'{{{METANS}}}name') or '').lower()
+            vtype = tag.get(f'{{{METANS}}}value-type') or 'string'
             val = tag.text
             if name and val:
                 if vtype == 'boolean':
@@ -106,19 +119,19 @@ def get_metadata(stream, extract_cover=True):
         if data.get('opf.metadata'):
             # custom metadata contains OPF information
             opfmeta = True
-            if data.get('opf.titlesort', ''):
+            if data.get('opf.titlesort'):
                 mi.title_sort = data['opf.titlesort']
-            if data.get('opf.authors', ''):
+            if data.get('opf.authors'):
                 mi.authors = string_to_authors(data['opf.authors'])
-            if data.get('opf.authorsort', ''):
+            if data.get('opf.authorsort'):
                 mi.author_sort = data['opf.authorsort']
-            if data.get('opf.isbn', ''):
+            if data.get('opf.isbn'):
                 isbn = check_isbn(data['opf.isbn'])
                 if isbn is not None:
                     mi.isbn = isbn
-            if data.get('opf.publisher', ''):
+            if data.get('opf.publisher'):
                 mi.publisher = data['opf.publisher']
-            if data.get('opf.pubdate', ''):
+            if data.get('opf.pubdate'):
                 mi.pubdate = parse_date(data['opf.pubdate'], assume_utc=True)
             if data.get('opf.identifiers'):
                 try:
@@ -130,14 +143,14 @@ def get_metadata(stream, extract_cover=True):
                     mi.rating = max(0, min(float(data['opf.rating']), 10))
                 except Exception:
                     pass
-            if data.get('opf.series', ''):
+            if data.get('opf.series'):
                 mi.series = data['opf.series']
-                if data.get('opf.seriesindex', ''):
+                if data.get('opf.seriesindex'):
                     try:
                         mi.series_index = float(data['opf.seriesindex'])
                     except Exception:
                         mi.series_index = 1.0
-            if data.get('opf.language', ''):
+            if data.get('opf.language'):
                 cl = canonicalize_lang(data['opf.language'])
                 if cl:
                     mi.languages = [cl]
@@ -158,7 +171,7 @@ def set_metadata(stream, mi):
         # print(raw.decode('utf-8'))
 
     stream.seek(os.SEEK_SET)
-    safe_replace(stream, "meta.xml", io.BytesIO(raw))
+    safe_replace(stream, 'meta.xml', io.BytesIO(raw))
 
 
 def _set_metadata(raw, mi):
@@ -172,26 +185,26 @@ def _set_metadata(raw, mi):
     def remove(*tag_names):
         for tag_name in tag_names:
             ns = fields[tag_name][0]
-            tag_name = '{}:{}'.format(nsrmap[ns], tag_name)
+            tag_name = f'{nsrmap[ns]}:{tag_name}'
             for x in xpath('descendant::' + tag_name, meta):
                 x.getparent().remove(x)
 
     def add(tag, val=None):
-        ans = meta.makeelement('{%s}%s' % fields[tag])
+        ans = meta.makeelement('{{{}}}{}'.format(*fields[tag]))
         ans.text = val
         meta.append(ans)
         return ans
 
     def remove_user_metadata(*names):
         for x in xpath('//meta:user-defined'):
-            q = (x.get('{%s}name' % METANS) or '').lower()
+            q = (x.get(f'{{{METANS}}}name') or '').lower()
             if q in names:
                 x.getparent().remove(x)
 
     def add_um(name, val, vtype='string'):
         ans = add('user-defined', val)
-        ans.set('{%s}value-type' % METANS, vtype)
-        ans.set('{%s}name' % METANS, name)
+        ans.set(f'{{{METANS}}}value-type', vtype)
+        ans.set(f'{{{METANS}}}name', name)
 
     def add_user_metadata(name, val):
         if not hasattr(add_user_metadata, 'sentinel_added'):
@@ -241,13 +254,13 @@ def _set_metadata(raw, mi):
     if not mi.is_null('series'):
         remove_user_metadata('opf.series', 'opf.seriesindex')
         add_user_metadata('opf.series', mi.series)
-        add_user_metadata('opf.seriesindex', '{}'.format(mi.series_index))
+        add_user_metadata('opf.seriesindex', f'{mi.series_index}')
     if not mi.is_null('identifiers'):
         remove_user_metadata('opf.identifiers')
         add_user_metadata('opf.identifiers', as_unicode(json.dumps(mi.identifiers)))
     if not mi.is_null('rating'):
         remove_user_metadata('opf.rating')
-        add_user_metadata('opf.rating', '%.2g' % mi.rating)
+        add_user_metadata('opf.rating', f'{mi.rating:.2g}')
 
     return tostring(root, encoding='utf-8', pretty_print=True)
 

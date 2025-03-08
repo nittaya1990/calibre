@@ -1,13 +1,12 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 
 
 __license__ = 'GPL v3'
 __copyright__ = '2013, Kovid Goyal <kovid at kovidgoyal.net>'
 
 from collections import OrderedDict
-from calibre.ebooks.docx.block_styles import (  # noqa
-    inherit, simple_color, LINE_STYLES, simple_float, binary_property, read_shd)
+
+from calibre.ebooks.docx.block_styles import LINE_STYLES, binary_property, inherit, read_shd, simple_color, simple_float
 
 # Read from XML {{{
 
@@ -110,7 +109,18 @@ def read_underline(parent, dest, XPath, get):
     for col in XPath('./w:u[@w:val]')(parent):
         val = get(col, 'w:val')
         if val:
-            ans = val if val == 'none' else 'underline'
+            style = {
+                'dotted': 'dotted', 'dash': 'dashed', 'dashDotDotHeavy': 'dotted', 'dashDotHeavy': 'dashed', 'dashedHeavy': 'dashed',
+                'dashLong': 'dashed', 'dashLongHeavy': 'dashed', 'dotDash': 'dotted', 'dotDotDash': 'dotted', 'dottedHeavy': 'dotted',
+                'double': 'double', 'none': 'none', 'single': 'solid', 'thick': 'solid', 'wave': 'wavy', 'wavyDouble': 'wavy',
+                'wavyHeavy': 'wavy', 'words': 'solid'}.get(val, 'solid')
+            if style == 'none':
+                ans = 'none'
+            else:
+                ans = 'underline ' + style
+                color = get(col, 'w:color')
+                if color and color != 'auto':
+                    ans += ' #' + color
     setattr(dest, 'text_decoration', ans)
 
 
@@ -139,7 +149,7 @@ def read_font(parent, dest, XPath, get):
     for col in XPath('./w:rFonts')(parent):
         val = get(col, 'w:asciiTheme')
         if val:
-            val = '|%s|' % val
+            val = f'|{val}|'
         else:
             val = get(col, 'w:ascii')
         if val:
@@ -158,7 +168,7 @@ def read_font_cs(parent, dest, XPath, get):
     for col in XPath('./w:rFonts')(parent):
         val = get(col, 'w:csTheme')
         if val:
-            val = '|%s|' % val
+            val = f'|{val}|'
         else:
             val = get(col, 'w:cs')
         if val:
@@ -238,9 +248,9 @@ class RunStyle:
         for x in ('color', 'style', 'width'):
             val = getattr(self, 'border_'+x)
             if x == 'width' and val is not inherit:
-                val = '%.3gpt' % val
+                val = f'{val:.3g}pt'
             if val is not inherit:
-                ans['border-%s' % x] = val
+                ans[f'border-{x}'] = val
 
     def clear_border_css(self):
         for x in ('color', 'style', 'width'):
@@ -272,7 +282,7 @@ class RunStyle:
 
             self.get_border_css(c)
             if self.padding is not inherit:
-                c['padding'] = '%.3gpt' % self.padding
+                c['padding'] = f'{self.padding:.3g}pt'
 
             for x in ('color', 'background_color'):
                 val = getattr(self, x)
@@ -282,10 +292,10 @@ class RunStyle:
             for x in ('letter_spacing', 'font_size'):
                 val = getattr(self, x)
                 if val is not inherit:
-                    c[x.replace('_', '-')] = '%.3gpt' % val
+                    c[x.replace('_', '-')] = f'{val:.3g}pt'
 
             if self.position is not inherit:
-                c['vertical-align'] = '%.3gpt' % self.position
+                c['vertical-align'] = f'{self.position:.3g}pt'
 
             if self.highlight is not inherit and self.highlight != 'transparent':
                 c['background-color'] = self.highlight

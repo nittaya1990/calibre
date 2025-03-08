@@ -1,16 +1,16 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
 
 
 __license__   = 'GPL v3'
 __copyright__ = '2011, Kovid Goyal <kovid@kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
 
-import textwrap, os, glob
+import glob
+import os
+import textwrap
 
-from calibre.customize import FileTypePlugin
 from calibre.constants import numeric_version
-from polyglot.builtins import unicode_type
+from calibre.customize import FileTypePlugin
 
 
 class HTML2ZIP(FileTypePlugin):
@@ -26,20 +26,35 @@ every time you add an HTML file to the library.\
     supported_platforms = ['windows', 'osx', 'linux']
     on_import = True
 
+    def parse_my_settings(self, sc):
+        if not sc:
+            sc = ''
+        if sc.startswith('{'):
+            import json
+            try:
+                return json.loads(sc)
+            except Exception:
+                return {}
+        else:
+            sc = sc.strip()
+            enc, _, bfs = sc.partition('|')
+            return {'encoding': enc, 'breadth_first': bfs == 'bf'}
+
     def run(self, htmlfile):
         import codecs
+
         from calibre import prints
-        from calibre.ptempfile import TemporaryDirectory
-        from calibre.gui2.convert.gui_conversion import gui_convert
         from calibre.customize.conversion import OptionRecommendation
         from calibre.ebooks.epub import initialize_container
+        from calibre.gui2.convert.gui_conversion import gui_convert
+        from calibre.ptempfile import TemporaryDirectory
 
         with TemporaryDirectory('_plugin_html2zip') as tdir:
             recs =[('debug_pipeline', tdir, OptionRecommendation.HIGH)]
             recs.append(['keep_ligatures', True, OptionRecommendation.HIGH])
             if self.site_customization and self.site_customization.strip():
-                sc = self.site_customization.strip()
-                enc, _, bf = sc.partition('|')
+                settings = self.parse_my_settings(self.site_customization)
+                enc = settings.get('encoding')
                 if enc:
                     try:
                         codecs.lookup(enc)
@@ -47,9 +62,10 @@ every time you add an HTML file to the library.\
                         prints('Ignoring invalid input encoding for HTML:', enc)
                     else:
                         recs.append(['input_encoding', enc, OptionRecommendation.HIGH])
-                if bf == 'bf':
-                    recs.append(['breadth_first', True,
-                        OptionRecommendation.HIGH])
+                if settings.get('breadth_first'):
+                    recs.append(['breadth_first', True, OptionRecommendation.HIGH])
+                if settings.get('allow_local_files_outside_root'):
+                    recs.append(['allow_local_files_outside_root', True, OptionRecommendation.HIGH])
             gui_convert(htmlfile, tdir, recs, abort_after_input_dump=True)
             of = self.temporary_file('_plugin_html2zip.zip')
             tdir = os.path.join(tdir, 'input')
@@ -65,7 +81,7 @@ every time you add an HTML file to the library.\
 
     def customization_help(self, gui=False):
         return _('Character encoding for the input HTML files. Common choices '
-        'include: cp1252, cp1251, latin1 and utf-8.')
+        'include: utf-8, cp1252, cp1251 and latin1.')
 
     def do_user_config(self, parent=None):
         '''
@@ -73,8 +89,9 @@ every time you add an HTML file to the library.\
         True if the user clicks OK, False otherwise. The changes are
         automatically applied.
         '''
-        from qt.core import (QDialog, QDialogButtonBox, QVBoxLayout,
-                QLabel, Qt, QLineEdit, QCheckBox)
+        import json
+
+        from qt.core import QCheckBox, QDialog, QDialogButtonBox, QLabel, QLineEdit, Qt, QVBoxLayout
 
         config_dialog = QDialog(parent)
         button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
@@ -86,11 +103,11 @@ every time you add an HTML file to the library.\
         button_box.accepted.connect(config_dialog.accept)
         button_box.rejected.connect(config_dialog.reject)
         config_dialog.setWindowTitle(_('Customize') + ' ' + self.name)
-        from calibre.customize.ui import (plugin_customization,
-                customize_plugin)
+        from calibre.customize.ui import customize_plugin, plugin_customization
         help_text = self.customization_help(gui=True)
         help_text = QLabel(help_text, config_dialog)
         help_text.setWordWrap(True)
+        help_text.setMinimumWidth(300)
         help_text.setTextInteractionFlags(Qt.TextInteractionFlag.LinksAccessibleByMouse | Qt.TextInteractionFlag.LinksAccessibleByKeyboard)
         help_text.setOpenExternalLinks(True)
         v.addWidget(help_text)
@@ -99,24 +116,33 @@ every time you add an HTML file to the library.\
             ' calibre does it depth first, i.e. if file A links to B and '
             ' C, but B links to D, the files are added in the order A, B, D, C. '
             ' With this option, they will instead be added as A, B, C, D'))
-        sc = plugin_customization(self)
-        if not sc:
-            sc = ''
-        sc = sc.strip()
-        enc = sc.partition('|')[0]
-        bfs = sc.partition('|')[-1]
-        bf.setChecked(bfs == 'bf')
-        sc = QLineEdit(enc, config_dialog)
+        lr = QCheckBox(_('Allow resources outside the HTML file root folder'))
+        from calibre.customize.ui import plugin_for_input_format
+        hi = plugin_for_input_format('html')
+        for opt in hi.options:
+            if opt.option.name == 'allow_local_files_outside_root':
+                lr.setToolTip(opt.help)
+                break
+        settings = self.parse_my_settings(plugin_customization(self))
+        bf.setChecked(bool(settings.get('breadth_first')))
+        lr.setChecked(bool(settings.get('allow_local_files_outside_root')))
+        sc = QLineEdit(str(settings.get('encoding', '')), config_dialog)
         v.addWidget(sc)
         v.addWidget(bf)
+        v.addWidget(lr)
         v.addWidget(button_box)
         size_dialog()
-        config_dialog.exec_()
+        config_dialog.exec()
 
         if config_dialog.result() == QDialog.DialogCode.Accepted:
-            sc = unicode_type(sc.text()).strip()
+            settings = {}
+            enc = str(sc.text()).strip()
+            if enc:
+                settings['encoding'] = enc
             if bf.isChecked():
-                sc += '|bf'
-            customize_plugin(self, sc)
+                settings['breadth_first'] = True
+            if lr.isChecked():
+                settings['allow_local_files_outside_root'] = True
+            customize_plugin(self, json.dumps(settings, ensure_ascii=True))
 
         return config_dialog.result()

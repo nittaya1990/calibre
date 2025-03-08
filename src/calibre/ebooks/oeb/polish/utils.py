@@ -1,19 +1,76 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 
 
 __license__ = 'GPL v3'
 __copyright__ = '2013, Kovid Goyal <kovid at kovidgoyal.net>'
 
-import re, os
+import os
+import re
 from bisect import bisect
 
-from calibre import guess_type as _guess_type, replace_entities
-from polyglot.builtins import filter
+from calibre import guess_type as _guess_type
+from calibre import replace_entities
+from calibre.utils.icu import upper as icu_upper
+
+BLOCK_TAG_NAMES = frozenset((
+    'address', 'article', 'aside', 'blockquote', 'center', 'dir', 'fieldset',
+    'isindex', 'menu', 'noframes', 'hgroup', 'noscript', 'pre', 'section',
+    'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'header', 'p', 'div', 'dd', 'dl', 'ul',
+    'ol', 'li', 'body', 'td', 'th'))
 
 
 def guess_type(x):
     return _guess_type(x)[0] or 'application/octet-stream'
+
+
+# All font mimetypes seen in e-books
+OEB_FONTS = frozenset({
+    'font/otf',
+    'font/woff',
+    'font/woff2',
+    'font/ttf',
+    'application/x-font-ttf',
+    'application/x-font-otf',
+    'application/font-sfnt',
+    'application/vnd.ms-opentype',
+    'application/x-font-truetype',
+})
+
+
+def adjust_mime_for_epub(filename='', mime='', opf_version=(2, 0)):
+    mime = mime or guess_type(filename)
+    if mime == 'text/html':
+        # epubcheck complains if the mimetype for text documents is set to text/html in EPUB 2 books. Sigh.
+        return 'application/xhtml+xml'
+    if mime not in OEB_FONTS:
+        return mime
+    if 'ttf' in mime or 'truetype' in mime:
+        mime = 'font/ttf'
+    elif 'otf' in mime or 'opentype' in mime:
+        mime = 'font/otf'
+    elif mime == 'application/font-sfnt':
+        mime = 'font/otf' if filename.lower().endswith('.otf') else 'font/ttf'
+    elif 'woff2' in mime:
+        mime = 'font/woff2'
+    elif 'woff' in mime:
+        mime = 'font/woff'
+    opf_version = tuple(opf_version[:2])
+    if opf_version == (3, 0):
+        mime = {
+            'font/ttf': 'application/vnd.ms-opentype',  # this is needed by the execrable epubchek
+            'font/otf': 'application/vnd.ms-opentype',
+            'font/woff': 'application/font-woff'}.get(mime, mime)
+    elif opf_version == (3, 1):
+        mime = {
+        'font/ttf': 'application/font-sfnt',
+        'font/otf': 'application/font-sfnt',
+        'font/woff': 'application/font-woff'}.get(mime, mime)
+    elif opf_version < (3, 0):
+        mime = {
+            'font/ttf': 'application/x-font-truetype',
+            'font/otf': 'application/vnd.ms-opentype',
+            'font/woff': 'application/font-woff'}.get(mime, mime)
+    return mime
 
 
 def setup_css_parser_serialization(tab_width=2):
@@ -22,12 +79,13 @@ def setup_css_parser_serialization(tab_width=2):
     prefs.indent = tab_width * ' '
     prefs.indentClosingBrace = False
     prefs.omitLastSemicolon = False
+    prefs.formatUnknownAtRules = False  # True breaks @supports rules
 
 
 def actual_case_for_name(container, name):
     from calibre.utils.filenames import samefile
     if not container.exists(name):
-        raise ValueError('Cannot get actual case for %s as it does not exist' % name)
+        raise ValueError(f'Cannot get actual case for {name} as it does not exist')
     parts = name.split('/')
     base = ''
     ans = []
@@ -59,8 +117,8 @@ def corrected_case_for_name(container, name):
             correctx = x
         else:
             try:
-                candidates = {q for q in os.listdir(os.path.dirname(container.name_to_abspath(base)))}
-            except EnvironmentError:
+                candidates = set(os.listdir(os.path.dirname(container.name_to_abspath(base))))
+            except OSError:
                 return None  # one of the non-terminal components of name is a file instead of a directory
             for q in candidates:
                 if q.lower() == x.lower():
@@ -103,7 +161,7 @@ class CommentFinder:
 
 
 def link_stylesheets(container, names, sheets, remove=False, mtype='text/css'):
-    from calibre.ebooks.oeb.base import XPath, XHTML
+    from calibre.ebooks.oeb.base import XHTML, XPath
     changed_names = set()
     snames = set(sheets)
     lp = XPath('//h:link[@href]')
@@ -155,7 +213,7 @@ def lead_text(top_elem, num_words=10):
         if attr == 'text':
             if elem is not top_elem:
                 stack.append((elem, 'tail'))
-            stack.extend(reversed(list((c, 'text') for c in elem.iterchildren('*'))))
+            stack.extend(reversed([(c, 'text') for c in elem.iterchildren('*')]))
     return ' '.join(words[:num_words])
 
 
@@ -164,6 +222,7 @@ def parse_css(data, fname='<string>', is_declaration=False, decode=None, log_lev
         import logging
         log_level = logging.WARNING
     from css_parser import CSSParser, log
+
     from calibre.ebooks.oeb.base import _css_logger
     log.setLevel(log_level)
     log.raiseExceptions = False
@@ -192,7 +251,9 @@ def apply_func_to_match_groups(match, func=icu_upper, handle_entities=handle_ent
     found_groups = False
     i = 0
     parts, pos = [], match.start()
-    f = lambda text:handle_entities(text, func)
+
+    def f(text):
+        return handle_entities(text, func)
     while True:
         i += 1
         try:
@@ -212,7 +273,8 @@ def apply_func_to_match_groups(match, func=icu_upper, handle_entities=handle_ent
 
 def apply_func_to_html_text(match, func=icu_upper, handle_entities=handle_entities):
     ''' Apply the specified function only to text between HTML tag definitions. '''
-    f = lambda text:handle_entities(text, func)
+    def f(text):
+        return handle_entities(text, func)
     parts = re.split(r'(<[^>]+>)', match.group())
     parts = (x if x.startswith('<') else f(x) for x in parts)
     return ''.join(parts)
@@ -229,3 +291,29 @@ def extract(elem):
                 p[idx-1].tail = (p[idx-1].tail or '') + elem.tail
             else:
                 p.text = (p.text or '') + elem.tail
+
+
+def insert_self_closing(parent, item, index=None):
+    '''Insert item into parent (or append if index is None), fixing
+    indentation. Only works with self closing items.'''
+    if index is None:
+        parent.append(item)
+    else:
+        parent.insert(index, item)
+    idx = parent.index(item)
+    if idx == 0:
+        item.tail = parent.text
+        # If this is the only child of this parent element, we need a
+        # little extra work as we have gone from a self-closing <foo />
+        # element to <foo><item /></foo>
+        if len(parent) == 1:
+            sibling = parent.getprevious()
+            if sibling is None:
+                # Give up!
+                return
+            parent.text = sibling.text
+            item.tail = sibling.tail
+    else:
+        item.tail = parent[idx-1].tail
+        if idx == len(parent)-1:
+            parent[idx-1].tail = parent.text

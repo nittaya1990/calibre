@@ -24,7 +24,7 @@
        <string>Genera&amp;l</string>
       </attribute>
       <layout class="QGridLayout" name="gridLayout_6">
-       <item row="6" column="0">
+       <item row="11" column="0">
         <widget class="QPushButton" name="clear_history_button">
          <property name="sizePolicy">
           <sizepolicy hsizetype="Maximum" vsizetype="Fixed">
@@ -40,7 +40,7 @@
          </property>
         </widget>
        </item>
-       <item row="5" column="0" colspan="2">
+       <item row="10" column="0" colspan="2">
         <widget class="QGroupBox" name="groupBox">
          <property name="title">
           <string>What to search by default</string>
@@ -120,7 +120,7 @@
          </property>
         </widget>
        </item>
-       <item row="7" column="0">
+       <item row="20" column="0">
         <spacer name="verticalSpacer_2">
          <property name="orientation">
           <enum>Qt::Vertical</enum>
@@ -136,7 +136,37 @@
        <item row="4" column="0">
         <widget class="QCheckBox" name="opt_use_primary_find_in_search">
          <property name="text">
-          <string>Unaccented characters match &amp;accented characters</string>
+          <string>Unaccented characters match &amp;accented characters and punctuation is ignored</string>
+         </property>
+        </widget>
+       </item>
+       <item row="5" column="0">
+        <widget class="QCheckBox" name="opt_search_tool_bar_shows_text">
+         <property name="text">
+          <string>Show text next to buttons in the search bar</string>
+         </property>
+        </widget>
+       </item>
+       <item row="6" column="0">
+        <widget class="QCheckBox" name="opt_saved_search_menu_is_hierarchical">
+         <property name="text">
+          <string>Show saved searches as a hierarchy</string>
+         </property>
+         <property name="toolTip">
+          <string>&lt;p&gt;Hierarchical items are separated by periods.
+                  Changing this box will also change the 'Saved Searches' box
+                  in Preferences / Look &amp; feel / Tag browser /
+                  Hierarchy and searching&lt;/p&gt;</string>
+         </property>
+        </widget>
+       </item>
+       <item row="7" column="0">
+        <widget class="QCheckBox" name="opt_allow_keyboard_search_in_library_views">
+         <property name="text">
+          <string>Use keyboard searching in the book list</string>
+         </property>
+         <property name="toolTip">
+          <string>&lt;p&gt;When enabled, pressing a key in the library view will search for the next cell in the current column where the value starts with the letter pressed. If there is no such cell then nothing happens. If the letter is a shortcut then the shortcut takes precedence.&lt;/p&gt;</string>
          </property>
         </widget>
        </item>
@@ -165,7 +195,7 @@
               </property>
              </widget>
             </item>
-            <item  row="0" column="1">
+            <item row="0" column="1">
              <widget class="QComboBox" name="gst_names">
               <property name="sizePolicy">
                <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
@@ -212,7 +242,7 @@ a search term by changing the value box then pressing Save.</string>
               </property>
              </widget>
             </item>
-            <item  row="1" column="1">
+            <item row="1" column="1">
              <widget class="EditWithComplete" name="gst_value">
               <property name="toolTip">
                <string>Enter a comma-separated list of lookup names of the columns

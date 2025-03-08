@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 
 
 __license__ = 'GPL v3'
@@ -32,8 +31,8 @@ MAX_RETRIES = 10
 class NoAutoReload(EnvironmentError):
     pass
 
-# Filesystem watcher {{{
 
+# Filesystem watcher {{{
 
 class WatcherBase:
 
@@ -158,7 +157,7 @@ elif iswindows:
         def loop(self):
             for w in self.watchers:
                 w.start()
-            with HandleInterrupt(lambda : self.modified_queue.put(None)):
+            with HandleInterrupt(lambda: self.modified_queue.put(None)):
                 while True:
                     path = self.modified_queue.get()
                     if path is None:
@@ -285,7 +284,7 @@ class Worker:
             if join_process(self.p) is None:
                 self.p.kill()
                 self.p.wait()
-            self.log('Killed server process %d with return code: %d' % (self.p.pid, self.p.returncode))
+            self.log(f'Killed server process {self.p.pid} with return code: {self.p.returncode}')
             self.p = None
 
     def restart(self, forced=False):
@@ -297,7 +296,7 @@ class Worker:
             self.retry_count = 0
         try:
             compile_srv()
-        except EnvironmentError as e:
+        except OSError as e:
             # Happens if the editor deletes and replaces a file being edited
             if e.errno != errno.ENOENT or not getattr(e, 'filename', False):
                 raise
@@ -327,14 +326,14 @@ class Worker:
                     s = ssl.wrap_socket(s)
                 s.connect(('localhost', self.port))
                 return
-            except socket.error:
+            except OSError:
                 time.sleep(0.01)
             finally:
                 s.close()
         self.log.error('Restarted server did not start listening on:', self.port)
 
-# WebSocket reload notifier {{{
 
+# WebSocket reload notifier {{{
 
 class ReloadHandler(DummyHandler):
 
@@ -413,7 +412,7 @@ def auto_reload(log, dirs=frozenset(), cmd=None, add_default_dirs=True, listen_o
         cmd.insert(1, 'calibre-server')
     dirs = find_dirs_to_watch(fpath, dirs, add_default_dirs)
     log('Auto-restarting server on changes press Ctrl-C to quit')
-    log('Watching %d directory trees for changes' % len(dirs))
+    log(f'Watching {len(dirs)} directory trees for changes')
     with ReloadServer(listen_on) as server, Worker(cmd, log, server) as worker:
         w = Watcher(dirs, worker, log)
         worker.wakeup = w.wakeup

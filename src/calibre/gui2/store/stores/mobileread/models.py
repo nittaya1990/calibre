@@ -1,16 +1,15 @@
 # -*- coding: utf-8 -*-
 from __future__ import absolute_import, division, print_function, unicode_literals
 
-
 __license__ = 'GPL 3'
 __copyright__ = '2011, John Schember <john@nachtimwald.com>'
 __docformat__ = 'restructuredtext en'
 
 from operator import attrgetter
 
-from qt.core import (Qt, QAbstractItemModel, QModelIndex, pyqtSignal)
+from qt.core import QAbstractItemModel, QModelIndex, Qt, pyqtSignal
 
-from calibre.db.search import _match, CONTAINS_MATCH, EQUALS_MATCH, REGEXP_MATCH
+from calibre.db.search import CONTAINS_MATCH, EQUALS_MATCH, REGEXP_MATCH, _match
 from calibre.utils.config_base import prefs
 from calibre.utils.icu import sort_key
 from calibre.utils.search_query_parser import SearchQueryParser
@@ -104,9 +103,7 @@ class BooksModel(QAbstractItemModel):
         if not self.books:
             return
         descending = order == Qt.SortOrder.DescendingOrder
-        self.books.sort(None,
-            lambda x: sort_key(type(u'')(self.data_as_text(x, col))),
-            descending)
+        self.books.sort(key=lambda x: sort_key(type(u'')(self.data_as_text(x, col))), reverse=descending)
         if reset:
             self.beginResetModel(), self.endResetModel()
 
@@ -155,9 +152,9 @@ class SearchFilter(SearchQueryParser):
         all_locs = set(self.USABLE_LOCATIONS) - {'all'}
         locations = all_locs if location == 'all' else [location]
         q = {
-             'author': lambda x: x.author.lower(),
-             'format': attrgetter('formats'),
-             'title': lambda x: x.title.lower(),
+            'author': lambda x: x.author.lower(),
+            'format': attrgetter('formats'),
+            'title': lambda x: x.title.lower(),
         }
         for x in ('author', 'format'):
             q[x+'s'] = q[x]

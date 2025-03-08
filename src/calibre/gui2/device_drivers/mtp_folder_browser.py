@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:fdm=marker:ai
 
 
 __license__   = 'GPL v3'
@@ -8,17 +7,16 @@ __docformat__ = 'restructuredtext en'
 
 from operator import attrgetter
 
-from qt.core import (QTabWidget, QTreeWidget, QTreeWidgetItem, Qt, QDialog,
-        QDialogButtonBox, QVBoxLayout, QSize, pyqtSignal, QIcon, QLabel)
+from qt.core import QDialog, QDialogButtonBox, QIcon, QLabel, QSize, Qt, QTabWidget, QTreeWidget, QTreeWidgetItem, QVBoxLayout, pyqtSignal
 
 from calibre.gui2 import file_icon_provider
-from polyglot.builtins import unicode_type, range
+from calibre.utils.icu import lower as icu_lower
 
 
 def browser_item(f, parent):
     name = f.name
     if not f.is_folder:
-        name += ' [%s]'%f.last_mod_string
+        name += f' [{f.last_mod_string}]'
     ans = QTreeWidgetItem(parent, [name])
     ans.setData(0, Qt.ItemDataRole.UserRole, f.full_path)
     if f.is_folder:
@@ -95,7 +93,7 @@ class Browser(QDialog):
         self.setMinimumSize(QSize(500, 500))
         self.folders.selected.connect(self.accept)
         self.setWindowTitle(_('Choose folder on device'))
-        self.setWindowIcon(QIcon(I('devices/tablet.png')))
+        self.setWindowIcon(QIcon.ic('devices/tablet.png'))
 
     @property
     def current_item(self):
@@ -141,7 +139,7 @@ class IgnoredFolders(QDialog):
         self.snb.clicked.connect(self.select_none)
         l.addWidget(self.bb)
         self.setWindowTitle(_('Choose folders to scan'))
-        self.setWindowIcon(QIcon(I('devices/tablet.png')))
+        self.setWindowIcon(QIcon.ic('devices/tablet.png'))
 
         self.resize(600, 500)
 
@@ -167,8 +165,7 @@ class IgnoredFolders(QDialog):
         for i in range(node.childCount()):
             child = node.child(i)
             yield child
-            for gc in self.iterchildren(child):
-                yield gc
+            yield from self.iterchildren(child)
 
     def create_item(self, f, parent):
         name = f.name
@@ -200,11 +197,11 @@ class IgnoredFolders(QDialog):
             for node in self.iterchildren(w.invisibleRootItem()):
                 if node.checkState(0) == Qt.CheckState.Checked:
                     continue
-                path = unicode_type(node.data(0, Qt.ItemDataRole.UserRole) or '')
+                path = str(node.data(0, Qt.ItemDataRole.UserRole) or '')
                 parent = path.rpartition('/')[0]
                 if '/' not in path or icu_lower(parent) not in folders:
                     folders.add(icu_lower(path))
-            ans[unicode_type(w.storage.storage_id)] = list(folders)
+            ans[str(w.storage.storage_id)] = list(folders)
         return ans
 
 
@@ -228,7 +225,7 @@ def browse():
     app
     dev = setup_device()
     d = Browser(dev.filesystem_cache)
-    d.exec_()
+    d.exec()
     dev.shutdown()
     return d.current_item
 
@@ -239,11 +236,11 @@ def ignored_folders():
     app
     dev = setup_device()
     d = IgnoredFolders(dev)
-    d.exec_()
+    d.exec()
     dev.shutdown()
     return d.ignored_folders
 
 
 if __name__ == '__main__':
     print(browse())
-    # print ('Ignored:', ignored_folders())
+    # print('Ignored:', ignored_folders())

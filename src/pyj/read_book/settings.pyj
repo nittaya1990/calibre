@@ -5,12 +5,12 @@ from __python__ import hash_literals
 from elementmaker import E
 
 from read_book.globals import dark_link_color, runtime
-from session import defaults
+from session import session_defaults
 
 opts = {}
 
 def update_settings(settings):
-    settings = Object.assign({}, defaults, settings)
+    settings = Object.assign({}, session_defaults(), settings)
     opts.base_font_size = max(8, min(settings.base_font_size, 64))
     opts.bg_image_fade = settings.bg_image_fade or 'transparent'
     opts.color_scheme = settings.color_scheme
@@ -26,12 +26,14 @@ def update_settings(settings):
     opts.margin_bottom = max(0, settings.margin_bottom)
     opts.override_book_colors = settings.override_book_colors
     opts.paged_wheel_scrolls_by_screen = v'!!settings.paged_wheel_scrolls_by_screen'
+    opts.paged_wheel_section_jumps = v'!!settings.paged_wheel_section_jumps'
     opts.paged_pixel_scroll_threshold = settings.paged_pixel_scroll_threshold
-    opts.paged_taps_scroll_by_screen = v'!!settings.paged_taps_scroll_by_screen'
     opts.scroll_auto_boundary_delay = settings.scroll_auto_boundary_delay
+    opts.scroll_mouse_boundary_delay = settings.scroll_mouse_boundary_delay
     opts.scroll_stop_boundaries = v'!!settings.scroll_stop_boundaries'
     opts.reverse_page_turn_zones = v'!!settings.reverse_page_turn_zones'
     opts.user_stylesheet = settings.user_stylesheet
+    opts.gesture_overrides = settings.gesture_overrides
 
 update_settings()
 
@@ -61,6 +63,7 @@ def apply_colors(is_content_popup):
     des = document.documentElement.style
     des.setProperty('--calibre-viewer-background-color', opts.color_scheme.background)
     des.setProperty('--calibre-viewer-foreground-color', opts.color_scheme.foreground)
+    des.colorScheme = 'dark' if opts.is_dark_theme else 'light'
     if opts.color_scheme.link:
         des.setProperty('--calibre-viewer-link-color', opts.color_scheme.link)
     for elem in (document.documentElement, document.body):
@@ -74,6 +77,14 @@ def apply_colors(is_content_popup):
         ss = E.style(id=styles_id, type='text/css')
         document.documentElement.appendChild(ss)
     text = ''
+    if runtime.is_standalone_viewer and 'macos' in window.navigator.userAgent:
+        # Change the hyphenate character to a plain ASCII minus (U+002d) the default
+        # is U+2010 but that does not render with the default Times font on macOS as of Monterey
+        # and Qt 15.5 See https://bugs.launchpad.net/bugs/1951467 and can be easily reproduced
+        # by converting a plain text file with the --pdf-hyphenate option
+        # https://bugs.chromium.org/p/chromium/issues/detail?id=1267606 (fix released Feb 1 2022 v98)
+        # See also pdf-preprint.js
+        text += '\n* { -webkit-hyphenate-character: "-" !important }\n'
     if opts.override_book_colors is not 'never':
         text = 'body'
         if opts.override_book_colors is 'dark':

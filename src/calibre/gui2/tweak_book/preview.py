@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 # License: GPLv3 Copyright: 2015, Kovid Goyal <kovid at kovidgoyal.net>
 
 
@@ -7,39 +6,53 @@ import json
 import time
 from collections import defaultdict
 from functools import partial
-from qt.core import (
-    QAction, QApplication, QByteArray, QHBoxLayout, QIcon, QLabel, QMenu, QSize,
-    QSizePolicy, QStackedLayout, Qt, QTimer, QToolBar, QUrl, QVBoxLayout, QWidget,
-    pyqtSignal
-)
-from qt.webengine import (
-    QWebEngineContextMenuData, QWebEnginePage, QWebEngineProfile, QWebEngineScript,
-    QWebEngineSettings, QWebEngineUrlRequestInfo, QWebEngineUrlRequestJob,
-    QWebEngineUrlSchemeHandler, QWebEngineView
-)
 from threading import Thread
 
-from calibre import prints
-from calibre.constants import (
-    FAKE_HOST, FAKE_PROTOCOL, __version__, is_running_from_develop
+from qt.core import (
+    QAction,
+    QApplication,
+    QByteArray,
+    QHBoxLayout,
+    QIcon,
+    QLabel,
+    QMenu,
+    QSize,
+    QSizePolicy,
+    QStackedLayout,
+    Qt,
+    QTimer,
+    QToolBar,
+    QUrl,
+    QVBoxLayout,
+    QWidget,
+    pyqtSignal,
 )
+from qt.webengine import (
+    QWebEngineContextMenuRequest,
+    QWebEnginePage,
+    QWebEngineProfile,
+    QWebEngineScript,
+    QWebEngineSettings,
+    QWebEngineUrlRequestJob,
+    QWebEngineUrlSchemeHandler,
+    QWebEngineView,
+)
+
+from calibre import prints
+from calibre.constants import FAKE_HOST, FAKE_PROTOCOL, __version__, is_running_from_develop, ismacos, iswindows
 from calibre.ebooks.oeb.base import OEB_DOCS, XHTML_MIME, serialize
 from calibre.ebooks.oeb.polish.parsing import parse
-from calibre.gui2 import (
-    NO_URL_FORMATTING, QT_HIDDEN_CLEAR_ACTION, error_dialog, is_dark_theme,
-    safe_open_url
-)
+from calibre.gui2 import NO_URL_FORMATTING, QT_HIDDEN_CLEAR_ACTION, error_dialog, is_dark_theme, safe_open_url
 from calibre.gui2.palette import dark_color, dark_link_color, dark_text_color
 from calibre.gui2.tweak_book import TOP, actions, current_container, editors, tprefs
 from calibre.gui2.tweak_book.file_list import OpenWithHandler
 from calibre.gui2.viewer.web_view import handle_mathjax_request, send_reply
-from calibre.gui2.webengine import (
-    Bridge, RestartingWebEngineView, create_script, from_js, insert_scripts,
-    secure_webengine, to_js
-)
+from calibre.gui2.webengine import RestartingWebEngineView
 from calibre.gui2.widgets2 import HistoryLineEdit2
 from calibre.utils.ipc.simple_worker import offload_worker
-from polyglot.builtins import iteritems, unicode_type
+from calibre.utils.resources import get_path as P
+from calibre.utils.webengine import Bridge, create_script, from_js, insert_scripts, secure_webengine, setup_profile, to_js
+from polyglot.builtins import iteritems
 from polyglot.queue import Empty, Queue
 from polyglot.urllib import urlparse
 
@@ -52,8 +65,8 @@ def get_data(name):
         return editors[name].get_raw_data()
     return current_container().raw_data(name)
 
-# Parsing of html to add linenumbers {{{
 
+# Parsing of html to add linenumbers {{{
 
 def parse_html(raw):
     root = parse(raw, decoder=lambda x:x.decode('utf-8'), line_numbers=True, linenumber_attribute='data-lnum')
@@ -65,7 +78,7 @@ def parse_html(raw):
 
 class ParseItem:
 
-    __slots__ = ('name', 'length', 'fingerprint', 'parsing_done', 'parsed_data')
+    __slots__ = ('fingerprint', 'length', 'name', 'parsed_data', 'parsing_done')
 
     def __init__(self, name):
         self.name = name
@@ -74,8 +87,9 @@ class ParseItem:
         self.parsing_done = False
 
     def __repr__(self):
-        return 'ParsedItem(name=%r, length=%r, fingerprint=%r, parsing_done=%r, parsed_data_is_None=%r)' % (
-            self.name, self.length, self.fingerprint, self.parsing_done, self.parsed_data is None)
+        return (
+            f'ParsedItem(name={self.name!r}, length={self.length!r}, fingerprint={self.fingerprint!r}, '
+            f'parsing_done={self.parsing_done!r}, parsed_data_is_None={self.parsed_data is None!r})')
 
 
 class ParseWorker(Thread):
@@ -126,7 +140,7 @@ class ParseWorker(Thread):
                 pi.parsing_done = True
                 parsed_data = res['result']
                 if res['tb']:
-                    prints("Parser error:")
+                    prints('Parser error:')
                     prints(res['tb'])
                 else:
                     pi.parsed_data = parsed_data
@@ -162,8 +176,8 @@ class ParseWorker(Thread):
 parse_worker = ParseWorker()
 # }}}
 
-# Override network access to load data "live" from the editors {{{
 
+# Override network access to load data "live" from the editors {{{
 
 class UrlSchemeHandler(QWebEngineUrlSchemeHandler):
 
@@ -195,7 +209,7 @@ class UrlSchemeHandler(QWebEngineUrlSchemeHandler):
                 QTimer.singleShot(0, self.check_for_parse)
             else:
                 data = get_data(name)
-                if isinstance(data, unicode_type):
+                if isinstance(data, str):
                     data = data.encode('utf-8')
                 mime_type = {
                     # Prevent warning in console about mimetype of fonts
@@ -225,7 +239,6 @@ class UrlSchemeHandler(QWebEngineUrlSchemeHandler):
         if self.requests:
             return QTimer.singleShot(10, self.check_for_parse)
 
-
 # }}}
 
 
@@ -253,15 +266,14 @@ def get_editor_settings(tprefs):
         'bg': get_color('preview_background', dark_color),
         'fg': get_color('preview_foreground', dark_text_color),
         'link': get_color('preview_link_color', dark_link_color),
+        'os': 'windows' if iswindows else ('macos' if ismacos else 'linux'),
     }
 
 
 def create_dark_mode_script():
-    dark_mode_css = P('dark_mode.css', data=True, allow_user_override=False).decode('utf-8')
     return create_script('dark-mode.js', '''
     (function() {
         var settings = JSON.parse(navigator.userAgent.split('|')[1]);
-        var dark_css = CSS;
 
         function apply_body_colors(event) {
             if (document.documentElement) {
@@ -277,7 +289,9 @@ def create_dark_mode_script():
         function apply_css() {
             var css = '';
             if (settings.link) css += 'html > body :link, html > body :link * { color: ' + settings.link + ' !important; }';
-            if (settings.is_dark_theme) { css += dark_css; }
+            var using_custom_colors = false;
+            if (settings.bg || settings.fg || settings.link) using_custom_colors = true;
+            if (settings.is_dark_theme && using_custom_colors) { css = ':root { color-scheme: dark; }' + css; }
             var style = document.createElement('style');
             style.textContent = css;
             document.documentElement.appendChild(style);
@@ -287,7 +301,7 @@ def create_dark_mode_script():
         apply_body_colors();
         document.addEventListener("DOMContentLoaded", apply_css);
     })();
-    '''.replace('CSS', json.dumps(dark_mode_css), 1),
+    ''',
     injection_point=QWebEngineScript.InjectionPoint.DocumentCreation)
 
 
@@ -295,6 +309,7 @@ def create_profile():
     ans = getattr(create_profile, 'ans', None)
     if ans is None:
         ans = QWebEngineProfile(QApplication.instance())
+        setup_profile(ans)
         ua = 'calibre-editor-preview ' + __version__
         ans.setHttpUserAgent(ua)
         if is_running_from_develop:
@@ -338,15 +353,16 @@ class WebPage(QWebEnginePage):
         self.bridge = PreviewBridge(self)
 
     def javaScriptConsoleMessage(self, level, msg, linenumber, source_id):
-        prints('%s:%s: %s' % (source_id, linenumber, msg))
+        prints(f'{source_id}:{linenumber}: {msg}')
 
     def acceptNavigationRequest(self, url, req_type, is_main_frame):
-        if req_type == QWebEngineUrlRequestInfo.NavigationType.NavigationTypeReload:
+        if req_type in (QWebEnginePage.NavigationType.NavigationTypeReload, QWebEnginePage.NavigationType.NavigationTypeBackForward):
             return True
         if url.scheme() in (FAKE_PROTOCOL, 'data'):
             return True
-        if req_type == QWebEnginePage.NavigationType.NavigationTypeLinkClicked:
+        if url.scheme() in ('http', 'https', 'calibre') and req_type == QWebEnginePage.NavigationType.NavigationTypeLinkClicked:
             safe_open_url(url)
+        prints('Blocking navigation request to:', url.toString())
         return False
 
     def go_to_anchor(self, anchor):
@@ -391,6 +407,7 @@ class Inspector(QWidget):
     def visibility_changed(self, visible):
         if visible and self.view is None:
             self.view = QWebEngineView(self.view_to_debug)
+            setup_profile(self.view.page().profile())
             self.view_to_debug.page().setDevToolsPage(self.view.page())
             self.layout.addWidget(self.view)
 
@@ -403,7 +420,7 @@ class WebView(RestartingWebEngineView, OpenWithHandler):
     def __init__(self, parent=None):
         RestartingWebEngineView.__init__(self, parent)
         self.inspector = Inspector(self)
-        w = QApplication.instance().desktop().availableGeometry(self).width()
+        w = self.screen().availableSize().width()
         self._size_hint = QSize(int(w/3), int(w/2))
         self._page = WebPage(self)
         self.setPage(self._page)
@@ -454,24 +471,24 @@ class WebView(RestartingWebEngineView, OpenWithHandler):
 
     def inspect(self):
         self.inspector.parent().show()
-        self.inspector.parent().raise_()
+        self.inspector.parent().raise_and_focus()
         self.pageAction(QWebEnginePage.WebAction.InspectElement).trigger()
 
     def contextMenuEvent(self, ev):
         menu = QMenu(self)
-        data = self._page.contextMenuData()
+        data = self.lastContextMenuRequest()
         url = data.linkUrl()
-        url = unicode_type(url.toString(NO_URL_FORMATTING)).strip()
+        url = str(url.toString(NO_URL_FORMATTING)).strip()
         text = data.selectedText()
         if text:
             ca = self.pageAction(QWebEnginePage.WebAction.Copy)
             if ca.isEnabled():
                 menu.addAction(ca)
         menu.addAction(actions['reload-preview'])
-        menu.addAction(QIcon(I('debug.png')), _('Inspect element'), self.inspect)
+        menu.addAction(QIcon.ic('debug.png'), _('Inspect element'), self.inspect)
         if url.partition(':')[0].lower() in {'http', 'https'}:
             menu.addAction(_('Open link'), partial(safe_open_url, data.linkUrl()))
-        if QWebEngineContextMenuData.MediaType.MediaTypeImage <= data.mediaType() <= QWebEngineContextMenuData.MediaType.MediaTypeFile:
+        if QWebEngineContextMenuRequest.MediaType.MediaTypeImage.value <= data.mediaType().value <= QWebEngineContextMenuRequest.MediaType.MediaTypeFile.value:
             url = data.mediaUrl()
             if url.scheme() == FAKE_PROTOCOL:
                 href = url.path().lstrip('/')
@@ -480,11 +497,11 @@ class WebView(RestartingWebEngineView, OpenWithHandler):
                     resource_name = c.href_to_name(href)
                     if resource_name and c.exists(resource_name) and resource_name not in c.names_that_must_not_be_changed:
                         self.add_open_with_actions(menu, resource_name)
-                        if data.mediaType() == QWebEngineContextMenuData.MediaType.MediaTypeImage:
+                        if data.mediaType() == QWebEngineContextMenuRequest.MediaType.MediaTypeImage:
                             mime = c.mime_map[resource_name]
                             if mime.startswith('image/'):
                                 menu.addAction(_('Edit %s') % resource_name, partial(self.edit_image, resource_name))
-        menu.exec_(ev.globalPos())
+        menu.exec(ev.globalPos())
 
     def open_with(self, file_name, fmt, entry):
         self.parent().open_file_with.emit(file_name, fmt, entry)
@@ -582,7 +599,7 @@ class Preview(QWidget):
         self.bar.addSeparator()
         self.bar.addWidget(self.search)
         for d in ('next', 'prev'):
-            ac = actions['find-%s-preview' % d]
+            ac = actions[f'find-{d}-preview']
             ac.triggered.connect(getattr(self, 'find_' + d))
             self.bar.addAction(ac)
 
@@ -590,9 +607,9 @@ class Preview(QWidget):
         self.view._page.findText('')
 
     def find(self, direction):
-        text = unicode_type(self.search.text())
+        text = str(self.search.text())
         self.view._page.findText(text, (
-            QWebEnginePage.FindFlag.FindBackward if direction == 'prev' else QWebEnginePage.FindFlags(0)))
+            QWebEnginePage.FindFlag.FindBackward if direction == 'prev' else QWebEnginePage.FindFlag(0)))
 
     def find_next(self):
         self.find('next')
@@ -763,10 +780,10 @@ class Preview(QWidget):
 
     def apply_settings(self):
         s = self.view.settings()
-        s.setFontSize(QWebEngineSettings.FontSize.DefaultFontSize, tprefs['preview_base_font_size'])
-        s.setFontSize(QWebEngineSettings.FontSize.DefaultFixedFontSize, tprefs['preview_mono_font_size'])
-        s.setFontSize(QWebEngineSettings.FontSize.MinimumLogicalFontSize, tprefs['preview_minimum_font_size'])
-        s.setFontSize(QWebEngineSettings.FontSize.MinimumFontSize, tprefs['preview_minimum_font_size'])
+        s.setFontSize(QWebEngineSettings.FontSize.DefaultFontSize, int(tprefs['preview_base_font_size']))
+        s.setFontSize(QWebEngineSettings.FontSize.DefaultFixedFontSize, int(tprefs['preview_mono_font_size']))
+        s.setFontSize(QWebEngineSettings.FontSize.MinimumLogicalFontSize, int(tprefs['preview_minimum_font_size']))
+        s.setFontSize(QWebEngineSettings.FontSize.MinimumFontSize, int(tprefs['preview_minimum_font_size']))
         sf, ssf, mf = tprefs['engine_preview_serif_family'], tprefs['engine_preview_sans_family'], tprefs['engine_preview_mono_family']
         if sf:
             s.setFontFamily(QWebEngineSettings.FontFamily.SerifFont, sf)

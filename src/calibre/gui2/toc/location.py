@@ -1,21 +1,155 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:fdm=marker:ai
 # License: GPLv3 Copyright: 2013, Kovid Goyal <kovid at kovidgoyal.net>
 
 
 import json
-from qt.core import (
-    QFrame, QGridLayout, QIcon, QLabel, QLineEdit, QListWidget, QPushButton, QSize,
-    QSplitter, Qt, QUrl, QVBoxLayout, QWidget, pyqtSignal
-)
-from qt.webengine import QWebEnginePage, QWebEngineScript, QWebEngineView
+import os
+import sys
+import weakref
+from functools import lru_cache
 
+from qt.core import (
+    QApplication,
+    QByteArray,
+    QFrame,
+    QGridLayout,
+    QIcon,
+    QLabel,
+    QLineEdit,
+    QListWidget,
+    QPushButton,
+    QSize,
+    QSplitter,
+    Qt,
+    QUrl,
+    QVBoxLayout,
+    QWidget,
+    pyqtSignal,
+)
+from qt.webengine import (
+    QWebEnginePage,
+    QWebEngineProfile,
+    QWebEngineScript,
+    QWebEngineUrlRequestInterceptor,
+    QWebEngineUrlRequestJob,
+    QWebEngineUrlSchemeHandler,
+    QWebEngineView,
+)
+
+from calibre.constants import FAKE_HOST, FAKE_PROTOCOL
+from calibre.ebooks.oeb.polish.utils import guess_type
 from calibre.gui2 import error_dialog, gprefs, is_dark_theme, question_dialog
 from calibre.gui2.palette import dark_color, dark_link_color, dark_text_color
-from calibre.gui2.webengine import secure_webengine
 from calibre.utils.logging import default_log
+from calibre.utils.resources import get_path as P
 from calibre.utils.short_uuid import uuid4
-from polyglot.builtins import range, unicode_type
+from calibre.utils.webengine import secure_webengine, send_reply, setup_profile
+from polyglot.builtins import as_bytes
+
+
+class RequestInterceptor(QWebEngineUrlRequestInterceptor):
+
+    def interceptRequest(self, request_info):
+        method = bytes(request_info.requestMethod())
+        if method not in (b'GET', b'HEAD'):
+            default_log.warn(f'Blocking URL request with method: {method}')
+            request_info.block(True)
+            return
+        qurl = request_info.requestUrl()
+        if qurl.scheme() not in (FAKE_PROTOCOL,):
+            default_log.warn(f'Blocking URL request {qurl.toString()} as it is not for a resource in the book')
+            request_info.block(True)
+            return
+
+
+def current_container():
+    return getattr(current_container, 'ans', lambda: None)()
+
+
+@lru_cache(maxsize=2)
+def mathjax_dir():
+    return P('mathjax', allow_user_override=False)
+
+
+class UrlSchemeHandler(QWebEngineUrlSchemeHandler):
+
+    def __init__(self, parent=None):
+        QWebEngineUrlSchemeHandler.__init__(self, parent)
+        self.allowed_hosts = (FAKE_HOST,)
+
+    def requestStarted(self, rq):
+        if bytes(rq.requestMethod()) != b'GET':
+            return self.fail_request(rq, QWebEngineUrlRequestJob.Error.RequestDenied)
+        c = current_container()
+        if c is None:
+            return self.fail_request(rq, QWebEngineUrlRequestJob.Error.RequestDenied)
+        url = rq.requestUrl()
+        host = url.host()
+        if host not in self.allowed_hosts or url.scheme() != FAKE_PROTOCOL:
+            return self.fail_request(rq)
+        path = url.path()
+        if path.startswith('/book/'):
+            name = path[len('/book/'):]
+            try:
+                mime_type = c.mime_map.get(name) or guess_type(name)
+                try:
+                    with c.open(name) as f:
+                        q = os.path.abspath(f.name)
+                        if not q.startswith(c.root):
+                            raise FileNotFoundError('Attempt to leave sandbox')
+                        data = f.read()
+                except FileNotFoundError:
+                    print(f'Could not find file {name} in book', file=sys.stderr)
+                    rq.fail(QWebEngineUrlRequestJob.Error.UrlNotFound)
+                    return
+                data = as_bytes(data)
+                mime_type = {
+                    # Prevent warning in console about mimetype of fonts
+                    'application/vnd.ms-opentype':'application/x-font-ttf',
+                    'application/x-font-truetype':'application/x-font-ttf',
+                    'application/font-sfnt': 'application/x-font-ttf',
+                }.get(mime_type, mime_type)
+                send_reply(rq, mime_type, data)
+            except Exception:
+                import traceback
+                traceback.print_exc()
+                return self.fail_request(rq, QWebEngineUrlRequestJob.Error.RequestFailed)
+        elif path.startswith('/mathjax/'):
+            try:
+                ignore, ignore, base, rest = path.split('/', 3)
+            except ValueError:
+                print(f'Could not find file {path} in mathjax', file=sys.stderr)
+                rq.fail(QWebEngineUrlRequestJob.Error.UrlNotFound)
+                return
+            try:
+                mime_type = guess_type(rest)
+                if base == 'loader' and '/' not in rest and '\\' not in rest:
+                    data = P(rest, allow_user_override=False, data=True)
+                elif base == 'data':
+                    q = os.path.abspath(os.path.join(mathjax_dir(), rest))
+                    if not q.startswith(mathjax_dir()):
+                        raise FileNotFoundError('')
+                    with open(q, 'rb') as f:
+                        data = f.read()
+                else:
+                    raise FileNotFoundError('')
+                send_reply(rq, mime_type, data)
+            except FileNotFoundError:
+                print(f'Could not find file {path} in mathjax', file=sys.stderr)
+                rq.fail(QWebEngineUrlRequestJob.Error.UrlNotFound)
+                return
+            except Exception:
+                import traceback
+                traceback.print_exc()
+                return self.fail_request(rq, QWebEngineUrlRequestJob.Error.RequestFailed)
+        else:
+            return self.fail_request(rq)
+
+    def fail_request(self, rq, fail_code=None):
+        if fail_code is None:
+            fail_code = QWebEngineUrlRequestJob.Error.UrlNotFound
+        rq.fail(fail_code)
+        print(f'Blocking FAKE_PROTOCOL request: {rq.requestUrl().toString()} with code: {fail_code}', file=sys.stderr)
 
 
 class Page(QWebEnginePage):  # {{{
@@ -23,12 +157,22 @@ class Page(QWebEnginePage):  # {{{
     elem_clicked = pyqtSignal(object, object, object, object, object)
     frag_shown = pyqtSignal(object)
 
-    def __init__(self, prefs):
+    def __init__(self, parent, prefs):
         self.log = default_log
         self.current_frag = None
-        self.com_id = unicode_type(uuid4())
-        QWebEnginePage.__init__(self)
-        secure_webengine(self.settings(), for_viewer=True)
+        self.com_id = str(uuid4())
+        profile = QWebEngineProfile(QApplication.instance())
+        setup_profile(profile)
+        # store these globally as they need to be destructed after the QWebEnginePage
+        current_container.url_handler = UrlSchemeHandler(parent=profile)
+        current_container.interceptor = RequestInterceptor(profile)
+        current_container.profile_memory = profile
+        profile.installUrlSchemeHandler(QByteArray(FAKE_PROTOCOL.encode('ascii')), current_container.url_handler)
+        s = profile.settings()
+        s.setDefaultTextEncoding('utf-8')
+        profile.setUrlRequestInterceptor(current_container.interceptor)
+        QWebEnginePage.__init__(self, profile, parent)
+        secure_webengine(self, for_viewer=True)
         self.titleChanged.connect(self.title_changed)
         self.loadFinished.connect(self.show_frag)
         s = QWebEngineScript()
@@ -51,16 +195,14 @@ class Page(QWebEnginePage):  # {{{
             else:
                 settings = {}
         js = js.replace('SETTINGS', json.dumps(settings), 1)
-        dark_mode_css = P('dark_mode.css', data=True, allow_user_override=False).decode('utf-8')
-        js = js.replace('CSS', json.dumps(dark_mode_css), 1)
         s.setSourceCode(js)
         self.scripts().insert(s)
 
     def javaScriptConsoleMessage(self, level, msg, lineno, msgid):
-        self.log('JS:', unicode_type(msg))
+        self.log('JS:', str(msg))
 
     def javaScriptAlert(self, origin, msg):
-        self.log(unicode_type(msg))
+        self.log(str(msg))
 
     def title_changed(self, title):
         parts = title.split('-', 1)
@@ -79,10 +221,10 @@ class Page(QWebEnginePage):  # {{{
 
     def show_frag(self, ok):
         if ok and self.current_frag:
-            self.runJavaScript('''
+            self.runJavaScript(f'''
                 document.location = '#non-existent-anchor';
-                document.location = '#' + {0};
-            '''.format(json.dumps(self.current_frag)))
+                document.location = '#' + {json.dumps(self.current_frag)};
+            ''')
             self.current_frag = None
             self.runJavaScript('window.pageYOffset/document.body.scrollHeight', QWebEngineScript.ScriptWorldId.ApplicationWorld, self.frag_shown.emit)
 
@@ -96,14 +238,16 @@ class WebView(QWebEngineView):  # {{{
 
     def __init__(self, parent, prefs):
         QWebEngineView.__init__(self, parent)
-        self._page = Page(prefs)
+        self._page = Page(self, prefs)
         self._page.elem_clicked.connect(self.elem_clicked)
         self._page.frag_shown.connect(self.frag_shown)
         self.setPage(self._page)
 
-    def load_path(self, path, frag=None):
+    def load_name(self, name, frag=None):
         self._page.current_frag = frag
-        self.setUrl(QUrl.fromLocalFile(path))
+        url = QUrl(f'{FAKE_PROTOCOL}://{FAKE_HOST}/')
+        url.setPath(f'/book/{name}')
+        self.setUrl(url)
 
     def sizeHint(self):
         return QSize(300, 300)
@@ -150,10 +294,10 @@ class ItemEdit(QWidget):
         s.setPlaceholderText(_('Search for text...'))
         s.returnPressed.connect(self.find_next)
         l.addWidget(s, 1, 0)
-        self.ns_button = b = QPushButton(QIcon(I('arrow-down.png')), _('Find &next'), self)
+        self.ns_button = b = QPushButton(QIcon.ic('arrow-down.png'), _('Find &next'), self)
         b.clicked.connect(self.find_next)
         l.addWidget(b, 1, 1)
-        self.ps_button = b = QPushButton(QIcon(I('arrow-up.png')), _('Find &previous'), self)
+        self.ps_button = b = QPushButton(QIcon.ic('arrow-up.png'), _('Find &previous'), self)
         l.addWidget(b, 1, 2)
         b.clicked.connect(self.find_previous)
 
@@ -165,7 +309,7 @@ class ItemEdit(QWidget):
         sp.addWidget(f)
 
         f.la = la = QLabel('<p>'+_(
-            'Here you can choose a destination for the Table of Contents\' entry'
+            "Here you can choose a destination for the Table of Contents' entry"
             ' to point to. First choose a file from the book in the left-most panel. The'
             ' file will open in the central panel.<p>'
 
@@ -207,11 +351,11 @@ class ItemEdit(QWidget):
             # Prevent pressing enter in the search box from triggering the dialog's accept() method
             ev.accept()
             return
-        return super(ItemEdit, self).keyPressEvent(ev)
+        return super().keyPressEvent(ev)
 
     def find(self, forwards=True):
-        text = unicode_type(self.search_text.text()).strip()
-        flags = QWebEnginePage.FindFlags(0) if forwards else QWebEnginePage.FindFlag.FindBackward
+        text = str(self.search_text.text()).strip()
+        flags = QWebEnginePage.FindFlag(0) if forwards else QWebEnginePage.FindFlag.FindBackward
         self.find_data = text, flags, forwards
         self.view.findText(text, flags, self.find_callback)
 
@@ -224,9 +368,9 @@ class ItemEdit(QWidget):
                     _('No match found for: %s')%text, show=True)
 
             delta = 1 if forwards else -1
-            current = unicode_type(d.currentItem().data(Qt.ItemDataRole.DisplayRole) or '')
+            current = str(d.currentItem().data(Qt.ItemDataRole.DisplayRole) or '')
             next_index = (d.currentRow() + delta)%d.count()
-            next = unicode_type(d.item(next_index).data(Qt.ItemDataRole.DisplayRole) or '')
+            next = str(d.item(next_index).data(Qt.ItemDataRole.DisplayRole) or '')
             msg = '<p>'+_('No matches for %(text)s found in the current file [%(current)s].'
                           ' Do you want to search in the %(which)s file [%(next)s]?')
             msg = msg%dict(text=text, current=current, next=next,
@@ -243,16 +387,18 @@ class ItemEdit(QWidget):
 
     def load(self, container):
         self.container = container
+        current_container.ans = weakref.ref(container)
         spine_names = [container.abspath_to_name(p) for p in
                        container.spine_items]
         spine_names = [n for n in spine_names if container.has_name(n)]
         self.dest_list.addItems(spine_names)
 
     def current_changed(self, item):
-        name = self.current_name = unicode_type(item.data(Qt.ItemDataRole.DisplayRole) or '')
-        path = self.container.name_to_abspath(name)
+        name = self.current_name = str(item.data(Qt.ItemDataRole.DisplayRole) or '')
         # Ensure encoding map is populated
         root = self.container.parsed(name)
+        if not hasattr(root, 'xpath'):
+            return error_dialog(self, _('Not an HTML file'), _('The file {} is not marked as an HTML file in the OPF and cannot be displayed').format(name))
         nasty = root.xpath('//*[local-name()="head"]/*[local-name()="p"]')
         if nasty:
             body = root.xpath('//*[local-name()="body"]')
@@ -262,7 +408,7 @@ class ItemEdit(QWidget):
             for x in reversed(nasty):
                 body[0].insert(0, x)
             self.container.commit_item(name, keep_parsed=True)
-        self.view.load_path(path, self.current_frag)
+        self.view.load_name(name, self.current_frag)
         self.current_frag = None
         self.dest_label.setText(self.base_msg + '<br>' + _('File:') + ' ' +
                                 name + '<br>' + _('Top of the file'))
@@ -281,7 +427,7 @@ class ItemEdit(QWidget):
             if toc.dest:
                 for i in range(self.dest_list.count()):
                     litem = self.dest_list.item(i)
-                    if unicode_type(litem.data(Qt.ItemDataRole.DisplayRole) or '') == toc.dest:
+                    if str(litem.data(Qt.ItemDataRole.DisplayRole) or '') == toc.dest:
                         dest_index = i
                         frag = toc.frag
                         break
@@ -299,13 +445,13 @@ class ItemEdit(QWidget):
         if frac == 0:
             loctext = _('Top of the file')
         else:
-            loctext =  _('Approximately %d%% from the top')%frac
+            loctext = _('Approximately %d%% from the top')%frac
         return loctext
 
     def elem_clicked(self, tag, frac, elem_id, loc, totals):
         self.current_frag = elem_id or (loc, totals)
         base = _('Location: A &lt;%s&gt; tag inside the file')%tag
-        loctext = base + ' [%s]'%self.get_loctext(frac)
+        loctext = base + f' [{self.get_loctext(frac)}]'
         self.dest_label.setText(self.base_msg + '<br>' +
                     _('File:') + ' ' + self.current_name + '<br>' + loctext)
 

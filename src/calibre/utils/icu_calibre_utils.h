@@ -11,6 +11,7 @@
 #define PY_SSIZE_T_CLEAN
 #include <Python.h>
 #include <unicode/uversion.h>
+#include <unicode/uvernum.h>
 #include <unicode/utypes.h>
 #include <unicode/uclean.h>
 #include <unicode/utf16.h>
@@ -34,7 +35,7 @@ static UChar* python_to_icu(PyObject *obj, int32_t *osz) {
     int i;
 
     if (!PyUnicode_CheckExact(obj)) {
-        PyErr_SetString(PyExc_TypeError, "Not a unicode string");
+        PyErr_Format(PyExc_TypeError, "%R is not a unicode string", obj);
         return NULL;
     }
     if(PyUnicode_READY(obj) == -1) {
@@ -104,7 +105,7 @@ static UChar32* python_to_icu32(PyObject *obj, int32_t *osz) {
     int i;
 
     if (!PyUnicode_CheckExact(obj)) {
-        PyErr_SetString(PyExc_TypeError, "Not a unicode string");
+        PyErr_Format(PyExc_TypeError, "%R is not a unicode string", obj);
         return NULL;
     }
     if(PyUnicode_READY(obj) == -1) {
@@ -132,7 +133,7 @@ static UChar32* python_to_icu32(PyObject *obj, int32_t *osz) {
 #endif
 
 #ifndef NO_ICU_TO_PYTHON
-static PyObject* icu_to_python(UChar *src, int32_t sz) {
-    return PyUnicode_DecodeUTF16((char*) src, sz * sizeof(UChar), "replace", NULL);
+static PyObject* icu_to_python(const UChar *src, int32_t sz) {
+    return PyUnicode_DecodeUTF16((const char*) src, sz * sizeof(UChar), "replace", NULL);
 }
 #endif

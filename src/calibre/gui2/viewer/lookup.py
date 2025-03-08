@@ -1,31 +1,79 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 # License: GPL v3 Copyright: 2019, Kovid Goyal <kovid at kovidgoyal.net>
 
 
-import os
 import sys
 import textwrap
+from functools import lru_cache
+
 from qt.core import (
-    QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFormLayout, QAbstractItemView,
-    QHBoxLayout, QIcon, QLabel, QLineEdit, QListWidget, QListWidgetItem, QPushButton,
-    QSize, Qt, QTimer, QUrl, QVBoxLayout, QWidget, pyqtSignal
+    QAbstractItemView,
+    QApplication,
+    QCheckBox,
+    QComboBox,
+    QDateTime,
+    QDialog,
+    QDialogButtonBox,
+    QFormLayout,
+    QHBoxLayout,
+    QIcon,
+    QLabel,
+    QLineEdit,
+    QListWidget,
+    QListWidgetItem,
+    QNetworkCookie,
+    QPalette,
+    QPushButton,
+    QSize,
+    Qt,
+    QTimer,
+    QUrl,
+    QVBoxLayout,
+    QWidget,
+    pyqtSignal,
 )
-from qt.webengine import (
-    QWebEnginePage, QWebEngineProfile, QWebEngineScript, QWebEngineView
-)
+from qt.webengine import QWebEnginePage, QWebEngineProfile, QWebEngineScript, QWebEngineView
 
 from calibre import prints, random_user_agent
-from calibre.constants import cache_dir
+from calibre.ebooks.metadata.sources.search_engines import google_consent_cookies
 from calibre.gui2 import error_dialog
 from calibre.gui2.viewer.web_view import apply_font_settings, vprefs
-from calibre.gui2.webengine import create_script, insert_scripts, secure_webengine
 from calibre.gui2.widgets2 import Dialog
+from calibre.utils.localization import _, canonicalize_lang, get_lang, lang_as_iso639_1
+from calibre.utils.resources import get_path as P
+from calibre.utils.webengine import create_script, insert_scripts, secure_webengine, setup_profile
+
+
+@lru_cache
+def lookup_lang():
+    ans = canonicalize_lang(get_lang())
+    if ans:
+        ans = lang_as_iso639_1(ans) or ans
+    return ans
+
+
+special_processors = {}
+
+
+def special_processor(func):
+    special_processors[func.__name__] = func
+    return func
+
+
+@special_processor
+def google_dictionary(word):
+    ans = f'https://www.google.com/search?q=define:{word}'
+    lang = lookup_lang()
+    if lang:
+        ans += f'#dobc={lang}'
+    return ans
+
 
 vprefs.defaults['lookup_locations'] = [
     {
         'name': 'Google dictionary',
         'url': 'https://www.google.com/search?q=define:{word}',
+        'special_processor': 'google_dictionary',
         'langs': [],
     },
 
@@ -134,10 +182,10 @@ class SourcesEditor(Dialog):
         self.build_entries(vprefs['lookup_locations'])
 
         self.add_button = b = self.bb.addButton(_('Add'), QDialogButtonBox.ButtonRole.ActionRole)
-        b.setIcon(QIcon(I('plus.png')))
+        b.setIcon(QIcon.ic('plus.png'))
         b.clicked.connect(self.add_source)
         self.remove_button = b = self.bb.addButton(_('Remove'), QDialogButtonBox.ButtonRole.ActionRole)
-        b.setIcon(QIcon(I('minus.png')))
+        b.setIcon(QIcon.ic('minus.png'))
         b.clicked.connect(self.remove_source)
         self.restore_defaults_button = b = self.bb.addButton(_('Restore defaults'), QDialogButtonBox.ButtonRole.ActionRole)
         b.clicked.connect(self.restore_defaults)
@@ -157,7 +205,7 @@ class SourcesEditor(Dialog):
 
     def add_source(self):
         d = SourceEditor(self)
-        if d.exec_() == QDialog.DialogCode.Accepted:
+        if d.exec() == QDialog.DialogCode.Accepted:
             self.add_entry(d.entry, prepend=True)
 
     def remove_source(self):
@@ -167,7 +215,7 @@ class SourcesEditor(Dialog):
 
     def edit_source(self, source_item):
         d = SourceEditor(self, source_item.data(Qt.ItemDataRole.UserRole))
-        if d.exec_() == QDialog.DialogCode.Accepted:
+        if d.exec() == QDialog.DialogCode.Accepted:
             source_item.setData(Qt.ItemDataRole.UserRole, d.entry)
             source_item.setData(Qt.ItemDataRole.DisplayRole, d.name)
 
@@ -192,11 +240,22 @@ def create_profile():
     if ans is None:
         ans = QWebEngineProfile('viewer-lookup', QApplication.instance())
         ans.setHttpUserAgent(random_user_agent(allow_ie=False))
-        ans.setCachePath(os.path.join(cache_dir(), 'ev2vl'))
+        setup_profile(ans)
         js = P('lookup.js', data=True, allow_user_override=False)
         insert_scripts(ans, create_script('lookup.js', js, injection_point=QWebEngineScript.InjectionPoint.DocumentCreation))
         s = ans.settings()
         s.setDefaultTextEncoding('utf-8')
+        cs = ans.cookieStore()
+        for c in google_consent_cookies():
+            cookie = QNetworkCookie()
+            cookie.setName(c['name'].encode())
+            cookie.setValue(c['value'].encode())
+            cookie.setDomain(c['domain'])
+            cookie.setPath(c['path'])
+            cookie.setSecure(False)
+            cookie.setHttpOnly(False)
+            cookie.setExpirationDate(QDateTime())
+            cs.setCookie(cookie)
         create_profile.ans = ans
     return ans
 
@@ -209,17 +268,28 @@ class Page(QWebEnginePage):
             QWebEnginePage.JavaScriptConsoleMessageLevel.WarningMessageLevel: 'WARNING'
         }.get(level, 'ERROR')
         if source_id == 'userscript:lookup.js':
-            prints('%s: %s:%s: %s' % (prefix, source_id, linenumber, msg), file=sys.stderr)
+            prints(f'{prefix}: {source_id}:{linenumber}: {msg}', file=sys.stderr)
             sys.stderr.flush()
 
     def zoom_in(self):
-        self.setZoomFactor(min(self.zoomFactor() + 0.2, 5))
+        factor = min(self.zoomFactor() + 0.2, 5)
+        vprefs['lookup_zoom_factor'] = factor
+        self.setZoomFactor(factor)
 
     def zoom_out(self):
-        self.setZoomFactor(max(0.25, self.zoomFactor() - 0.2))
+        factor = max(0.25, self.zoomFactor() - 0.2)
+        vprefs['lookup_zoom_factor'] = factor
+        self.setZoomFactor(factor)
 
     def default_zoom(self):
+        vprefs['lookup_zoom_factor'] = 1
         self.setZoomFactor(1)
+
+    def set_initial_zoom_factor(self):
+        try:
+            self.setZoomFactor(float(vprefs.get('lookup_zoom_factor', 1)))
+        except Exception:
+            pass
 
 
 class View(QWebEngineView):
@@ -227,16 +297,34 @@ class View(QWebEngineView):
     inspect_element = pyqtSignal()
 
     def contextMenuEvent(self, ev):
-        menu = self.page().createStandardContextMenu()
+        menu = self.createStandardContextMenu()
         menu.addSeparator()
         menu.addAction(_('Zoom in'), self.page().zoom_in)
         menu.addAction(_('Zoom out'), self.page().zoom_out)
         menu.addAction(_('Default zoom'), self.page().default_zoom)
         menu.addAction(_('Inspect'), self.do_inspect_element)
-        menu.exec_(ev.globalPos())
+        menu.exec(ev.globalPos())
 
     def do_inspect_element(self):
         self.inspect_element.emit()
+
+
+def set_sync_override(allowed):
+    li = getattr(set_sync_override, 'instance', None)
+    if li is not None:
+        li.set_sync_override(allowed)
+
+
+def blank_html():
+    msg = _("Double click on a word in the book's text to look it up.")
+    html = '<p>' + msg
+    app = QApplication.instance()
+    if app.is_dark_theme:
+        pal = app.palette()
+        bg = pal.color(QPalette.ColorRole.Base).name()
+        fg = pal.color(QPalette.ColorRole.Text).name()
+        html = f'<style> * {{ color: {fg}; background-color: {bg} }} </style>' + html
+    return html
 
 
 class Lookup(QWidget):
@@ -261,21 +349,22 @@ class Lookup(QWidget):
         apply_font_settings(self._page)
         secure_webengine(self._page, for_viewer=True)
         self.view.setPage(self._page)
+        self._page.set_initial_zoom_factor()
         l.addWidget(self.view)
         self.populate_sources()
         self.source_box.currentIndexChanged.connect(self.source_changed)
-        self.view.setHtml('<p>' + _('Double click on a word in the book\'s text'
-            ' to look it up.'))
-        self.add_button = b = QPushButton(QIcon(I('plus.png')), _('Add sources'))
+        self.view.setHtml(blank_html())
+        self.add_button = b = QPushButton(QIcon.ic('plus.png'), _('Add sources'))
         b.setToolTip(_('Add more sources at which to lookup words'))
         b.clicked.connect(self.add_sources)
-        self.refresh_button = rb = QPushButton(QIcon(I('view-refresh.png')), _('Refresh'))
+        self.refresh_button = rb = QPushButton(QIcon.ic('view-refresh.png'), _('Refresh'))
         rb.setToolTip(_('Refresh the result to match the currently selected text'))
         rb.clicked.connect(self.update_query)
         h = QHBoxLayout()
         l.addLayout(h)
         h.addWidget(b), h.addWidget(rb)
         self.auto_update_query = a = QCheckBox(_('Update on selection change'), self)
+        self.disallow_auto_update = False
         a.setToolTip(textwrap.fill(
             _('Automatically update the displayed result when selected text in the book changes. With this disabled'
               ' the lookup is changed only when clicking the Refresh button.')))
@@ -283,6 +372,12 @@ class Lookup(QWidget):
         a.stateChanged.connect(self.auto_update_state_changed)
         l.addWidget(a)
         self.update_refresh_button_status()
+        set_sync_override.instance = self
+
+    def set_sync_override(self, allowed):
+        self.disallow_auto_update = not allowed
+        if self.auto_update_query.isChecked() and allowed:
+            self.update_query()
 
     def auto_update_state_changed(self, state):
         vprefs['auto_update_lookup'] = self.auto_update_query.isChecked()
@@ -293,6 +388,7 @@ class Lookup(QWidget):
             self._devtools_page = QWebEnginePage()
             self._devtools_view = QWebEngineView(self)
             self._devtools_view.setPage(self._devtools_page)
+            setup_profile(self._devtools_page.profile())
             self._page.setDevToolsPage(self._devtools_page)
             self._devtools_dialog = d = QDialog(self)
             d.setWindowTitle('Inspect Lookup page')
@@ -307,7 +403,7 @@ class Lookup(QWidget):
         self._page.triggerAction(QWebEnginePage.WebAction.InspectElement)
 
     def add_sources(self):
-        if SourcesEditor(self).exec_() == QDialog.DialogCode.Accepted:
+        if SourcesEditor(self).exec() == QDialog.DialogCode.Accepted:
             self.populate_sources()
             self.source_box.setCurrentIndex(0)
             self.update_query()
@@ -346,6 +442,12 @@ class Lookup(QWidget):
             return self.source_box.itemData(idx)['url']
 
     @property
+    def special_processor(self):
+        idx = self.source_box.currentIndex()
+        if idx > -1:
+            return special_processors.get(self.source_box.itemData(idx).get('special_processor'))
+
+    @property
     def query_is_up_to_date(self):
         query = self.selected_text or self.current_query
         return self.current_query == query and self.current_source == self.url_template
@@ -363,7 +465,12 @@ class Lookup(QWidget):
         if not self.is_visible or not query:
             return
         self.current_source = self.url_template
-        url = self.current_source.format(word=query)
+        sp = self.special_processor
+        if sp is None:
+            url = self.current_source.format(word=query)
+        else:
+            url = sp(query)
+
         self.view.load(QUrl(url))
         self.current_query = query
         self.update_refresh_button_status()
@@ -371,7 +478,7 @@ class Lookup(QWidget):
     def selected_text_changed(self, text, annot_id):
         already_has_text = bool(self.current_query)
         self.selected_text = text or ''
-        if self.auto_update_query.isChecked() or not already_has_text:
+        if not self.disallow_auto_update and (self.auto_update_query.isChecked() or not already_has_text):
             self.debounce_timer.start()
         self.update_refresh_button_status()
 

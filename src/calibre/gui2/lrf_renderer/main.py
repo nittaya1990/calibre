@@ -1,25 +1,22 @@
-
-
 __license__   = 'GPL v3'
 __copyright__ = '2008, Kovid Goyal <kovid at kovidgoyal.net>'
 
-import sys, logging, os, traceback, time
+import logging
+import os
+import sys
+import time
+import traceback
 
-from qt.core import (
-    QKeySequence, QPainter, QDialog, QSpinBox, QSlider, QIcon, Qt, QCoreApplication, QThread, QScrollBar)
+from qt.core import QCoreApplication, QDialog, QIcon, QKeySequence, QPainter, QScrollBar, QSlider, QSpinBox, Qt, QThread
 
-from calibre import __appname__, setup_cli_handlers, islinux, isbsd, as_unicode
-from calibre.gui2 import gprefs
+from calibre import __appname__, as_unicode, isbsd, islinux, setup_cli_handlers
 from calibre.ebooks.lrf.lrfparser import LRFDocument
-
-from calibre.gui2 import (
-        error_dialog, choose_files, Application
-        )
+from calibre.gui2 import Application, choose_files, error_dialog, gprefs
 from calibre.gui2.dialogs.conversion_error import ConversionErrorDialog
-from calibre.gui2.lrf_renderer.main_ui import Ui_MainWindow
 from calibre.gui2.lrf_renderer.config_ui import Ui_ViewerConfig
-from calibre.gui2.main_window import MainWindow
 from calibre.gui2.lrf_renderer.document import Document
+from calibre.gui2.lrf_renderer.main_ui import Ui_MainWindow
+from calibre.gui2.main_window import MainWindow
 from calibre.gui2.search_box import SearchBox2
 
 
@@ -113,7 +110,7 @@ class Main(MainWindow, Ui_MainWindow):
     def configure(self, triggered):
         opts = self.opts
         d = Config(self, opts)
-        d.exec_()
+        d.exec()
         if d.result() == QDialog.DialogCode.Accepted:
             gprefs['lrf_viewer_white_background'] = opts.white_background = bool(d.white_background.isChecked())
             gprefs['lrf_viewer_hyphenate'] = opts.hyphenate = bool(d.hyphenate.isChecked())
@@ -158,12 +155,12 @@ class Main(MainWindow, Ui_MainWindow):
         try:
             self.document.search(search)
         except StopIteration:
-            error_dialog(self, _('No matches found'), _('<b>No matches</b> for the search phrase <i>%s</i> were found.')%(search,)).exec_()
+            error_dialog(self, _('No matches found'), _('<b>No matches</b> for the search phrase <i>%s</i> were found.')%(search,)).exec()
         self.search.search_done(True)
 
     def parsed(self):
         if not self.renderer.aborted and self.renderer.lrf is not None:
-            width, height =  self.renderer.lrf.device_info.width, \
+            width, height = self.renderer.lrf.device_info.width, \
                                             self.renderer.lrf.device_info.height
             hdelta = self.tool_bar.height()+3
 
@@ -171,8 +168,7 @@ class Main(MainWindow, Ui_MainWindow):
             scrollbar_adjust = min(s.width(), s.height())
             self.graphics_view.resize_for(width+scrollbar_adjust, height+scrollbar_adjust)
 
-            desktop = QCoreApplication.instance().desktop()
-            screen_height = desktop.availableGeometry(self).height() - 25
+            screen_height = self.screen().availableSize().height() - 25
             height = min(screen_height, height+hdelta+scrollbar_adjust)
             self.resize(width+scrollbar_adjust, height)
             self.setWindowTitle(self.renderer.lrf.metadata.title + ' - ' + __appname__)
@@ -192,7 +188,7 @@ class Main(MainWindow, Ui_MainWindow):
             self.graphics_view.show()
             self.spin_box.setRange(1, self.document.num_of_pages)
             self.slider.setRange(1, self.document.num_of_pages)
-            self.spin_box.setSuffix(' of %d'%(self.document.num_of_pages,))
+            self.spin_box.setSuffix(f' of {self.document.num_of_pages}')
             self.spin_box.updateGeometry()
             self.stack.setCurrentIndex(0)
             self.graphics_view.setFocus(Qt.FocusReason.OtherFocusReason)
@@ -201,12 +197,12 @@ class Main(MainWindow, Ui_MainWindow):
             print('Error rendering document', file=sys.stderr)
             print(exception, file=sys.stderr)
             print(self.renderer.formatted_traceback, file=sys.stderr)
-            msg =  '<p><b>%s</b>: '%(exception.__class__.__name__,) + as_unicode(exception) + '</p>'
+            msg = f'<p><b>{exception.__class__.__name__}</b>: ' + as_unicode(exception) + '</p>'
             msg += '<p>Failed to render document</p>'
             msg += '<p>Detailed <b>traceback</b>:<pre>'
             msg += self.renderer.formatted_traceback + '</pre>'
             d = ConversionErrorDialog(self, 'Error while rendering file', msg)
-            d.exec_()
+            d.exec()
 
     def chapter_rendered(self, num):
         if num > 0:
@@ -308,18 +304,17 @@ def main(args=sys.argv, logger=None):
         return 1
     pid = os.fork() if (islinux or isbsd) else -1
     if pid <= 0:
-        override = 'calibre-lrf-viewer' if islinux else None
+        override = 'calibre-lrfviewer' if islinux else None
         app = Application(args, override_program_name=override)
-        app.setWindowIcon(QIcon(I('viewer.png')))
+        app.setWindowIcon(QIcon.ic('viewer.png'))
         opts = normalize_settings(parser, opts)
         stream = open(args[1], 'rb') if len(args) > 1 else None
         main = file_renderer(stream, opts, logger=logger)
         main.set_exception_handler()
         main.show()
         main.render()
-        main.activateWindow()
-        main.raise_()
-        return app.exec_()
+        main.raise_and_focus()
+        return app.exec()
     return 0
 
 

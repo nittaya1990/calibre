@@ -1,7 +1,9 @@
 #!/usr/bin/env python
 # vim:fileencoding=utf-8
-from __future__ import unicode_literals, division, absolute_import, print_function
+from __future__ import absolute_import, division, print_function, unicode_literals
+
 import re
+
 from calibre.web.feeds.news import BasicNewsRecipe
 
 
@@ -69,10 +71,10 @@ class AdvancedUserRecipe1467571059(BasicNewsRecipe):
     remove_tags = [
         dict(name=['embed', 'object']),
         dict(name='div', attrs={'class':['note NotePortrait', 'note']}),
-        dict(name='ul', attrs={'class':re.compile('article__share')}),
+        dict(name='ul', attrs={'class':re.compile(r'article__share')}),
         dict(name='div', attrs={'class':'slideshow__controls'}),
         dict(name='a', attrs={'role':'button'}),
-        dict(name='figure', attrs={'class':re.compile('video')})
+        dict(name='figure', attrs={'class':re.compile(r'video')})
     ]
 
     remove_attributes = ['width', 'height']

@@ -1,19 +1,21 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 
 
 __license__ = 'GPL v3'
 __copyright__ = '2013, Kovid Goyal <kovid at kovidgoyal.net>'
 
-import inspect, time, numbers
-from io import BytesIO
+import inspect
+import numbers
+import time
 from functools import partial
+from io import BytesIO
 from operator import itemgetter
 
-from calibre.library.field_metadata import fm_as_dict
+from calibre.db.constants import NOTES_DIR_NAME
 from calibre.db.tests.base import BaseTest
-from polyglot.builtins import iteritems, range, unicode_type, zip
+from calibre.library.field_metadata import fm_as_dict
 from polyglot import reprlib
+from polyglot.builtins import iteritems
 
 # Utils {{{
 
@@ -30,8 +32,8 @@ class ET:
         legacy = self.legacy or test.init_legacy(test.cloned_library)
         oldres = getattr(old, self.func_name)(*self.args, **self.kwargs)
         newres = getattr(legacy, self.func_name)(*self.args, **self.kwargs)
-        test.assertEqual(oldres, newres, 'Equivalence test for %s with args: %s and kwargs: %s failed' % (
-            self.func_name, reprlib.repr(self.args), reprlib.repr(self.kwargs)))
+        test.assertEqual(oldres, newres,
+            f'Equivalence test for {self.func_name} with args: {reprlib.repr(self.args)} and kwargs: {reprlib.repr(self.kwargs)} failed')
         self.retval = newres
         return newres
 
@@ -49,7 +51,7 @@ def compare_argspecs(old, new, attr):
 
     ok = len(old.args) == len(new.args) and get_defaults(old) == get_defaults(new)
     if not ok:
-        raise AssertionError('The argspec for %s does not match. %r != %r' % (attr, old, new))
+        raise AssertionError(f'The argspec for {attr} does not match. {old!r} != {new!r}')
 
 
 def run_funcs(self, db, ndb, funcs):
@@ -58,23 +60,24 @@ def run_funcs(self, db, ndb, funcs):
         if callable(meth):
             meth(*args)
         else:
-            fmt = lambda x:x
             if meth[0] in {'!', '@', '#', '+', '$', '-', '%'}:
                 if meth[0] != '+':
                     fmt = {'!':dict, '@':lambda x:frozenset(x or ()), '#':lambda x:set((x or '').split(',')),
-                           '$':lambda x:set(tuple(y) for y in x), '-':lambda x:None,
+                           '$':lambda x:{tuple(y) for y in x}, '-':lambda x:None,
                            '%':lambda x: set((x or '').split(','))}[meth[0]]
                 else:
                     fmt = args[-1]
                     args = args[:-1]
                 meth = meth[1:]
+            else:
+                def fmt(x):
+                    return x
             res1, res2 = fmt(getattr(db, meth)(*args)), fmt(getattr(ndb, meth)(*args))
-            self.assertEqual(res1, res2, 'The method: %s() returned different results for argument %s' % (meth, args))
+            self.assertEqual(res1, res2, f'The method: {meth}() returned different results for argument {args}')
 # }}}
 
 
 class LegacyTest(BaseTest):
-
     ''' Test the emulation of the legacy interface. '''
 
     def test_library_wide_properties(self):  # {{{
@@ -116,7 +119,7 @@ class LegacyTest(BaseTest):
             for label, loc in iteritems(db.FIELD_MAP):
                 if isinstance(label, numbers.Integral):
                     label = '#'+db.custom_column_num_map[label]['label']
-                label = unicode_type(label)
+                label = str(label)
                 ans[label] = tuple(db.get_property(i, index_is_id=True, loc=loc)
                                    for i in db.all_ids())
                 if label in ('id', 'title', '#tags'):
@@ -183,8 +186,9 @@ class LegacyTest(BaseTest):
 
     def test_legacy_direct(self):  # {{{
         'Test read-only methods that are directly equivalent in the old and new interface'
-        from calibre.ebooks.metadata.book.base import Metadata
         from datetime import timedelta
+
+        from calibre.ebooks.metadata.book.base import Metadata
         ndb = self.init_legacy(self.cloned_library)
         db = self.init_old()
         newstag = ndb.new_api.get_item_id('tags', 'news')
@@ -257,18 +261,24 @@ class LegacyTest(BaseTest):
             'books_in_series_of':[(0,), (1,), (2,)],
             'books_with_same_title':[(Metadata(db.title(0)),), (Metadata(db.title(1)),), (Metadata('1234'),)],
         }):
-            fmt = lambda x: x
             if meth[0] in {'!', '@'}:
                 fmt = {'!':dict, '@':frozenset}[meth[0]]
                 meth = meth[1:]
             elif meth == 'get_authors_with_ids':
-                fmt = lambda val:{x[0]:tuple(x[1:]) for x in val}
+                def fmt(val):
+                    return {x[0]: tuple(x[1:]) for x in val}
+            else:
+                def fmt(x):
+                    return x
             for a in args:
                 self.assertEqual(fmt(getattr(db, meth)(*a)), fmt(getattr(ndb, meth)(*a)),
-                                 'The method: %s() returned different results for argument %s' % (meth, a))
+                                 f'The method: {meth}() returned different results for argument {a}')
 
         def f(x, y):  # get_top_level_move_items is broken in the old db on case-insensitive file systems
             x.discard('metadata_db_prefs_backup.json')
+            y.pop('full-text-search.db', None)
+            x.discard(NOTES_DIR_NAME)
+            y.pop(NOTES_DIR_NAME, None)
             return x, y
         self.assertEqual(f(*db.get_top_level_move_items()), f(*ndb.get_top_level_move_items()))
         d1, d2 = BytesIO(), BytesIO()
@@ -282,7 +292,7 @@ class LegacyTest(BaseTest):
         old = db.get_data_as_dict(prefix='test-prefix')
         new = ndb.get_data_as_dict(prefix='test-prefix')
         for o, n in zip(old, new):
-            o = {unicode_type(k) if isinstance(k, bytes) else k:set(v) if isinstance(v, list) else v for k, v in iteritems(o)}
+            o = {str(k) if isinstance(k, bytes) else k:set(v) if isinstance(v, list) else v for k, v in iteritems(o)}
             n = {k:set(v) if isinstance(v, list) else v for k, v in iteritems(n)}
             self.assertEqual(o, n)
 
@@ -318,7 +328,7 @@ class LegacyTest(BaseTest):
             meth, args = x[0], x[1:]
             self.assertEqual(
                 decode(getattr(db, meth)(*args)), decode(getattr(ndb, meth)(*args)),
-                'The method: %s() returned different results for argument %s' % (meth, args)
+                f'The method: {meth}() returned different results for argument {args}'
             )
         db.close()
     # }}}
@@ -345,9 +355,9 @@ class LegacyTest(BaseTest):
     def test_legacy_adding_books(self):  # {{{
         'Test various adding/deleting books methods'
         import sqlite3
-        con = sqlite3.connect(":memory:")
+        con = sqlite3.connect(':memory:')
         try:
-            con.execute("create virtual table recipe using fts5(name, ingredients)")
+            con.execute('create virtual table recipe using fts5(name, ingredients)')
         except Exception:
             self.skipTest('python sqlite3 module does not have FTS5 support')
         con.close()
@@ -452,7 +462,7 @@ class LegacyTest(BaseTest):
             'find_books_in_directory', 'import_book_directory', 'import_book_directory_multiple', 'recursive_import',
 
             # Internal API
-            'clean_user_categories',  'cleanup_tags',  'books_list_filter', 'conn', 'connect', 'construct_file_name',
+            'clean_user_categories', 'cleanup_tags', 'books_list_filter', 'conn', 'connect', 'construct_file_name',
             'construct_path_name', 'clear_dirtied', 'initialize_database', 'initialize_dynamic',
             'run_import_plugins', 'vacuum', 'set_path', 'row_factory', 'rows', 'rmtree', 'series_index_pat',
             'import_old_database', 'dirtied_lock', 'dirtied_cache', 'dirty_books_referencing',
@@ -516,7 +526,7 @@ class LegacyTest(BaseTest):
             T = partial(ET, 'get_all_custom_book_data', old=old, legacy=legacy)
             T((name, object()))
             T = partial(ET, 'delete_all_custom_book_data', old=old, legacy=legacy)
-            T((name))
+            T(name)
             T = partial(ET, 'get_all_custom_book_data', old=old, legacy=legacy)
             T((name, object()))
 
@@ -534,7 +544,7 @@ class LegacyTest(BaseTest):
         n = now()
         ndb = self.init_legacy(self.cloned_library)
         amap = ndb.new_api.get_id_map('authors')
-        sorts = [(aid, 's%d' % aid) for aid in amap]
+        sorts = [(aid, f's{aid}') for aid in amap]
         db = self.init_old(self.cloned_library)
         run_funcs(self, db, ndb, (
             ('+format_metadata', 1, 'FMT1', itemgetter('size')),
@@ -570,7 +580,6 @@ class LegacyTest(BaseTest):
         omi = [db.get_metadata(x) for x in (0, 1, 2)]
         nmi = [ndb.get_metadata(x) for x in (0, 1, 2)]
         self.assertEqual([x.author_sort_map for x in omi], [x.author_sort_map for x in nmi])
-        self.assertEqual([x.author_link_map for x in omi], [x.author_link_map for x in nmi])
         db.close()
 
         ndb = self.init_legacy(self.cloned_library)

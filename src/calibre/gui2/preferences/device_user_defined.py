@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
 
 
 __license__   = 'GPL v3'
@@ -8,8 +7,8 @@ __docformat__ = 'restructuredtext en'
 
 
 import numbers
-from qt.core import QDialog, QVBoxLayout, QPlainTextEdit, QTimer, \
-    QDialogButtonBox, QPushButton, QApplication, QIcon, QMessageBox
+
+from qt.core import QApplication, QDialog, QDialogButtonBox, QIcon, QMessageBox, QPlainTextEdit, QPushButton, QTimer, QVBoxLayout
 
 
 def step_dialog(parent, title, msg, det_msg=''):
@@ -17,7 +16,7 @@ def step_dialog(parent, title, msg, det_msg=''):
     d.setWindowTitle(title)
     d.setText(msg)
     d.setStandardButtons(QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel)
-    return d.exec_() & QMessageBox.StandardButton.Cancel
+    return d.exec() & QMessageBox.StandardButton.Cancel
 
 
 class UserDefinedDevice(QDialog):
@@ -32,7 +31,7 @@ class UserDefinedDevice(QDialog):
         self.copy = QPushButton(_('Copy to &clipboard'))
         self.copy.setDefault(True)
         self.setWindowTitle(_('User-defined device information'))
-        self.setWindowIcon(QIcon(I('debug.png')))
+        self.setWindowIcon(QIcon.ic('debug.png'))
         self.copy.clicked.connect(self.copy_to_clipboard)
         self.ok = QPushButton('&OK')
         self.ok.setAutoDefault(False)
@@ -96,4 +95,4 @@ class UserDefinedDevice(QDialog):
 if __name__ == '__main__':
     app = QApplication([])
     d = UserDefinedDevice()
-    d.exec_()
+    d.exec()

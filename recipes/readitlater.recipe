@@ -1,17 +1,12 @@
-"""
-Pocket Calibre Recipe v1.4
-"""
-from calibre import strftime
-from calibre.web.feeds.news import BasicNewsRecipe
-from string import Template
+'''
+Pocket Calibre Recipe v1.5
+'''
 import json
 import operator
-import re
-import tempfile
-try:
-    from urllib.parse import urlencode
-except ImportError:
-    from urllib import urlencode
+
+from calibre import strftime
+from calibre.web.feeds.news import BasicNewsRecipe
+
 try:
     from urllib.error import HTTPError, URLError
 except ImportError:
@@ -39,7 +34,7 @@ class Pocket(BasicNewsRecipe):
     # Settings people change
     oldest_article = 7.0
     max_articles_per_feed = 50
-    minimum_articles = 10
+    minimum_articles = 1
     mark_as_read_after_dl = True  # Set this to False for testing
     sort_method = 'oldest'  # MUST be either 'oldest' or 'newest'
     # To filter by tag this needs to be a single tag in quotes; IE 'calibre'
@@ -49,7 +44,7 @@ class Pocket(BasicNewsRecipe):
     no_stylesheets = True
     use_embedded_content = False
     needs_subscription = True
-    articles_are_obfuscated = True
+    articles_are_obfuscated = False
     apikey = '19eg0e47pbT32z4793Tf021k99Afl889'
     index_url = u'https://getpocket.com'
     read_api_url = index_url + u'/v3/get'
@@ -58,15 +53,15 @@ class Pocket(BasicNewsRecipe):
     articles = []
 
     def get_browser(self, *args, **kwargs):
-        """
+        '''
         We need to pretend to be a recent version of safari for the mac to
         prevent User-Agent checks Pocket api requires username and password so
         fail loudly if it's missing from the config.
-        """
+        '''
         br = BasicNewsRecipe.get_browser(self,
-                                         user_agent='Mozilla/5.0 (Macintosh; U; Intel Mac OS X 10_6_4; \
-                        en-us) AppleWebKit/533.19.4 (KHTML, like Gecko) \
-                        Version/5.0.3 Safari/533.19.4')
+                                         user_agent='''Mozilla/5.0 (Macintosh; U; Intel Mac OS X 10_6_4; en-us)
+                        AppleWebKit/533.19.4 (KHTML, like Gecko)
+                        Version/5.0.3 Safari/533.19.4''')
         if self.username is not None and self.password is not None:
             br.open(self.legacy_login_url)
             br.select_form(nr=0)
@@ -74,33 +69,33 @@ class Pocket(BasicNewsRecipe):
             br['password'] = self.password
             br.submit()
         else:
-            self.user_error("This Recipe requires authentication")
+            self.user_error('This Recipe requires authentication')
         return br
 
     def get_auth_uri(self):
-        """Quick function to return the authentication part of the url"""
-        uri = ""
-        uri = u'{0}&apikey={1!s}'.format(uri, self.apikey)
+        '''Quick function to return the authentication part of the url'''
+        uri = ''
+        uri = u'{0}&apikey={1}'.format(uri, self.apikey)
         if self.username is None or self.password is None:
-            self.user_error("Username or password is blank.")
+            self.user_error('Username or password is blank.')
         else:
-            uri = u'{0}&username={1!s}'.format(uri, self.username)
-            uri = u'{0}&password={1!s}'.format(uri, self.password)
+            uri = u'{0}&username={1}'.format(uri, self.username)
+            uri = u'{0}&password={1}'.format(uri, self.password)
         return uri
 
     def get_pull_articles_uri(self):
-        uri = ""
+        uri = ''
         uri = u'{0}&state={1}'.format(uri, u'unread')
         uri = u'{0}&contentType={1}'.format(uri, u'article')
         uri = u'{0}&sort={1}'.format(uri, self.sort_method)
-        uri = u'{0}&count={1!s}'.format(uri, self.max_articles_per_feed)
+        uri = u'{0}&count={1}'.format(uri, self.max_articles_per_feed)
         if self.only_pull_tag is not None:
             uri = u'{0}&tag={1}'.format(uri, self.only_pull_tag)
         return uri
 
     def parse_index(self):
         pocket_feed = []
-        fetch_url = u"{0}?{1}{2}".format(
+        fetch_url = u'{0}?{1}{2}'.format(
             self.read_api_url,
             self.get_auth_uri(),
             self.get_pull_articles_uri()
@@ -111,63 +106,20 @@ class Pocket(BasicNewsRecipe):
         if len(pocket_feed) < self.minimum_articles:
             self.mark_as_read_after_dl = False
             self.user_error(
-                "Only {0} articles retrieved, minimum_articles not reached".format(len(pocket_feed)))
+                'Only {0} articles retrieved, minimum_articles not reached'.format(len(pocket_feed)))
 
         for pocket_article in pocket_feed.items():
             self.articles.append({
                 'item_id':      pocket_article[0],
                 'title':        pocket_article[1]['resolved_title'],
                 'date':         pocket_article[1]['time_updated'],
-                'url':          u'{0}/a/read/{1}'.format(self.index_url, pocket_article[0]),
+                'url':          pocket_article[1]['resolved_url'],
                 'real_url':     pocket_article[1]['resolved_url'],
                 'description':  pocket_article[1]['excerpt'],
                 'sort':         pocket_article[1]['sort_id']
             })
         self.articles = sorted(self.articles, key=operator.itemgetter('sort'))
-        return [("My Pocket Articles for {0}".format(strftime('[%I:%M %p]')), self.articles)]
-
-    def get_textview(self, url):
-        """
-        Since Pocket's v3 API they removed access to textview. They also
-         redesigned their page to make it much harder to scrape their textview.
-         We need to pull the article, retrieve the formcheck id, then use it
-         to querty for the json version
-        This function will break when pocket hates us
-        """
-        ajax_url = self.index_url + u'/a/x/getArticle.php'
-        soup = self.index_to_soup(url)
-        fc_tag = soup.find('script', text=re.compile("formCheck"))
-        fc_id = re.search(r"formCheck = \'([\d\w]+)\';", fc_tag).group(1)
-        article_id = url.split("/")[-1]
-        data = urlencode({'itemId': article_id, 'formCheck': fc_id})
-        try:
-            response = self.browser.open(ajax_url, data)
-        except HTTPError as e:
-            self.log.exception("unable to get textview {0}".format(e.info()))
-            raise e
-        return json.load(response)['article']
-
-    def get_obfuscated_article(self, url):
-        """
-        Our get_textview returns parsed json so prettify it to something well
-        parsed by calibre.
-        """
-        article = self.get_textview(url)
-        template = Template('<h1>$title</h1><div class="body">$body</div>')
-        with tempfile.NamedTemporaryFile(delete=False) as tf:
-            tmpbody = article['article']
-            for img in article['images']:
-                imgdiv = '<div id="RIL_IMG_{0}" class="RIL_IMG"></div>'.format(
-                    article['images'][img]['image_id'])
-                imgtag = r'<img src="{0}" \>'.format(
-                    article['images'][img]['src'])
-                tmpbody = tmpbody.replace(imgdiv, imgtag)
-
-            tf.write(template.safe_substitute(
-                title=article['title'],
-                body=tmpbody
-            ))
-        return tf.name
+        return [('My Pocket Articles for {0}'.format(strftime('[%I:%M %p]')), self.articles)]
 
     def mark_as_read(self, mark_list):
         actions_list = []
@@ -195,18 +147,15 @@ class Pocket(BasicNewsRecipe):
     def cleanup(self):
         if self.mark_as_read_after_dl:
             self.mark_as_read([x['item_id'] for x in self.articles])
-        else:
-            pass
 
     def default_cover(self, cover_file):
-        """
+        '''
         Create a generic cover for recipes that don't have a cover
         This override adds time to the cover
-        """
+        '''
         try:
             from calibre.ebooks.covers import calibre_cover2
-            title = self.title if isinstance(self.title, type(u'')) else \
-                self.title.decode('utf-8', 'replace')
+            title = self.title if isinstance(self.title, type(u'')) else self.title.decode('utf-8', 'replace')
             date = strftime(self.timefmt)
             time = strftime('[%I:%M %p]')
             img_data = calibre_cover2(title, date, time)

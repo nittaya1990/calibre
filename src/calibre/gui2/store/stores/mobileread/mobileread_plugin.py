@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 from __future__ import absolute_import, division, print_function, unicode_literals
 
-
 __license__ = 'GPL 3'
 __copyright__ = '2011, John Schember <john@nachtimwald.com>'
 __docformat__ = 'restructuredtext en'
@@ -9,18 +8,18 @@ __docformat__ = 'restructuredtext en'
 import os
 from threading import Lock
 
-from qt.core import (QUrl, QCoreApplication)
+from qt.core import QCoreApplication, QUrl
 
 from calibre.constants import cache_dir
 from calibre.gui2 import open_url
 from calibre.gui2.store import StorePlugin
 from calibre.gui2.store.basic_config import BasicStoreConfig
 from calibre.gui2.store.search_result import SearchResult
-from calibre.gui2.store.web_store_dialog import WebStoreDialog
-from calibre.gui2.store.stores.mobileread.models import SearchFilter
 from calibre.gui2.store.stores.mobileread.cache_progress_dialog import CacheProgressDialog
 from calibre.gui2.store.stores.mobileread.cache_update_thread import CacheUpdateThread
+from calibre.gui2.store.stores.mobileread.models import SearchFilter
 from calibre.gui2.store.stores.mobileread.store_dialog import MobileReadStoreDialog
+from calibre.gui2.store.web_store_dialog import WebStoreDialog
 
 
 class MobileReadStore(BasicStoreConfig, StorePlugin):
@@ -49,12 +48,12 @@ class MobileReadStore(BasicStoreConfig, StorePlugin):
                 d = WebStoreDialog(self.gui, url, parent, detail_item)
                 d.setWindowTitle(self.name)
                 d.set_tags(self.config.get('tags', ''))
-                d.exec_()
+                d.exec()
             else:
                 self.update_cache(parent, 30)
                 d = MobileReadStoreDialog(self, parent)
                 d.setWindowTitle(self.name)
-                d.exec_()
+                d.exec()
 
     def search(self, query, max_results=10, timeout=60):
         books = self.get_book_list()

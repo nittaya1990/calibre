@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
 
 
 __license__   = 'GPL v3'
@@ -9,16 +8,14 @@ __docformat__ = 'restructuredtext en'
 import os
 from collections import defaultdict
 from functools import partial
+
 from qt.core import QApplication, QDialog, QPixmap, QTimer
 
 from calibre import as_unicode, guess_type, prepare_string_for_xml
 from calibre.constants import iswindows
 from calibre.ebooks import BOOK_EXTENSIONS
 from calibre.ebooks.metadata import MetaInformation, normalize_isbn
-from calibre.gui2 import (
-    choose_dir, choose_files, error_dialog, gprefs, info_dialog, question_dialog,
-    warning_dialog
-)
+from calibre.gui2 import choose_dir, choose_files, choose_files_and_remember_all_files, error_dialog, gprefs, info_dialog, question_dialog, warning_dialog
 from calibre.gui2.actions import InterfaceAction
 from calibre.gui2.dialogs.add_empty_book import AddEmptyBookDialog
 from calibre.gui2.dialogs.confirm_delete import confirm
@@ -27,20 +24,22 @@ from calibre.ptempfile import PersistentTemporaryFile
 from calibre.utils.config_base import tweaks
 from calibre.utils.filenames import ascii_filename, make_long_path_useable
 from calibre.utils.icu import sort_key
-from polyglot.builtins import iteritems, range, string_or_bytes
+from calibre.utils.localization import ngettext
+from polyglot.builtins import iteritems, string_or_bytes
 
 
 def get_filters():
+    archives = ['zip', 'rar', '7z']
     return [
-            (_('Books'), BOOK_EXTENSIONS),
+            (_('Books'), [x for x in BOOK_EXTENSIONS if x not in archives]),
             (_('EPUB books'), ['epub', 'kepub']),
             (_('Kindle books'), ['mobi', 'prc', 'azw', 'azw3', 'kfx', 'tpz', 'azw1', 'azw4']),
             (_('PDF books'), ['pdf', 'azw4']),
             (_('HTML books'), ['htm', 'html', 'xhtm', 'xhtml']),
             (_('LIT books'), ['lit']),
             (_('Text books'), ['txt', 'text', 'rtf', 'md', 'markdown', 'textile', 'txtz']),
-            (_('Comics'), ['cbz', 'cbr', 'cbc']),
-            (_('Archives'), ['zip', 'rar']),
+            (_('Comics'), ['cbz', 'cbr', 'cbc', 'cb7']),
+            (_('Archives'), archives),
             (_('Wordprocessor files'), ['odt', 'doc', 'docx']),
     ]
 
@@ -49,8 +48,8 @@ class AddAction(InterfaceAction):
 
     name = 'Add Books'
     action_spec = (_('Add books'), 'add_book.png',
-            _('Add books to the calibre library/device from files on your computer')
-            , _('A'))
+            _('Add books to the calibre library/device from files on your computer'),
+            _('A'))
     action_type = 'current'
     action_add_menu = True
     action_menu_clone_qaction = _('Add books from a single folder')
@@ -59,21 +58,23 @@ class AddAction(InterfaceAction):
         self._add_filesystem_book = self.Dispatcher(self.__add_filesystem_book)
         self.add_menu = self.qaction.menu()
         ma = partial(self.create_menu_action, self.add_menu)
-        ma('recursive-add', _('Add from folders and sub-folders')).triggered.connect(self.add_recursive_question)
-        ma('archive-add-book', _('Add multiple books from archive (ZIP/RAR)')).triggered.connect(self.add_from_archive)
+        ma('recursive-add', _('Add from folders and sub-folders'), icon='mimetypes/dir.png').triggered.connect(self.add_recursive_question)
+        ma('archive-add-book', _('Add multiple books from archive (ZIP/RAR/7z)'), icon='mimetypes/zip.png').triggered.connect(self.add_from_archive)
         self.add_menu.addSeparator()
         ma('add-empty', _('Add empty book (Book entry with no formats)'),
                 shortcut='Shift+Ctrl+E').triggered.connect(self.add_empty)
-        ma('add-isbn', _('Add from ISBN')).triggered.connect(self.add_from_isbn)
+        ma('add-isbn', _('Add from ISBN'), icon='identifiers.png').triggered.connect(self.add_from_isbn)
         self.add_menu.addSeparator()
         ma('add-formats', _('Add files to selected book records'),
                 triggered=self.add_formats, shortcut='Shift+A')
         ma('add-formats-clipboard', _('Add files to selected book records from clipboard'),
-                triggered=self.add_formats_from_clipboard, shortcut='Shift+Alt+A')
+                triggered=self.add_formats_from_clipboard, shortcut='Shift+Alt+A', icon='edit-paste.png')
+        ma('add-extra-files-to-books', _(
+            'Add data files to selected book records')).triggered.connect(self.add_extra_files)
         ma('add-empty-format-to-books', _(
             'Add an empty file to selected book records')).triggered.connect(self.add_empty_format_choose)
         self.add_menu.addSeparator()
-        ma('add-config', _('Control the adding of books'),
+        ma('add-config', _('Control the adding of books'), icon='config.png',
                 triggered=self.add_config)
         self.qaction.triggered.connect(self.add_books)
 
@@ -127,7 +128,7 @@ class AddAction(InterfaceAction):
                     _('Are you sure you want to set the same'
                     ' cover for all %d books?')%len(ids)):
                 return
-            with lopen(images[0], 'rb') as f:
+            with open(images[0], 'rb') as f:
                 cdata = f.read()
             self.gui.current_db.new_api.set_cover({book_id: cdata for book_id in ids})
             self.gui.refresh_cover_browser()
@@ -139,10 +140,27 @@ class AddAction(InterfaceAction):
         ids = self._check_add_formats_ok()
         if not ids:
             return
-        books = choose_files(self.gui, 'add formats dialog dir',
+        books = choose_files_and_remember_all_files(self.gui, 'add formats dialog dir',
                 _('Select book files'), filters=get_filters())
         if books:
             self._add_formats(books, ids)
+
+    def _add_extra_files(self, book_ids, paths):
+        rmap = {'data/' + os.path.basename(x): x for x in paths}
+        db = self.gui.current_db.new_api
+        for book_id in book_ids:
+            db.add_extra_files(book_id, rmap)
+        self.gui.library_view.model().refresh_ids(book_ids,
+                                current_row=self.gui.library_view.currentIndex().row())
+
+    def add_extra_files(self):
+        ids = self._check_add_formats_ok()
+        if not ids:
+            return
+        books = choose_files_and_remember_all_files(self.gui, 'add extra data files dialog dir',
+                _('Select extra data files'), filters=get_filters())
+        if books:
+            self._add_extra_files(ids, books)
 
     def _add_formats(self, paths, ids):
         if len(ids) > 1 and not question_dialog(
@@ -207,7 +225,7 @@ class AddAction(InterfaceAction):
         from calibre.ebooks.oeb.polish.create import valid_empty_formats
         from calibre.gui2.dialogs.choose_format import ChooseFormatDialog
         d = ChooseFormatDialog(self.gui, _('Choose format of empty file'), sorted(valid_empty_formats))
-        if d.exec_() != QDialog.DialogCode.Accepted or not d.format():
+        if d.exec() != QDialog.DialogCode.Accepted or not d.format():
             return
         self._add_empty_format(d.format())
 
@@ -256,7 +274,7 @@ class AddAction(InterfaceAction):
     def add_archive(self, single):
         paths = choose_files(
             self.gui, 'recursive-archive-add', _('Choose archive file'),
-            filters=[(_('Archives'), ('zip', 'rar'))], all_files=False, select_only_single_file=False)
+            filters=[(_('Archives'), ('zip', 'rar', '7z'))], all_files=False, select_only_single_file=False)
         if paths:
             self.do_add_recursive(paths, single, list_of_archives=True)
 
@@ -265,7 +283,7 @@ class AddAction(InterfaceAction):
             'Will the archive have a single book per internal folder?'))
         paths = choose_files(
             self.gui, 'recursive-archive-add', _('Choose archive file'),
-            filters=[(_('Archives'), ('zip', 'rar'))], all_files=False, select_only_single_file=False)
+            filters=[(_('Archives'), ('zip', 'rar', '7z'))], all_files=False, select_only_single_file=False)
         if paths:
             self.do_add_recursive(paths, single, list_of_archives=True)
 
@@ -300,8 +318,8 @@ class AddAction(InterfaceAction):
         self.add_recursive(False)
 
     def add_recursive_question(self):
-        single =  question_dialog(self.gui, _('Multi-file books?'), _(
-            'Assume all e-book files in a single folder are the same book in different formats?'))
+        single = question_dialog(self.gui, _('Multi-file books?'), _(
+            'Assume all e-book files in a single folder are multiple formats of the same book?'))
         self.add_recursive(single)
 
     def add_empty(self, *args):
@@ -321,7 +339,7 @@ class AddAction(InterfaceAction):
             title = index.model().db.title(index.row())
         dlg = AddEmptyBookDialog(self.gui, self.gui.library_view.model().db,
                                  author, series, dup_title=title)
-        if dlg.exec_() == QDialog.DialogCode.Accepted:
+        if dlg.exec() == QDialog.DialogCode.Accepted:
             temp_files = []
             num = dlg.qty_to_add
             series = dlg.selected_series
@@ -370,14 +388,26 @@ class AddAction(InterfaceAction):
         existing_isbns.pop('', None)
         ok = []
         duplicates = []
+        checker_maps = {}
         for book in books:
-            q = normalize_isbn(book['isbn'])
-            if q and q in existing_isbns:
-                duplicates.append((book, existing_isbns[q]))
+            if 'isbn' in book:
+                q = normalize_isbn(book['isbn'])
+                if q and q in existing_isbns:
+                    duplicates.append((book, existing_isbns[q]))
+                else:
+                    ok.append(book)
             else:
-                ok.append(book)
+                key = book['']
+                if key not in checker_maps:
+                    checker_maps[key] = {ids.get(key, ''): book_id for book_id, ids in book_id_identifiers.items()}
+                    checker_maps[key].pop('', None)
+                q = book[key]
+                if q in checker_maps[key]:
+                    duplicates.append((book, checker_maps[key][q]))
+                else:
+                    ok.append(book)
         if duplicates:
-            det_msg = '\n'.join(f'{book["isbn"]}: {db.field_for("title", book_id)}' for book, book_id in duplicates)
+            det_msg = '\n'.join(f'{book[book[""]]}: {db.field_for("title", book_id)}' for book, book_id in duplicates)
             if question_dialog(self.gui, _('Duplicates found'), _(
                 'Books with some of the specified ISBNs already exist in the calibre library.'
                 ' Click "Show details" for the full list. Do you want to add them anyway?'), det_msg=det_msg
@@ -398,7 +428,7 @@ class AddAction(InterfaceAction):
         self.isbn_add_dialog = ProgressDialog(_('Adding'),
                 _('Creating book records from ISBNs'), max=len(books),
                 cancelable=False, parent=self.gui)
-        self.isbn_add_dialog.exec_()
+        self.isbn_add_dialog.exec()
 
     def do_one_isbn_add(self):
         try:
@@ -415,7 +445,10 @@ class AddAction(InterfaceAction):
                 return
 
             mi = MetaInformation(None)
-            mi.isbn = x['isbn']
+            if x[''] == 'isbn':
+                mi.isbn = x['isbn']
+            else:
+                mi.set_identifiers({x['']:x[x['']]})
             if self.isbn_add_tags:
                 mi.tags = list(self.isbn_add_tags)
             fmts = [] if x['path'] is None else [x['path']]
@@ -477,16 +510,24 @@ class AddAction(InterfaceAction):
                 accept = True
         if accept and event is not None:
             event.accept()
-        add_as_book = False
+        add_as_book = add_as_data_files = False
         if do_confirm and formats:
-            ok, add_as_book = confirm(
+            ok, add_as = confirm(
                 _('You have dropped some files onto the book <b>%s</b>. This will'
                   ' add or replace the files for this book. Do you want to proceed?') % db.title(cid, index_is_id=True),
                 'confirm_drop_on_book', parent=self.gui,
-                extra_button=ngettext('Add as new book', 'Add as new books', len(formats)))
-            if ok and add_as_book:
-                add_as_book = [path for ext, path in formats]
-            if not ok or add_as_book:
+                extra_button=_('Add as...'), extra_button_choices={
+                    'book': ngettext('Add as new book', 'Add as new books', len(formats)),
+                    'data_files': ngettext('Add as data file', 'Add as data files', len(formats)),
+            })
+            if ok:
+                if add_as == 'book':
+                    add_as_book = [path for ext, path in formats]
+                    formats = []
+                elif add_as == 'data_files':
+                    add_as_data_files = [path for ext, path in formats]
+                    formats = []
+            else:
                 formats = []
         for ext, path in formats:
             db.add_format_with_hooks(cid, ext, path, index_is_id=True)
@@ -496,6 +537,8 @@ class AddAction(InterfaceAction):
             self.gui.refresh_cover_browser()
         if add_as_book:
             self.files_dropped(add_as_book)
+        if add_as_data_files:
+            self._add_extra_files({cid}, add_as_data_files)
 
     def __add_filesystem_book(self, paths, allow_device=True):
         if isinstance(paths, string_or_bytes):
@@ -516,7 +559,7 @@ class AddAction(InterfaceAction):
     def add_from_isbn(self, *args):
         from calibre.gui2.dialogs.add_from_isbn import AddFromISBN
         d = AddFromISBN(self.gui)
-        if d.exec_() == QDialog.DialogCode.Accepted and d.books:
+        if d.exec() == QDialog.DialogCode.Accepted and d.books:
             self.add_isbns(d.books, add_tags=d.set_tags, check_for_existing=d.check_for_existing)
 
     def add_books(self, *args):
@@ -529,7 +572,7 @@ class AddAction(InterfaceAction):
             fmts = self.gui.device_manager.device.settings().format_map
             filters = [(_('Supported books'), fmts)]
 
-        books = choose_files(self.gui, 'add books dialog dir',
+        books = choose_files_and_remember_all_files(self.gui, 'add books dialog dir',
                 _('Select books'), filters=filters)
         if not books:
             return
@@ -612,7 +655,7 @@ class AddAction(InterfaceAction):
             rows = view.selectionModel().selectedRows()
             if not rows or len(rows) == 0:
                 d = error_dialog(self.gui, _('Add to library'), _('No book selected'))
-                d.exec_()
+                d.exec()
                 return
             paths = [p for p in view.model().paths(rows) if p is not None]
         ve = self.gui.device_manager.device.VIRTUAL_BOOK_EXTENSIONS
@@ -627,12 +670,12 @@ class AddAction(InterfaceAction):
             vmsg = getattr(self.gui.device_manager.device, 'VIRTUAL_BOOK_EXTENSION_MESSAGE', None) or _(
                 'The following books are virtual and cannot be added'
                 ' to the calibre library:')
-            info_dialog(self.gui,  _('Not Implemented'), vmsg, '\n'.join(remove), show=True)
+            info_dialog(self.gui, _('Not Implemented'), vmsg, '\n'.join(remove), show=True)
             if not paths:
                 return
         if not paths or len(paths) == 0:
             d = error_dialog(self.gui, _('Add to library'), _('No book files found'))
-            d.exec_()
+            d.exec()
             return
 
         self.gui.device_manager.prepare_addable_books(self.Dispatcher(partial(

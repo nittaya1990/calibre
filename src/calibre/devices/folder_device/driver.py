@@ -1,11 +1,10 @@
-
-
 '''
 Created on 15 May 2010
 
 @author: charles
 '''
 import os
+from contextlib import suppress
 
 from calibre.devices.usbms.driver import USBMS, BookList
 from calibre.ebooks import BOOK_EXTENSIONS
@@ -51,7 +50,7 @@ class FOLDER_DEVICE(USBMS):
     SUPPORTS_SUB_DIRS = True
 
     #: Icon for this device
-    icon = I('devices/folder.png')
+    icon = 'devices/folder.png'
     METADATA_CACHE = '.metadata.calibre'
     DRIVEINFO = '.driveinfo.calibre'
 
@@ -63,7 +62,7 @@ class FOLDER_DEVICE(USBMS):
 
     def __init__(self, path):
         if not os.path.isdir(path):
-            raise IOError('Path is not a folder')
+            raise OSError('Path is not a folder')
         path = USBMS.normalize_path(path)
         if path.endswith(os.sep):
             self._main_prefix = path
@@ -71,6 +70,12 @@ class FOLDER_DEVICE(USBMS):
             self._main_prefix = path + os.sep
         self.booklist_class = BookList
         self.is_connected = True
+
+    def is_folder_still_available(self):
+        with suppress(OSError):
+            if self._main_prefix:
+                return os.path.isdir(self._main_prefix)
+        return False
 
     def reset(self, key='-1', log_packets=False, report_progress=None,
               detected_device=None):
@@ -94,7 +99,7 @@ class FOLDER_DEVICE(USBMS):
         self.report_progress = report_progress
 
     def card_prefix(self, end_session=True):
-        return (None, None)
+        return None, None
 
     def eject(self):
         self.is_connected = False

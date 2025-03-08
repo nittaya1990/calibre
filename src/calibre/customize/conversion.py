@@ -1,17 +1,16 @@
-# -*- coding: utf-8 -*-
-
 '''
 Defines the plugin system for conversions.
 '''
-import re, os, shutil, numbers
+import numbers
+import os
+import re
+import shutil
 
 from calibre import CurrentDir
 from calibre.customize import Plugin
-from polyglot.builtins import unicode_type
 
 
 class ConversionOption:
-
     '''
     Class representing conversion options
     '''
@@ -79,10 +78,9 @@ class OptionRecommendation:
     def validate_parameters(self):
         if self.option.choices and self.recommended_value not in \
                                                     self.option.choices:
-            raise ValueError('OpRec: %s: Recommended value not in choices'%
-                             self.option.name)
-        if not (isinstance(self.recommended_value, (numbers.Number, bytes, unicode_type)) or self.recommended_value is None):
-            raise ValueError('OpRec: %s:'%self.option.name + repr(
+            raise ValueError(f'OpRec: {self.option.name}: Recommended value not in choices')
+        if not (isinstance(self.recommended_value, (numbers.Number, bytes, str)) or self.recommended_value is None):
+            raise ValueError(f'OpRec: {self.option.name}:' + repr(
                 self.recommended_value) + ' is not a string or a number')
 
 
@@ -108,7 +106,7 @@ def gui_configuration_widget(name, parent, get_option_by_name,
             output_widget = importlib.import_module(
                     'calibre.gui2.convert.'+name)
             pw = output_widget.PluginWidget
-            pw.ICON = I('back.png')
+            pw.ICON = 'back.png'
             pw.HELP = _('Options specific to the output format.')
             return widget_factory(pw)
         except ImportError:
@@ -118,7 +116,7 @@ def gui_configuration_widget(name, parent, get_option_by_name,
             input_widget = importlib.import_module(
                     'calibre.gui2.convert.'+name)
             pw = input_widget.PluginWidget
-            pw.ICON = I('forward.png')
+            pw.ICON = 'forward.png'
             pw.HELP = _('Options specific to the input format.')
             return widget_factory(pw)
         except ImportError:
@@ -127,7 +125,6 @@ def gui_configuration_widget(name, parent, get_option_by_name,
 
 
 class InputFormatPlugin(Plugin):
-
     '''
     InputFormatPlugins are responsible for converting a document into
     HTML+OPF+CSS+etc.
@@ -221,7 +218,7 @@ class InputFormatPlugin(Plugin):
                          by this plugin.
         :param log: A :class:`calibre.utils.logging.Log` object. All output
                     should use this object.
-        :param accelarators: A dictionary of various information that the input
+        :param accelerators: A dictionary of various information that the input
                              plugin can get easily that would speed up the
                              subsequent stages of the conversion.
 
@@ -231,7 +228,7 @@ class InputFormatPlugin(Plugin):
     def __call__(self, stream, options, file_ext, log,
                  accelerators, output_dir):
         try:
-            log('InputFormatPlugin: %s running'%self.name)
+            log(f'InputFormatPlugin: {self.name} running')
             if hasattr(stream, 'name'):
                 log('on', stream.name)
         except:
@@ -275,7 +272,6 @@ class InputFormatPlugin(Plugin):
 
 
 class OutputFormatPlugin(Plugin):
-
     '''
     OutputFormatPlugins are responsible for converting an OEB document
     (OPF+HTML) into an output e-book.
@@ -342,7 +338,7 @@ class OutputFormatPlugin(Plugin):
     @property
     def is_periodical(self):
         return self.oeb.metadata.publication_type and \
-            unicode_type(self.oeb.metadata.publication_type[0]).startswith('periodical:')
+            str(self.oeb.metadata.publication_type[0]).startswith('periodical:')
 
     def specialize_options(self, log, opts, input_fmt):
         '''
@@ -353,7 +349,7 @@ class OutputFormatPlugin(Plugin):
 
     def specialize_css_for_output(self, log, opts, item, stylizer):
         '''
-        Can be used to make changes to the css during the CSS flattening
+        Can be used to make changes to the CSS during the CSS flattening
         process.
 
         :param item: The item (HTML file) being processed

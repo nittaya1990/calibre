@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
 
 
 __license__   = 'GPL v3'
@@ -11,7 +10,6 @@ import textwrap
 from qt.core import QComboBox, Qt
 
 from calibre.gui2 import config as gui_conf
-from polyglot.builtins import unicode_type
 
 
 class HistoryBox(QComboBox):
@@ -38,11 +36,11 @@ class HistoryBox(QComboBox):
         self.setCurrentIndex(self.findText(val, Qt.MatchFlag.MatchFixedString))
 
     def save_history(self, opt_name):
-        history = [unicode_type(self.itemText(i)) for i in range(self.count())]
+        history = [str(self.itemText(i)) for i in range(self.count())]
         ct = self.text()
         if ct not in history:
             history = [ct] + history
         gui_conf[opt_name] = history[:10]
 
     def text(self):
-        return unicode_type(self.currentText()).strip()
+        return str(self.currentText()).strip()

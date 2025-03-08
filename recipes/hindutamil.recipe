@@ -1,0 +1,64 @@
+#!/usr/bin/env python
+from calibre.web.feeds.news import BasicNewsRecipe, classes
+
+
+class hindutamil(BasicNewsRecipe):
+    title = 'இந்து தமிழ் திசை'
+    __author__ = 'unkn0wn'
+    description = (
+        'Hindu Tamil Thisai stands differentiated from the rest of the language dailies in Tamil Nadu '
+        'through its unbiased news coverage, in-depth analysis of international, national and local issues.'
+    )
+    no_stylesheets = True
+    use_embedded_content = False
+    encoding = 'utf-8'
+    language = 'ta'
+    remove_attributes = ['style', 'height', 'width']
+    masthead_url = 'https://static.hindutamil.in/hindu/static/store/images/logo.png'
+
+    def get_browser(self):
+        return BasicNewsRecipe.get_browser(self, user_agent='common_words/based')
+
+    keep_only_tags = [
+        classes('main-article')
+    ]
+
+    remove_tags = [
+        classes('newsbot-ads article-details-ads-inner art-follow-title1 dont-miss-it')
+    ]
+
+    ignore_duplicate_articles = {'title', 'url'}
+    remove_empty_feeds = True
+
+    def parse_index(self):
+        index = 'https://www.hindutamil.in/'
+        sections = [
+            ('தமிழகம்', 'tamilnadu'),
+            ('இந்தியா', 'india'),
+            ('கருத்துப் பேழை', 'opinion'),
+            ('உலகம்', 'world'),
+            ('வணிகம்', 'business'),
+            ('விளையாட்டு', 'sports'),
+            ('தமிழ் சினிமா', 'cinema'),
+            ('தொழில்நுட்பம்', 'technology'),
+            ('இணைப்பிதழ்கள்', 'supplements'),
+            ('Cartoon', 'cartoon'),
+            ('Life-style', 'life-style')
+        ]
+        feeds = []
+        soup = self.index_to_soup(index)
+        index = index + 'news/'
+        for sec in sections:
+            section = sec[0]
+            self.log(section)
+            articles = []
+            for a in soup.findAll('a', attrs={'href':lambda x: x and x.startswith(index + sec[1] + '/')}):
+                url = a['href']
+                if url in {index + sec[1] + '/', index + sec[1]}:
+                    continue
+                title = self.tag_to_string(a)
+                self.log('\t', title, '\n\t\t', url)
+                articles.append({'title': title, 'url': url})
+            if articles:
+                feeds.append((section, articles))
+        return feeds

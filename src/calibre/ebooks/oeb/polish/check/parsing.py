@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 
 
 __license__ = 'GPL v3'
@@ -9,21 +8,22 @@ import re
 
 from lxml.etree import XMLSyntaxError
 
-from calibre import force_unicode, human_readable, prepare_string_for_xml
-from calibre.ebooks.chardet import replace_encoding_declarations, find_declared_encoding
-from calibre.utils.xml_parse import safe_xml_fromstring
+from calibre import human_readable, prepare_string_for_xml
+from calibre.ebooks.chardet import find_declared_encoding, replace_encoding_declarations
 from calibre.ebooks.html_entities import html5_entities
+from calibre.ebooks.oeb.base import OEB_DOCS, URL_SAFE, XHTML, XHTML_NS, urlquote
+from calibre.ebooks.oeb.polish.check.base import INFO, WARN, BaseError
 from calibre.ebooks.oeb.polish.pretty import pretty_script_or_style as fix_style_tag
 from calibre.ebooks.oeb.polish.utils import PositionFinder, guess_type
-from calibre.ebooks.oeb.polish.check.base import BaseError, WARN, ERROR, INFO
-from calibre.ebooks.oeb.base import OEB_DOCS, XHTML_NS, urlquote, URL_SAFE, XHTML
-from polyglot.builtins import iteritems, unicode_type, error_message
+from calibre.utils.xml_parse import safe_xml_fromstring
+from polyglot.builtins import error_message, iteritems
 
 HTML_ENTITTIES = frozenset(html5_entities)
 XML_ENTITIES = {'lt', 'gt', 'amp', 'apos', 'quot'}
 ALL_ENTITIES = HTML_ENTITTIES | XML_ENTITIES
+fix_style_tag
 
-replace_pat = re.compile('&(%s);' % '|'.join(re.escape(x) for x in sorted((HTML_ENTITTIES - XML_ENTITIES))))
+replace_pat = re.compile('&({});'.format('|'.join(re.escape(x) for x in sorted(HTML_ENTITTIES - XML_ENTITIES))))
 mismatch_pat = re.compile(r'tag mismatch:.+?line (\d+).+?line \d+')
 
 
@@ -105,7 +105,7 @@ class NamedEntities(BaseError):
         for name, mt in iteritems(container.mime_map):
             if mt in check_types:
                 raw = container.raw_data(name)
-                nraw = replace_pat.sub(lambda m:html5_entities[m.group(1)], raw)
+                nraw = replace_pat.sub(lambda m: html5_entities[m.group(1)], raw)
                 if raw != nraw:
                     changed = True
                     with container.open(name, 'wb') as f:
@@ -146,7 +146,7 @@ class EscapedName(BaseError):
         c = 0
         while self.sname in all_names:
             c += 1
-            self.sname = '%s_%d.%s' % (bn, c, ext)
+            self.sname = f'{bn}_{c}.{ext}'
         rename_files(container, {self.name:self.sname})
         return True
 
@@ -154,12 +154,11 @@ class EscapedName(BaseError):
 class TooLarge(BaseError):
 
     level = INFO
-    MAX_SIZE = 260 *1024
-    HELP = _('This HTML file is larger than %s. Too large HTML files can cause performance problems'
-             ' on some e-book readers. Consider splitting this file into smaller sections.') % human_readable(MAX_SIZE)
 
-    def __init__(self, name):
+    def __init__(self, name, max_size):
         BaseError.__init__(self, _('File too large'), name)
+        self.HELP = _('This HTML file is larger than {}. Too large HTML files can cause performance problems'
+                ' on some e-book readers. Consider splitting this file into smaller sections.').format(human_readable(max_size))
 
 
 class BadEntity(BaseError):
@@ -203,7 +202,7 @@ class NonUTF8(BaseError):
 
     def __call__(self, container):
         raw = container.raw_data(self.name)
-        if isinstance(raw, unicode_type):
+        if isinstance(raw, str):
             raw, changed = replace_encoding_declarations(raw)
             if changed:
                 container.open(self.name, 'wb').write(raw.encode('utf-8'))
@@ -244,10 +243,10 @@ class EntitityProcessor:
         return b' ' * len(m.group())
 
 
-def check_html_size(name, mt, raw):
+def check_html_size(name, mt, raw, max_size=0):
     errors = []
-    if len(raw) > TooLarge.MAX_SIZE:
-        errors.append(TooLarge(name))
+    if max_size and len(raw) > max_size:
+        errors.append(TooLarge(name, max_size))
     return errors
 
 
@@ -293,7 +292,7 @@ def check_xml_parsing(name, mt, raw):
     except XMLSyntaxError as err:
         try:
             line, col = err.position
-        except:
+        except Exception:
             line = col = None
         return errors + [errcls(error_message(err), name, line, col)]
     except Exception as err:
@@ -304,40 +303,6 @@ def check_xml_parsing(name, mt, raw):
             errors.append(BadNamespace(name, root.nsmap.get(root.prefix, None)))
 
     return errors
-
-
-class CSSError(BaseError):
-
-    is_parsing_error = True
-
-    def __init__(self, level, msg, name, line, col):
-        self.level = level
-        prefix = 'CSS: '
-        BaseError.__init__(self, prefix + msg, name, line, col)
-        if level == WARN:
-            self.HELP = _('This CSS construct is not recognized. That means that it'
-                          ' most likely will not work on reader devices. Consider'
-                          ' replacing it with something else.')
-        else:
-            self.HELP = _('Some reader programs are very'
-                          ' finicky about CSS stylesheets and will ignore the whole'
-                          ' sheet if there is an error. These errors can often'
-                          ' be fixed automatically, however, automatic fixing will'
-                          ' typically remove unrecognized items, instead of correcting them.')
-            self.INDIVIDUAL_FIX = _('Try to fix parsing errors in this stylesheet automatically')
-
-    def __call__(self, container):
-        root = container.parsed(self.name)
-        container.dirty(self.name)
-        if container.mime_map[self.name] in OEB_DOCS:
-            for style in root.xpath('//*[local-name()="style"]'):
-                if style.get('type', 'text/css') == 'text/css' and style.text and style.text.strip():
-                    fix_style_tag(container, style)
-            for elem in root.xpath('//*[@style]'):
-                raw = elem.get('style')
-                if raw:
-                    elem.set('style', force_unicode(container.parse_css(raw, is_declaration=True).cssText, 'utf-8').replace('\n', ' '))
-        return True
 
 
 pos_pats = (re.compile(r'\[(\d+):(\d+)'), re.compile(r'(\d+), (\d+)\)'))
@@ -427,41 +392,6 @@ class BareTextInBody(BaseError):
                         p.tail += '  '
         container.dirty(self.name)
         return True
-
-
-class ErrorHandler:
-
-    ' Replacement logger to get useful error/warning info out of css_parser during parsing '
-
-    def __init__(self, name):
-        # may be disabled during setting of known valid items
-        self.name = name
-        self.errors = []
-
-    def __noop(self, *args, **kwargs):
-        pass
-    info = debug = setLevel = getEffectiveLevel = addHandler = removeHandler = __noop
-
-    def __handle(self, level, *args):
-        msg = ' '.join(map(unicode_type, args))
-        line = col = None
-        for pat in pos_pats:
-            m = pat.search(msg)
-            if m is not None:
-                line, col = int(m.group(1)), int(m.group(2))
-        if msg and line is not None:
-            # Ignore error messages with no line numbers as these are usually
-            # summary messages for an underlying error with a line number
-            if 'panose-1' in msg and 'unknown property name' in msg.lower():
-                return  # panose-1 is allowed in CSS 2.1 and is generated by calibre
-            self.errors.append(CSSError(level, msg, self.name, line, col))
-
-    def error(self, *args):
-        self.__handle(ERROR, *args)
-
-    def warn(self, *args):
-        self.__handle(WARN, *args)
-    warning = warn
 
 
 def check_filenames(container):

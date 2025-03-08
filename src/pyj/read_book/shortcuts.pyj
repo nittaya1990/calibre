@@ -20,7 +20,7 @@ def parse_key_repr(sc):
             ans.ctrlKey = True
         elif q is 'alt':
             ans.altKey = True
-        elif q is 'meta':
+        elif q is 'meta' or q is 'cmd':
             ans.metaKey = True
         elif q is 'shift':
             ans.shiftKey = True
@@ -219,7 +219,7 @@ def common_shortcuts():  # {{{
     ),
 
     'start_search': desc(
-        v"['/', 'Ctrl+f']",
+        v"['/', 'Ctrl+f', 'Cmd+f']",
         'ui',
         _('Start search'),
     ),
@@ -231,7 +231,7 @@ def common_shortcuts():  # {{{
     ),
 
     'previous_match': desc(
-        v"['Shift+F3']",
+        v"['Shift+F3', 'Shift+Enter']",
         'ui',
         _('Find previous'),
     ),
@@ -314,8 +314,14 @@ def common_shortcuts():  # {{{
         _('Show the book metadata')
     ),
 
+    'show_profiles': desc(
+        v"['Alt+p']",
+        'ui',
+        _('Change settings quickly by creating and switching to "profiles"')
+    ),
+
     'reload_book': desc(
-        v"['F5', 'Ctrl+r']",
+        v"['Ctrl+Alt+F5', 'Ctrl+Alt+r']",
         'ui',
         _('Reload book'),
     ),
@@ -476,7 +482,7 @@ def add_standalone_viewer_shortcuts(sc):
     )
 
     sc['print'] = desc(
-        "Ctrl+P",
+        "Ctrl+p",
         'ui',
         _('Print book to PDF'),
     )

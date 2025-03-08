@@ -1,31 +1,32 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 
 
 __license__ = 'GPL v3'
 __copyright__ = '2013, Kovid Goyal <kovid at kovidgoyal.net>'
 
-import os, sys, shutil
+import os
+import shutil
+import sys
 
 from lxml import etree
 
-from calibre import walk, guess_type
-from calibre.ebooks.metadata import string_to_authors, authors_to_sort_string
-from calibre.ebooks.metadata.book.base import Metadata
+from calibre import guess_type, walk
 from calibre.ebooks.docx import InvalidDOCX
 from calibre.ebooks.docx.names import DOCXNamespace
+from calibre.ebooks.metadata import authors_to_sort_string, string_to_authors
+from calibre.ebooks.metadata.book.base import Metadata
 from calibre.ptempfile import PersistentTemporaryDirectory
 from calibre.utils.localization import canonicalize_lang
 from calibre.utils.logging import default_log
-from calibre.utils.zipfile import ZipFile
 from calibre.utils.xml_parse import safe_xml_fromstring
+from calibre.utils.zipfile import ZipFile
 
 
 def fromstring(raw, parser=None):
     return safe_xml_fromstring(raw)
 
-# Read metadata {{{
 
+# Read metadata {{{
 
 def read_doc_props(raw, mi, XPath):
     root = fromstring(raw)
@@ -136,7 +137,7 @@ class DOCX:
         try:
             raw = self.read('[Content_Types].xml')
         except KeyError:
-            raise InvalidDOCX('The file %s docx file has no [Content_Types].xml' % self.name)
+            raise InvalidDOCX(f'The file {self.name} docx file has no [Content_Types].xml')
         root = fromstring(raw)
         self.content_types = {}
         self.default_content_types = {}
@@ -158,7 +159,7 @@ class DOCX:
         try:
             raw = self.read('_rels/.rels')
         except KeyError:
-            raise InvalidDOCX('The file %s docx file has no _rels/.rels' % self.name)
+            raise InvalidDOCX(f'The file {self.name} docx file has no _rels/.rels')
         root = fromstring(raw)
         self.relationships = {}
         self.relationships_rmap = {}
@@ -176,7 +177,7 @@ class DOCX:
         if name is None:
             names = tuple(n for n in self.names if n == 'document.xml' or n.endswith('/document.xml'))
             if not names:
-                raise InvalidDOCX('The file %s docx file has no main document' % self.name)
+                raise InvalidDOCX(f'The file {self.name} docx file has no main document')
             name = names[0]
         return name
 
@@ -259,7 +260,7 @@ class DOCX:
         else:
             try:
                 shutil.rmtree(self.tdir)
-            except EnvironmentError:
+            except OSError:
                 pass
 
 

@@ -1,17 +1,17 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:fdm=marker:ai
 
 
 __license__   = 'GPL v3'
 __copyright__ = '2012, Kovid Goyal <kovid at kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
 
-import array, sys
-from operator import itemgetter
+import array
+import sys
 from itertools import repeat
+from operator import itemgetter
 
 from calibre.utils.fonts.sfnt import UnknownTable
-from polyglot.builtins import iteritems, range
+from polyglot.builtins import iteritems
 
 
 def four_byte_type_code():
@@ -77,7 +77,7 @@ class LocaTable(UnknownTable):
             self.fmt = four_byte_type_code()
             vals = array.array(self.fmt, vals)
 
-        if sys.byteorder != "big":
+        if sys.byteorder != 'big':
             vals.byteswap()
         self.raw = vals.tobytes()
     subset = update

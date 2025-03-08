@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
 
 
 __license__   = 'GPL v3'
@@ -14,9 +13,9 @@ from xml.sax.saxutils import escape
 from lxml import etree
 
 from calibre import my_unichr
+from calibre.ebooks.mobi.utils import PolyglotDict, to_base
 from calibre.ebooks.oeb.base import XHTML_NS, extract
-from calibre.ebooks.mobi.utils import to_base, PolyglotDict
-from polyglot.builtins import iteritems, unicode_type, as_bytes
+from polyglot.builtins import as_bytes, iteritems
 
 CHUNK_SIZE = 8192
 
@@ -69,12 +68,12 @@ def tostring(raw, **kwargs):
 
     xml_declaration = kwargs.pop('xml_declaration', False)
     encoding = kwargs.pop('encoding', 'UTF-8')
-    kwargs['encoding'] = unicode_type
+    kwargs['encoding'] = str
     kwargs['xml_declaration'] = False
     ans = etree.tostring(raw, **kwargs)
     if xml_declaration:
-        ans = '<?xml version="1.0" encoding="%s"?>\n'%encoding + ans
-    return re.sub(r'&#x([0-9A-Fa-f]+);', lambda m:my_unichr(int(m.group(1), 16)),
+        ans = f'<?xml version="1.0" encoding="{encoding}"?>\n' + ans
+    return re.sub(r'&#x([0-9A-Fa-f]+);', lambda m: my_unichr(int(m.group(1), 16)),
             ans).encode(encoding)
 
 
@@ -86,7 +85,7 @@ class Chunk:
         self.ends_tags = []
         self.insert_pos = None
         self.is_first_chunk = False
-        self.selector = "%s-//*[@aid='%s']"%selector
+        self.selector = "{}-//*[@aid='{}']".format(*selector)
 
     def __len__(self):
         return len(self.raw)
@@ -96,8 +95,7 @@ class Chunk:
         self.ends_tags = chunk.ends_tags
 
     def __repr__(self):
-        return 'Chunk(len=%r insert_pos=%r starts_tags=%r ends_tags=%r)'%(
-                len(self.raw), self.insert_pos, self.starts_tags, self.ends_tags)
+        return f'Chunk(len={len(self.raw)!r} insert_pos={self.insert_pos!r} starts_tags={self.starts_tags!r} ends_tags={self.ends_tags!r})'
 
     __str__ = __repr__
 
@@ -116,7 +114,7 @@ class Skeleton:
 
     def render(self, root):
         raw = tostring(root, xml_declaration=True)
-        raw = raw.replace(b'<html', ('<html xmlns="%s"'%XHTML_NS).encode('ascii'), 1)
+        raw = raw.replace(b'<html', (f'<html xmlns="{XHTML_NS}"').encode('ascii'), 1)
         raw = close_self_closing_tags(raw)
         return raw
 
@@ -148,7 +146,7 @@ class Skeleton:
         return ans
 
     def __len__(self):
-        return len(self.skeleton) + sum([len(x.raw) for x in self.chunks])
+        return len(self.skeleton) + sum(len(x.raw) for x in self.chunks)
 
     @property
     def raw_text(self):
@@ -180,7 +178,7 @@ class Chunker:
                     with_tail=True))
                 orig_dumps[-1] = close_self_closing_tags(
                         orig_dumps[-1].replace(b'<html',
-                        ('<html xmlns="%s"'%XHTML_NS).encode('ascii'), 1))
+                        (f'<html xmlns="{XHTML_NS}"').encode('ascii'), 1))
 
             # First pass: break up document into rendered strings of length no
             # more than CHUNK_SIZE
@@ -284,8 +282,8 @@ class Chunker:
                     child.tail = None
             else:
                 if len(raw) > CHUNK_SIZE:
-                    self.log.warn('Tag %s has no aid and a too large chunk'
-                            ' size. Adding anyway.'%child.tag)
+                    self.log.warn(f'Tag {child.tag} has no aid and a too large chunk'
+                            ' size. Adding anyway.')
                 chunks.append(Chunk(raw, self.chunk_selector))
                 if child.tail:
                     chunks.extend(self.chunk_up_text(child.tail))
@@ -343,7 +341,7 @@ class Chunker:
         for s in self.skeletons:
             s.start_pos = sp
             sp += len(s)
-        self.skel_table = [Skel(s.file_number, 'SKEL%010d'%s.file_number,
+        self.skel_table = [Skel(s.file_number, f'SKEL{s.file_number:010}',
             len(s.chunks), s.start_pos, len(s.skeleton)) for s in self.skeletons]
 
         Chunk = namedtuple('Chunk',
@@ -386,8 +384,7 @@ class Chunker:
                     pos_fid = (chunk.sequence_number, offset-chunk.insert_pos,
                             offset)
             if pos_fid is None:
-                raise ValueError('Could not find chunk for aid: %r'%
-                        match.group(1))
+                raise ValueError(f'Could not find chunk for aid: {match.group(1)!r}')
             aid_map[match.group(1)] = pos_fid
 
         self.aid_offset_map = aid_map
@@ -414,7 +411,9 @@ class Chunker:
                 text)
 
     def dump(self, orig_dumps):
-        import tempfile, shutil, os
+        import os
+        import shutil
+        import tempfile
         tdir = os.path.join(tempfile.gettempdir(), 'skeleton')
         self.log('Skeletons dumped to:', tdir)
         if os.path.exists(tdir):
@@ -427,13 +426,13 @@ class Chunker:
         error = False
         for i, skeleton in enumerate(self.skeletons):
             for j, chunk in enumerate(skeleton.chunks):
-                with open(os.path.join(chunks, 'file-%d-chunk-%d.html'%(i, j)),
+                with open(os.path.join(chunks, f'file-{i}-chunk-{j}.html'),
                         'wb') as f:
                     f.write(chunk.raw)
             oraw, rraw = orig_dumps[i], skeleton.rebuild()
-            with open(os.path.join(orig, '%04d.html'%i),  'wb') as f:
+            with open(os.path.join(orig, f'{i:04}.html'), 'wb') as f:
                 f.write(oraw)
-            with open(os.path.join(rebuilt, '%04d.html'%i),  'wb') as f:
+            with open(os.path.join(rebuilt, f'{i:04}.html'), 'wb') as f:
                 f.write(rraw)
             if oraw != rraw:
                 error = True

@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
 
 '''
 Created on 29 Jun 2012
@@ -24,10 +23,7 @@ from threading import Thread
 
 from calibre import prints
 from calibre.constants import DEBUG, cache_dir, numeric_version
-from calibre.devices.errors import (
-    ControlError, InitialConnectionError, OpenFailed, OpenFeedback, PacketError,
-    TimeoutError, UserFeedback
-)
+from calibre.devices.errors import ControlError, InitialConnectionError, OpenFailed, OpenFeedback, PacketError, TimeoutError, UserFeedback
 from calibre.devices.interface import DevicePlugin, currently_connected_device
 from calibre.devices.usbms.books import Book, CollectionsBookList
 from calibre.devices.usbms.deviceconfig import DeviceConfig
@@ -40,18 +36,19 @@ from calibre.ebooks.metadata.book.json_codec import JsonCodec
 from calibre.library import current_library_name
 from calibre.ptempfile import PersistentTemporaryFile
 from calibre.utils.config_base import tweaks
-from calibre.utils.filenames import ascii_filename as sanitize, shorten_components_to
+from calibre.utils.filenames import ascii_filename as sanitize
+from calibre.utils.filenames import shorten_components_to
 from calibre.utils.ipc import eintr_retry_call
-from calibre.utils.mdns import (
-    get_all_ips, publish as publish_zeroconf, unpublish as unpublish_zeroconf
-)
+from calibre.utils.mdns import get_all_ips
+from calibre.utils.mdns import publish as publish_zeroconf
+from calibre.utils.mdns import unpublish as unpublish_zeroconf
 from calibre.utils.socket_inheritance import set_socket_inherit
 from polyglot import queue
-from polyglot.builtins import as_bytes, iteritems, itervalues, unicode_type
+from polyglot.builtins import as_bytes, iteritems, itervalues
 
 
 def synchronous(tlockname):
-    """A decorator to place an instance based lock around a method """
+    '''A decorator to place an instance based lock around a method '''
 
     def _synched(func):
         @wraps(func)
@@ -69,7 +66,7 @@ class ConnectionListener(Thread):
         self.daemon = True
         self.driver = driver
         self.keep_running = True
-        self.all_ip_addresses = dict()
+        self.all_ip_addresses = {}
 
     def stop(self):
         self.keep_running = False
@@ -99,7 +96,7 @@ class ConnectionListener(Thread):
             if not self.all_ip_addresses:
                 self.all_ip_addresses = get_all_ips()
                 if self.all_ip_addresses:
-                    self.driver._debug("All IP addresses", self.all_ip_addresses)
+                    self.driver._debug('All IP addresses', self.all_ip_addresses)
 
             if not self.driver.connection_queue.empty():
                 d = currently_connected_device.device
@@ -125,13 +122,13 @@ class ConnectionListener(Thread):
                             content_server_port = ''
                             try:
                                 from calibre.srv.opts import server_config
-                                content_server_port = unicode_type(server_config().port)
+                                content_server_port = str(server_config().port)
                             except Exception:
                                 pass
                             message = (self.driver.ZEROCONF_CLIENT_STRING + ' (on ' +
-                                            unicode_type(socket.gethostname().partition('.')[0]) +
+                                            str(socket.gethostname().partition('.')[0]) +
                                             ');' + content_server_port +
-                                            ',' + unicode_type(self.driver.port)).encode('utf-8')
+                                            ',' + str(self.driver.port)).encode('utf-8')
                             self.driver._debug('received broadcast', packet, message)
                             self.driver.broadcast_socket.sendto(message, remote)
                         except:
@@ -162,14 +159,14 @@ class ConnectionListener(Thread):
                             device_socket = None
                             self.driver._debug('driver is not answering')
 
-                    except socket.timeout:
+                    except TimeoutError:
                         pass
-                    except socket.error:
+                    except OSError:
                         x = sys.exc_info()[1]
                         self.driver._debug('unexpected socket exception', x.args[0])
                         self._close_socket(device_socket)
                         device_socket = None
-#                        raise
+                        # raise
 
 
 class SDBook(Book):
@@ -185,7 +182,7 @@ class SMART_DEVICE_APP(DeviceConfig, DevicePlugin):
     gui_name = _('Wireless device')
     gui_name_template = '%s: %s'
 
-    icon = I('devices/tablet.png')
+    icon = 'devices/tablet.png'
     description = _('Communicate with Smart Device apps')
     supported_platforms = ['windows', 'osx', 'linux']
     author = 'Charles Haley'
@@ -233,7 +230,6 @@ class SMART_DEVICE_APP(DeviceConfig, DevicePlugin):
     # Some network protocol constants
     BASE_PACKET_LEN             = 4096
     PROTOCOL_VERSION            = 1
-    MAX_CLIENT_COMM_TIMEOUT     = 300.0  # Wait at most N seconds for an answer
     MAX_UNSUCCESSFUL_CONNECTS   = 5
 
     SEND_NOOP_EVERY_NTH_PROBE   = 5
@@ -295,7 +291,7 @@ class SMART_DEVICE_APP(DeviceConfig, DevicePlugin):
         '',
         _('Use fixed network port') + ':::<p>' +
         _('If checked, use the port number in the "Port" box, otherwise '
-              'the driver will pick a random port') + '</p>',
+            'the driver will pick a random port') + '</p>',
         _('Port number: ') + ':::<p>' +
         _('Enter the port number the driver is to use if the "fixed port" box is checked') + '</p>',
         _('Print extra debug information') + ':::<p>' +
@@ -304,52 +300,52 @@ class SMART_DEVICE_APP(DeviceConfig, DevicePlugin):
         _('Comma separated list of metadata fields '
             'to turn into collections on the device.') + ':::<p>' +
         _('Possibilities include: series, tags, authors, etc' +
-              '. Three special collections are available: %(abt)s:%(abtv)s, '
-              '%(aba)s:%(abav)s, and %(abs)s:%(absv)s. Add  '
-              'these values to the list to enable them. The collections will be '
-              'given the name provided after the ":" character.')%dict(
-                    abt='abt', abtv=ALL_BY_TITLE, aba='aba', abav=ALL_BY_AUTHOR,
-                    abs='abs', absv=ALL_BY_SOMETHING),
+            '. Three special collections are available: %(abt)s:%(abtv)s, '
+            '%(aba)s:%(abav)s, and %(abs)s:%(absv)s. Add  '
+            'these values to the list to enable them. The collections will be '
+            'given the name provided after the ":" character.')%dict(
+                abt='abt', abtv=ALL_BY_TITLE, aba='aba', abav=ALL_BY_AUTHOR,
+                abs='abs', absv=ALL_BY_SOMETHING),
         '',
         _('Enable the no-activity timeout') + ':::<p>' +
         _('If this box is checked, calibre will automatically disconnect if '
-              'a connected device does nothing for %d minutes. Unchecking this '
-              ' box disables this timeout, so calibre will never automatically '
-              'disconnect.')%(DISCONNECT_AFTER_N_SECONDS/60,) + '</p>',
+            'a connected device does nothing for %d minutes. Unchecking this '
+            ' box disables this timeout, so calibre will never automatically '
+            'disconnect.')%(DISCONNECT_AFTER_N_SECONDS/60,) + '</p>',
         _('Use this IP address') + ':::<p>' +
         _('Use this option if you want to force the driver to listen on a '
-              'particular IP address. The driver will listen only on the '
-              'entered address, and this address will be the one advertized '
-              'over mDNS (BonJour).') + '</p>',
+            'particular IP address. The driver will listen only on the '
+            'entered address, and this address will be the one advertised '
+            'over mDNS (BonJour).') + '</p>',
         _('Replace books with same calibre ID') + ':::<p>' +
         _('Use this option to overwrite a book on the device if that book '
-              'has the same calibre identifier as the book being sent. The file name of the '
-              'book will not change even if the save template produces a '
-              'different result. Using this option in most cases prevents '
-              'having multiple copies of a book on the device.') + '</p>',
+            'has the same calibre identifier as the book being sent. The file name of the '
+            'book will not change even if the save template produces a '
+            'different result. Using this option in most cases prevents '
+            'having multiple copies of a book on the device.') + '</p>',
         _('Cover thumbnail compression quality') + ':::<p>' +
         _('Use this option to control the size and quality of the cover '
-              'file sent to the device. It must be between 50 and 99. '
-              'The larger the number the higher quality the cover, but also '
-              'the larger the file. For example, changing this from 70 to 90 '
-              'results in a much better cover that is approximately 2.5 '
-              'times as big. To see the changes you must force calibre '
-              'to resend metadata to the device, either by changing '
-              'the metadata for the book (updating the last modification '
-              'time) or resending the book itself.') + '</p>',
+            'file sent to the device. It must be between 50 and 99. '
+            'The larger the number the higher quality the cover, but also '
+            'the larger the file. For example, changing this from 70 to 90 '
+            'results in a much better cover that is approximately 2.5 '
+            'times as big. To see the changes you must force calibre '
+            'to resend metadata to the device, either by changing '
+            'the metadata for the book (updating the last modification '
+            'time) or resending the book itself.') + '</p>',
         _('Use metadata cache') + ':::<p>' +
         _('Setting this option allows calibre to keep a copy of metadata '
-              'on the device, speeding up device connections. Unsetting this '
-              'option disables keeping the copy, forcing the device to send '
-              'metadata to calibre on every connect. Unset this option if '
-              'you think that the cache might not be operating correctly.') + '</p>',
+            'on the device, speeding up device connections. Unsetting this '
+            'option disables keeping the copy, forcing the device to send '
+            'metadata to calibre on every connect. Unset this option if '
+            'you think that the cache might not be operating correctly.') + '</p>',
         '',
         _('Additional file extensions to send to the device') + ':::<p>' +
         _('This is a comma-separated list of format file extensions you want '
-              'to be able to send to the device. For example, you might have '
-              'audio books in your library with the extension "m4b" that you '
-              'want to listen to on your device. Don\'t worry about the "extra '
-              'enabled extensions" warning.'),
+            'to be able to send to the device. For example, you might have '
+            'audio books in your library with the extension "m4b" that you '
+            'want to listen to on your device. Don\'t worry about the "extra '
+            'enabled extensions" warning.'),
         _('Ignore device free space') + ':::<p>' +
         _("Check this box to ignore the amount of free space reported by your "
           "devices. This might be needed if you store books on an SD card and "
@@ -394,7 +390,6 @@ class SMART_DEVICE_APP(DeviceConfig, DevicePlugin):
         self.debug_start_time = time.time()
         self.debug_time = time.time()
         self.is_connected = False
-        monkeypatch_zeroconf()
 
     # Don't call this method from the GUI unless you are sure that there is no
     # network traffic in progress. Otherwise the gui might hang waiting for the
@@ -407,14 +402,13 @@ class SMART_DEVICE_APP(DeviceConfig, DevicePlugin):
                 return
             total_elapsed = time.time() - self.debug_start_time
             elapsed = time.time() - self.debug_time
-            print('SMART_DEV (%7.2f:%7.3f) %s'%(total_elapsed, elapsed,
-                                                   inspect.stack()[1][3]), end='')
+            print(f'SMART_DEV ({total_elapsed:7.2f}:{elapsed:7.3f}) {inspect.stack()[1][3]}', end='')
             for a in args:
                 try:
                     if isinstance(a, dict):
                         printable = {}
                         for k,v in iteritems(a):
-                            if isinstance(v, (bytes, unicode_type)) and len(v) > 50:
+                            if isinstance(v, (bytes, str)) and len(v) > 50:
                                 printable[k] = 'too long'
                             else:
                                 printable[k] = v
@@ -436,14 +430,14 @@ class SMART_DEVICE_APP(DeviceConfig, DevicePlugin):
         if not isinstance(dinfo, dict):
             dinfo = {}
         if dinfo.get('device_store_uuid', None) is None:
-            dinfo['device_store_uuid'] = unicode_type(uuid.uuid4())
+            dinfo['device_store_uuid'] = str(uuid.uuid4())
         if dinfo.get('device_name') is None:
             dinfo['device_name'] = self.get_gui_name()
         if name is not None:
             dinfo['device_name'] = name
         dinfo['location_code'] = location_code
         dinfo['last_library_uuid'] = getattr(self, 'current_library_uuid', None)
-        dinfo['calibre_version'] = '.'.join([unicode_type(i) for i in numeric_version])
+        dinfo['calibre_version'] = '.'.join([str(i) for i in numeric_version])
         dinfo['date_last_connected'] = isoformat(now())
         dinfo['prefix'] = self.PREFIX
         return dinfo
@@ -477,7 +471,7 @@ class SMART_DEVICE_APP(DeviceConfig, DevicePlugin):
         special_tag = None
         if mdata.tags:
             for t in mdata.tags:
-                if t.startswith(_('News')) or t.startswith('/'):
+                if t.startswith((_('News'), '/')):
                     special_tag = t
                     break
 
@@ -490,14 +484,14 @@ class SMART_DEVICE_APP(DeviceConfig, DevicePlugin):
             except:
                 today = time.localtime()
                 date = (today[0], today[1], today[2])
-            template = "{title}_%d-%d-%d" % date
+            template = f'{{title}}_{date[0]}-{date[1]}-{date[2]}'
         use_subdirs = self.SUPPORTS_SUB_DIRS and settings.use_subdirs
 
         from calibre.library.save_to_disk import config, get_components
         opts = config().parse()
-        if not isinstance(template, unicode_type):
+        if not isinstance(template, str):
             template = template.decode('utf-8')
-        app_id = unicode_type(getattr(mdata, 'application_id', ''))
+        app_id = str(getattr(mdata, 'application_id', ''))
         id_ = mdata.get('id', fname)
         extra_components = get_components(template, mdata, id_,
                 timefmt=opts.send_timefmt, length=maxlen-len(app_id)-1,
@@ -576,9 +570,7 @@ class SMART_DEVICE_APP(DeviceConfig, DevicePlugin):
 
     def _read_binary_from_net(self, length):
         try:
-            self.device_socket.settimeout(self.MAX_CLIENT_COMM_TIMEOUT)
             v = self.device_socket.recv(length)
-            self.device_socket.settimeout(None)
             return v
         except:
             self._close_device_socket()
@@ -616,16 +608,14 @@ class SMART_DEVICE_APP(DeviceConfig, DevicePlugin):
         total_len = len(s)
         while sent_len < total_len:
             try:
-                sock.settimeout(self.MAX_CLIENT_COMM_TIMEOUT)
                 if sent_len == 0:
                     amt_sent = sock.send(s)
                 else:
                     amt_sent = sock.send(s[sent_len:])
-                sock.settimeout(None)
                 if amt_sent <= 0:
-                    raise IOError('Bad write on socket')
+                    raise OSError('Bad write on socket')
                 sent_len += amt_sent
-            except socket.error as e:
+            except OSError as e:
                 self._debug('socket error', e, e.errno)
                 if e.args[0] != EAGAIN and e.args[0] != EINTR:
                     self._close_device_socket()
@@ -657,11 +647,11 @@ class SMART_DEVICE_APP(DeviceConfig, DevicePlugin):
             if not wait_for_response:
                 return None, None
             return self._receive_from_client(print_debug_info=print_debug_info)
-        except socket.timeout:
+        except TimeoutError:
             self._debug('timeout communicating with device')
             self._close_device_socket()
             raise TimeoutError('Device did not respond in reasonable time')
-        except socket.error:
+        except OSError:
             self._debug('device went away')
             self._close_device_socket()
             raise ControlError(desc='Device closed the network connection')
@@ -685,11 +675,11 @@ class SMART_DEVICE_APP(DeviceConfig, DevicePlugin):
                     self._debug('receive after decode')  # , v)
                 return (self.reverse_opcodes[v[0]], v[1])
             self._debug('protocol error -- empty json string')
-        except socket.timeout:
+        except TimeoutError:
             self._debug('timeout communicating with device')
             self._close_device_socket()
             raise TimeoutError('Device did not respond in reasonable time')
-        except socket.error:
+        except OSError:
             self._debug('device went away')
             self._close_device_socket()
             raise ControlError(desc='Device closed the network connection')
@@ -704,7 +694,7 @@ class SMART_DEVICE_APP(DeviceConfig, DevicePlugin):
     def _put_file(self, infile, lpath, book_metadata, this_book, total_books):
         close_ = False
         if not hasattr(infile, 'read'):
-            infile, close_ = lopen(infile, 'rb'), True
+            infile, close_ = open(infile, 'rb'), True
         infile.seek(0, os.SEEK_END)
         length = infile.tell()
         book_metadata.size = length
@@ -714,14 +704,14 @@ class SMART_DEVICE_APP(DeviceConfig, DevicePlugin):
                                'metadata': book_metadata, 'thisBook': this_book,
                                'totalBooks': total_books,
                                'willStreamBooks': True,
-                               'willStreamBinary' : True,
-                               'wantsSendOkToSendbook' : self.can_send_ok_to_sendbook,
+                               'willStreamBinary': True,
+                               'wantsSendOkToSendbook': self.can_send_ok_to_sendbook,
                                'canSupportLpathChanges': True},
                           print_debug_info=False,
                           wait_for_response=self.can_send_ok_to_sendbook)
         if self.can_send_ok_to_sendbook:
             if opcode == 'ERROR':
-                raise UserFeedback(msg='Sending book %s to device failed' % lpath,
+                raise UserFeedback(msg=f'Sending book {lpath} to device failed',
                                    details=result.get('message', ''),
                                    level=UserFeedback.ERROR)
                 return
@@ -747,13 +737,13 @@ class SMART_DEVICE_APP(DeviceConfig, DevicePlugin):
         from calibre.utils.date import now, parse_date
         try:
             key = self._make_metadata_cache_key(uuid, ext_or_lpath)
-            if isinstance(lastmod, unicode_type):
+            if isinstance(lastmod, str):
                 if lastmod == 'None':
                     return None
                 lastmod = parse_date(lastmod)
             if key in self.device_book_cache and self.device_book_cache[key]['book'].last_modified == lastmod:
                 self.device_book_cache[key]['last_used'] = now()
-                return self.device_book_cache[key]['book'].deepcopy(lambda : SDBook('', ''))
+                return self.device_book_cache[key]['book'].deepcopy(lambda: SDBook('', ''))
         except:
             traceback.print_exc()
         return None
@@ -817,7 +807,7 @@ class SMART_DEVICE_APP(DeviceConfig, DevicePlugin):
         try:
             count = 0
             if os.path.exists(cache_file_name):
-                with lopen(cache_file_name, mode='rb') as fd:
+                with open(cache_file_name, mode='rb') as fd:
                     while True:
                         rec_len = fd.readline()
                         if len(rec_len) != 8:
@@ -854,7 +844,7 @@ class SMART_DEVICE_APP(DeviceConfig, DevicePlugin):
             count = 0
             prefix = os.path.join(cache_dir(),
                         'wireless_device_' + self.device_uuid + '_metadata_cache')
-            with lopen(prefix + '.tmp', mode='wb') as fd:
+            with open(prefix + '.tmp', mode='wb') as fd:
                 for key,book in iteritems(self.device_book_cache):
                     if (now_ - book['last_used']).days > self.PURGE_CACHE_ENTRIES_DAYS:
                         purged += 1
@@ -863,7 +853,7 @@ class SMART_DEVICE_APP(DeviceConfig, DevicePlugin):
                     json_metadata[key]['book'] = self.json_codec.encode_book_metadata(book['book'])
                     json_metadata[key]['last_used'] = book['last_used']
                     result = as_bytes(json.dumps(json_metadata, indent=2, default=to_json))
-                    fd.write(("%0.7d\n"%(len(result)+1)).encode('ascii'))
+                    fd.write(f'{len(result) + 1:007}\n'.encode('ascii'))
                     fd.write(result)
                     fd.write(b'\n')
                     count += 1
@@ -936,7 +926,7 @@ class SMART_DEVICE_APP(DeviceConfig, DevicePlugin):
                 sock.bind((ip_addr, port))
             else:
                 sock.bind(('', port))
-        except socket.error:
+        except OSError:
             self._debug('socket error on port', port)
             port = 0
         except:
@@ -957,7 +947,7 @@ class SMART_DEVICE_APP(DeviceConfig, DevicePlugin):
         from calibre.customize.ui import quick_metadata
         from calibre.ebooks.metadata.meta import get_metadata
         ext = temp_file_name.rpartition('.')[-1].lower()
-        with lopen(temp_file_name, 'rb') as stream:
+        with open(temp_file_name, 'rb') as stream:
             with quick_metadata:
                 return get_metadata(stream, stream_type=ext,
                         force_read_metadata=True,
@@ -989,7 +979,7 @@ class SMART_DEVICE_APP(DeviceConfig, DevicePlugin):
                 self._debug('timeout -- disconnected')
             else:
                 try:
-                    if self._call_client('NOOP', dict())[0] is None:
+                    if self._call_client('NOOP', {})[0] is None:
                         self._close_device_socket()
                 except:
                     self._close_device_socket()
@@ -1023,14 +1013,14 @@ class SMART_DEVICE_APP(DeviceConfig, DevicePlugin):
         from functools import partial
         p = partial(prints, file=output)
         if self.is_connected:
-            p("A wireless device is connected")
+            p('A wireless device is connected')
             return True
         all_ip_addresses = get_all_ips()
         if all_ip_addresses:
-            p("All IP addresses", all_ip_addresses)
+            p('All IP addresses', all_ip_addresses)
         else:
-            p("No IP addresses found")
-        p("No device is connected")
+            p('No IP addresses found')
+        p('No device is connected')
         return False
 
     @synchronous('sync_lock')
@@ -1132,7 +1122,7 @@ class SMART_DEVICE_APP(DeviceConfig, DevicePlugin):
             self.client_device_name = result.get('deviceName', self.client_device_kind)
             self._debug('Client device name', self.client_device_name)
 
-            self.client_app_name = result.get('appName', "")
+            self.client_app_name = result.get('appName', '')
             self._debug('Client app name', self.client_app_name)
             self.app_version_number = result.get('ccVersionNumber', '0')
             self._debug('App version #:', self.app_version_number)
@@ -1141,7 +1131,7 @@ class SMART_DEVICE_APP(DeviceConfig, DevicePlugin):
                 if (self.client_app_name == 'CalibreCompanion' and
                          self.app_version_number < self.CURRENT_CC_VERSION):
                     self._debug('Telling client to update')
-                    self._call_client("DISPLAY_MESSAGE",
+                    self._call_client('DISPLAY_MESSAGE',
                             {'messageKind': self.MESSAGE_UPDATE_NEEDED,
                              'lastestKnownAppVersion': self.CURRENT_CC_VERSION})
             except:
@@ -1194,7 +1184,7 @@ class SMART_DEVICE_APP(DeviceConfig, DevicePlugin):
                     # bad password
                     self._debug('password mismatch')
                     try:
-                        self._call_client("DISPLAY_MESSAGE",
+                        self._call_client('DISPLAY_MESSAGE',
                                 {'messageKind': self.MESSAGE_PASSWORD_ERROR,
                                  'currentLibraryName': self.current_library_name,
                                  'currentLibraryUUID': library_uuid})
@@ -1211,9 +1201,9 @@ class SMART_DEVICE_APP(DeviceConfig, DevicePlugin):
                 pass
 
             return True
-        except socket.timeout:
+        except TimeoutError:
             self._close_device_socket()
-        except socket.error:
+        except OSError:
             x = sys.exc_info()[1]
             self._debug('unexpected socket exception', x.args[0])
             self._close_device_socket()
@@ -1238,7 +1228,7 @@ class SMART_DEVICE_APP(DeviceConfig, DevicePlugin):
     def get_device_information(self, end_session=True):
         self._debug()
         self.report_progress(1.0, _('Get device information...'))
-        opcode, result = self._call_client('GET_DEVICE_INFORMATION', dict())
+        opcode, result = self._call_client('GET_DEVICE_INFORMATION', {})
         if opcode == 'OK':
             self.driveinfo = result['device_info']
             self._update_driveinfo_record(self.driveinfo, self.PREFIX, 'main')
@@ -1251,13 +1241,12 @@ class SMART_DEVICE_APP(DeviceConfig, DevicePlugin):
 
     @synchronous('sync_lock')
     def set_driveinfo_name(self, location_code, name):
-        self._update_driveinfo_record(self.driveinfo, "main", name)
+        self._update_driveinfo_record(self.driveinfo, 'main', name)
         self._call_client('SET_CALIBRE_DEVICE_NAME',
                          {'location_code': 'main', 'name':name})
 
     @synchronous('sync_lock')
-    def reset(self, key='-1', log_packets=False, report_progress=None,
-            detected_device=None) :
+    def reset(self, key='-1', log_packets=False, report_progress=None, detected_device=None):
         self._debug()
         self.set_progress_reporter(report_progress)
 
@@ -1271,16 +1260,16 @@ class SMART_DEVICE_APP(DeviceConfig, DevicePlugin):
     @synchronous('sync_lock')
     def card_prefix(self, end_session=True):
         self._debug()
-        return (None, None)
+        return None, None
 
     @synchronous('sync_lock')
     def total_space(self, end_session=True):
         self._debug()
         opcode, result = self._call_client('TOTAL_SPACE', {})
         if opcode == 'OK':
-            return (result['total_space_on_device'], 0, 0)
+            return result['total_space_on_device'], 0, 0
         # protocol error if we get here
-        return (0, 0, 0)
+        return 0, 0, 0
 
     @synchronous('sync_lock')
     def free_space(self, end_session=True):
@@ -1290,7 +1279,7 @@ class SMART_DEVICE_APP(DeviceConfig, DevicePlugin):
             self._debug('free space:', result['free_space_on_device'])
             return (result['free_space_on_device'], 0, 0)
         # protocol error if we get here
-        return (0, 0, 0)
+        return 0, 0, 0
 
     @synchronous('sync_lock')
     def books(self, oncard=None, end_session=True):
@@ -1312,7 +1301,7 @@ class SMART_DEVICE_APP(DeviceConfig, DevicePlugin):
             if will_use_cache:
                 books_on_device = []
                 self._debug('caching. count=', count)
-                for i in range(0, count):
+                for i in range(count):
                     opcode, result = self._receive_from_client(print_debug_info=False)
                     books_on_device.append(result)
 
@@ -1365,7 +1354,7 @@ class SMART_DEVICE_APP(DeviceConfig, DevicePlugin):
                     self._call_client('NOOP', {'priKey':priKey},
                                   print_debug_info=False, wait_for_response=False)
 
-            for i in range(0, count):
+            for i in range(count):
                 if (i % 100) == 0:
                     self._debug('getting book metadata. Done', i, 'of', count)
                 opcode, result = self._receive_from_client(print_debug_info=False)
@@ -1411,7 +1400,7 @@ class SMART_DEVICE_APP(DeviceConfig, DevicePlugin):
                 self.settings().extra_customization[self.OPT_COLLECTIONS].split(',')]
         self._debug('collection attributes', colattrs)
         coldict = {}
-        if colattrs:
+        if colattrs and hasattr(booklists[0], 'get_collections'):
             collections = booklists[0].get_collections(colattrs)
             for k,v in iteritems(collections):
                 lpaths = []
@@ -1503,19 +1492,19 @@ class SMART_DEVICE_APP(DeviceConfig, DevicePlugin):
             book = SDBook(self.PREFIX, lpath, other=mdata)
             length, lpath = self._put_file(infile, lpath, book, i, len(files))
             if length < 0:
-                raise ControlError(desc='Sending book %s to device failed' % lpath)
+                raise ControlError(desc=f'Sending book {lpath} to device failed')
             paths.append((lpath, length))
             # No need to deal with covers. The client will get the thumbnails
             # in the mi structure
             self.report_progress((i + 1) / float(len(files)), _('Transferring books to device...'))
 
         self.report_progress(1.0, _('Transferring books to device...'))
-        self._debug('finished uploading %d books' % (len(files)))
+        self._debug(f'finished uploading {len(files)} books')
         return paths
 
     @synchronous('sync_lock')
     def add_books_to_metadata(self, locations, metadata, booklists):
-        self._debug('adding metadata for %d books' % (len(metadata)))
+        self._debug(f'adding metadata for {len(metadata)} books')
 
         metadata = iter(metadata)
         for i, location in enumerate(locations):
@@ -1548,7 +1537,7 @@ class SMART_DEVICE_APP(DeviceConfig, DevicePlugin):
         for path in paths:
             new_paths.append(self._strip_prefix(path))
         opcode, result = self._call_client('DELETE_BOOK', {'lpaths': new_paths})
-        for i in range(0, len(new_paths)):
+        for i in range(len(new_paths)):
             opcode, result = self._receive_from_client(False)
             self._debug('removed book with UUID', result['uuid'])
         self._debug('removed', len(new_paths), 'books')
@@ -1569,7 +1558,7 @@ class SMART_DEVICE_APP(DeviceConfig, DevicePlugin):
                         bl.remove_book(book)
                         self._set_known_metadata(book, remove=True)
         self.report_progress(1.0, _('Removing books from device metadata listing...'))
-        self._debug('finished removing metadata for %d books' % (len(paths)))
+        self._debug(f'finished removing metadata for {len(paths)} books')
 
     @synchronous('sync_lock')
     def get_file(self, path, outfile, end_session=True, this_book=None, total_books=None):
@@ -1582,7 +1571,7 @@ class SMART_DEVICE_APP(DeviceConfig, DevicePlugin):
         position = 0
         while not eof:
             opcode, result = self._call_client('GET_BOOK_FILE_SEGMENT',
-                                    {'lpath' : path, 'position': position,
+                                    {'lpath': path, 'position': position,
                                      'thisBook': this_book, 'totalBooks': total_books,
                                      'canStream':True, 'canStreamBinary': True},
                                     print_debug_info=False)
@@ -1601,7 +1590,7 @@ class SMART_DEVICE_APP(DeviceConfig, DevicePlugin):
     @synchronous('sync_lock')
     def prepare_addable_books(self, paths, this_book=None, total_books=None):
         for idx, path in enumerate(paths):
-            (ign, ext) = os.path.splitext(path)
+            ign, ext = os.path.splitext(path)
             with PersistentTemporaryFile(suffix=ext) as tf:
                 self.get_file(path, tf, this_book=this_book, total_books=total_books)
                 paths[idx] = tf.name
@@ -1623,7 +1612,7 @@ class SMART_DEVICE_APP(DeviceConfig, DevicePlugin):
             other_info['id_link_rules'] = msprefs.get('id_link_rules', {})
 
             self._call_client('SET_LIBRARY_INFO',
-                                    {'libraryName' : library_name,
+                                    {'libraryName': library_name,
                                      'libraryUuid': library_uuid,
                                      'fieldMetadata': field_metadata.all_metadata(),
                                      'otherInfo': other_info},
@@ -1634,18 +1623,18 @@ class SMART_DEVICE_APP(DeviceConfig, DevicePlugin):
         device_prefs.set_overrides(manage_device_metadata='on_connect')
 
     def _show_message(self, message):
-        self._call_client("DISPLAY_MESSAGE",
+        self._call_client('DISPLAY_MESSAGE',
                 {'messageKind': self.MESSAGE_SHOW_TOAST,
                  'message': message})
 
     def _check_if_format_send_needed(self, db, id_, book):
         if not self.will_ask_for_update_books:
-            return (None, False)
+            return None, False
 
         from calibre.utils.date import isoformat, parse_date
         try:
             if not hasattr(book, '_format_mtime_'):
-                return (None, False)
+                return None, False
 
             ext = posixpath.splitext(book.lpath)[1][1:]
             fmt_metadata = db.new_api.format_metadata(id_, ext)
@@ -1657,17 +1646,17 @@ class SMART_DEVICE_APP(DeviceConfig, DevicePlugin):
                         self._show_message(_('You have book formats in your library '
                                              'with dates in the future. See calibre '
                                              'for details'))
-                    return (None, True)
+                    return None, True
 
                 cc_mtime = parse_date(book.get('_format_mtime_'), as_utc=True)
                 self._debug(book.title, 'cal_mtime', calibre_mtime, 'cc_mtime', cc_mtime)
                 if cc_mtime < calibre_mtime:
                     book.set('_format_mtime_', isoformat(self.now))
-                    return (posixpath.basename(book.lpath), False)
+                    return posixpath.basename(book.lpath), False
         except:
             self._debug('exception checking if must send format', book.title)
             traceback.print_exc()
-        return (None, False)
+        return None, False
 
     @synchronous('sync_lock')
     def synchronize_with_db(self, db, id_, book, first_call):
@@ -1694,8 +1683,8 @@ class SMART_DEVICE_APP(DeviceConfig, DevicePlugin):
                     self.have_bad_sync_columns = True
                 elif fm[self.is_read_sync_col]['datatype'] != 'bool':
                     self._debug('is_read_sync_col not bool type')
-                    self._show_message(_("The read sync column %s is "
-                             "not a Yes/No column")%self.is_read_sync_col)
+                    self._show_message(_('The read sync column %s is '
+                             'not a Yes/No column')%self.is_read_sync_col)
                     self.have_bad_sync_columns = True
 
             if self.is_read_date_sync_col:
@@ -1706,8 +1695,8 @@ class SMART_DEVICE_APP(DeviceConfig, DevicePlugin):
                     self.have_bad_sync_columns = True
                 elif fm[self.is_read_date_sync_col]['datatype'] != 'datetime':
                     self._debug('is_read_date_sync_col not date type')
-                    self._show_message(_("The read date sync column %s is "
-                             "not a date column")%self.is_read_date_sync_col)
+                    self._show_message(_('The read date sync column %s is '
+                             'not a date column')%self.is_read_date_sync_col)
                     self.have_bad_sync_columns = True
 
             self.have_checked_sync_columns = True
@@ -1909,7 +1898,7 @@ class SMART_DEVICE_APP(DeviceConfig, DevicePlugin):
                             'between 50 and 99. Forced to be %d.')%self.DEFAULT_THUMBNAIL_COMPRESSION_QUALITY
                 self._debug(message)
                 self.set_option('thumbnail_compression_quality',
-                                unicode_type(self.DEFAULT_THUMBNAIL_COMPRESSION_QUALITY))
+                                str(self.DEFAULT_THUMBNAIL_COMPRESSION_QUALITY))
 
             try:
                 self.listen_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -1954,7 +1943,7 @@ class SMART_DEVICE_APP(DeviceConfig, DevicePlugin):
             try:
                 self.listen_socket.listen(1)
             except:
-                message = 'listen on port %d failed' % port
+                message = f'listen on port {port} failed'
                 self._debug(message)
                 self._close_listen_socket()
                 return message
@@ -1963,7 +1952,7 @@ class SMART_DEVICE_APP(DeviceConfig, DevicePlugin):
                 ip_addr = self.settings().extra_customization[self.OPT_FORCE_IP_ADDRESS]
                 publish_zeroconf('calibre smart device client',
                                  '_calibresmartdeviceapp._tcp', port, {},
-                                 use_ip_address=ip_addr)
+                                 use_ip_address=ip_addr, strict=False)
             except:
                 self._debug('registration with bonjour failed')
                 traceback.print_exc()
@@ -2043,145 +2032,3 @@ class SMART_DEVICE_APP(DeviceConfig, DevicePlugin):
 
     def is_running(self):
         return getattr(self, 'listen_socket', None) is not None
-
-# Function to monkeypatch zeroconf to remove the 15 character name length restriction.
-# Copied from https://github.com/jstasiak/python-zeroconf version 0.28.1
-
-
-def monkeypatched_service_type_name(type_: str, *, strict: bool = True) -> str:
-    """
-    Validate a fully qualified service name, instance or subtype. [rfc6763]
-
-    Returns fully qualified service name.
-
-    Domain names used by mDNS-SD take the following forms:
-
-                   <sn> . <_tcp|_udp> . local.
-      <Instance> . <sn> . <_tcp|_udp> . local.
-      <sub>._sub . <sn> . <_tcp|_udp> . local.
-
-    1) must end with 'local.'
-
-      This is true because we are implementing mDNS and since the 'm' means
-      multi-cast, the 'local.' domain is mandatory.
-
-    2) local is preceded with either '_udp.' or '_tcp.' unless
-       strict is False
-
-    3) service name <sn> precedes <_tcp|_udp> unless
-       strict is False
-
-      The rules for Service Names [RFC6335] state that they may be no more
-      than fifteen characters long (not counting the mandatory underscore),
-      consisting of only letters, digits, and hyphens, must begin and end
-      with a letter or digit, must not contain consecutive hyphens, and
-      must contain at least one letter.
-
-    The instance name <Instance> and sub type <sub> may be up to 63 bytes.
-
-    The portion of the Service Instance Name is a user-
-    friendly name consisting of arbitrary Net-Unicode text [RFC5198]. It
-    MUST NOT contain ASCII control characters (byte values 0x00-0x1F and
-    0x7F) [RFC20] but otherwise is allowed to contain any characters,
-    without restriction, including spaces, uppercase, lowercase,
-    punctuation -- including dots -- accented characters, non-Roman text,
-    and anything else that may be represented using Net-Unicode.
-
-    :param type_: Type, SubType or service name to validate
-    :return: fully qualified service name (eg: _http._tcp.local.)
-    """
-
-    from zeroconf import (
-        _HAS_A_TO_Z, _HAS_ASCII_CONTROL_CHARS, _HAS_ONLY_A_TO_Z_NUM_HYPHEN,
-        _HAS_ONLY_A_TO_Z_NUM_HYPHEN_UNDERSCORE, _LOCAL_TRAILER,
-        _NONTCP_PROTOCOL_LOCAL_TRAILER, _TCP_PROTOCOL_LOCAL_TRAILER,
-        BadTypeInNameException
-    )
-
-    if type_.endswith(_TCP_PROTOCOL_LOCAL_TRAILER) or type_.endswith(_NONTCP_PROTOCOL_LOCAL_TRAILER):
-        remaining = type_[: -len(_TCP_PROTOCOL_LOCAL_TRAILER)].split('.')
-        trailer = type_[-len(_TCP_PROTOCOL_LOCAL_TRAILER) :]
-        has_protocol = True
-    elif strict:
-        raise BadTypeInNameException(
-            "Type '%s' must end with '%s' or '%s'"
-            % (type_, _TCP_PROTOCOL_LOCAL_TRAILER, _NONTCP_PROTOCOL_LOCAL_TRAILER)
-        )
-    elif type_.endswith(_LOCAL_TRAILER):
-        remaining = type_[: -len(_LOCAL_TRAILER)].split('.')
-        trailer = type_[-len(_LOCAL_TRAILER) + 1 :]
-        has_protocol = False
-    else:
-        raise BadTypeInNameException("Type '%s' must end with '%s'" % (type_, _LOCAL_TRAILER))
-
-    if strict or has_protocol:
-        service_name = remaining.pop()
-        if not service_name:
-            raise BadTypeInNameException("No Service name found")
-
-        if len(remaining) == 1 and len(remaining[0]) == 0:
-            raise BadTypeInNameException("Type '%s' must not start with '.'" % type_)
-
-        if service_name[0] != '_':
-            raise BadTypeInNameException("Service name (%s) must start with '_'" % service_name)
-
-        test_service_name = service_name[1:]
-
-        # if len(test_service_name) > 15:
-        #     raise BadTypeInNameException("Service name (%s) must be <= 15 bytes" % test_service_name)
-
-        if '--' in test_service_name:
-            raise BadTypeInNameException("Service name (%s) must not contain '--'" % test_service_name)
-
-        if '-' in (test_service_name[0], test_service_name[-1]):
-            raise BadTypeInNameException(
-                "Service name (%s) may not start or end with '-'" % test_service_name
-            )
-
-        if not _HAS_A_TO_Z.search(test_service_name):
-            raise BadTypeInNameException(
-                "Service name (%s) must contain at least one letter (eg: 'A-Z')" % test_service_name
-            )
-
-        allowed_characters_re = (
-            _HAS_ONLY_A_TO_Z_NUM_HYPHEN if strict else _HAS_ONLY_A_TO_Z_NUM_HYPHEN_UNDERSCORE
-        )
-
-        if not allowed_characters_re.search(test_service_name):
-            raise BadTypeInNameException(
-                "Service name (%s) must contain only these characters: "
-                "A-Z, a-z, 0-9, hyphen ('-')%s" % (test_service_name, "" if strict else ", underscore ('_')")
-            )
-    else:
-        service_name = ''
-
-    if remaining and remaining[-1] == '_sub':
-        remaining.pop()
-        if len(remaining) == 0 or len(remaining[0]) == 0:
-            raise BadTypeInNameException("_sub requires a subtype name")
-
-    if len(remaining) > 1:
-        remaining = ['.'.join(remaining)]
-
-    if remaining:
-        length = len(remaining[0].encode('utf-8'))
-        if length > 63:
-            raise BadTypeInNameException("Too long: '%s'" % remaining[0])
-
-        if _HAS_ASCII_CONTROL_CHARS.search(remaining[0]):
-            raise BadTypeInNameException(
-                "Ascii control character 0x00-0x1F and 0x7F illegal in '%s'" % remaining[0]
-            )
-
-    return service_name + trailer
-
-
-def monkeypatch_zeroconf():
-    # Hack to work around the newly-enforced 15 character service name limit.
-    # "monkeypatch" zeroconf with a function without the check
-    try:
-        from zeroconf._utils.name import service_type_name
-        service_type_name.__kwdefaults__['strict'] = False
-    except ImportError:
-        import zeroconf
-        zeroconf.service_type_name = monkeypatched_service_type_name

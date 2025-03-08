@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 
 
 __license__ = 'GPL v3'
@@ -7,6 +6,7 @@ __copyright__ = '2013, Kovid Goyal <kovid at kovidgoyal.net>'
 
 import numbers
 from collections import OrderedDict
+
 from polyglot.builtins import iteritems
 
 
@@ -39,7 +39,7 @@ inherit = Inherit()
 
 
 def binary_property(parent, name, XPath, get):
-    vals = XPath('./w:%s' % name)(parent)
+    vals = XPath(f'./w:{name}')(parent)
     if not vals:
         return inherit
     val = get(vals[0], 'w:val', 'on')
@@ -88,7 +88,7 @@ LINE_STYLES = {  # {{{
     'thick': 'solid',
     'thickThinLargeGap': 'double',
     'thickThinMediumGap': 'double',
-    'thickThinSmallGap' : 'double',
+    'thickThinSmallGap': 'double',
     'thinThickLargeGap': 'double',
     'thinThickMediumGap': 'double',
     'thinThickSmallGap': 'double',
@@ -108,7 +108,7 @@ border_edges = ('left', 'top', 'right', 'bottom', 'between')
 
 def read_single_border(parent, edge, XPath, get):
     color = style = width = padding = None
-    for elem in XPath('./w:%s' % edge)(parent):
+    for elem in XPath(f'./w:{edge}')(parent):
         c = get(elem, 'w:color')
         if c is not None:
             color = simple_color(c)
@@ -128,7 +128,7 @@ def read_single_border(parent, edge, XPath, get):
                 width = min(96, max(2, float(sz))) / 8
             except (ValueError, TypeError):
                 pass
-    return {p:v for p, v in zip(border_props, (padding, width, style, color))}
+    return dict(zip(border_props, (padding, width, style, color)))
 
 
 def read_border(parent, dest, XPath, get, border_edges=border_edges, name='pBdr'):
@@ -145,20 +145,20 @@ def read_border(parent, dest, XPath, get, border_edges=border_edges, name='pBdr'
 
 
 def border_to_css(edge, style, css):
-    bs = getattr(style, 'border_%s_style' % edge)
-    bc = getattr(style, 'border_%s_color' % edge)
-    bw = getattr(style, 'border_%s_width' % edge)
+    bs = getattr(style, f'border_{edge}_style')
+    bc = getattr(style, f'border_{edge}_color')
+    bw = getattr(style, f'border_{edge}_width')
     if isinstance(bw, numbers.Number):
         # WebKit needs at least 1pt to render borders and 3pt to render double borders
         bw = max(bw, (3 if bs == 'double' else 1))
     if bs is not inherit and bs is not None:
-        css['border-%s-style' % edge] = bs
+        css[f'border-{edge}-style'] = bs
     if bc is not inherit and bc is not None:
-        css['border-%s-color' % edge] = bc
+        css[f'border-{edge}-color'] = bc
     if bw is not inherit and bw is not None:
         if isinstance(bw, numbers.Number):
-            bw = '%.3gpt' % bw
-        css['border-%s-width' % edge] = bw
+            bw = f'{bw:.3g}pt'
+        css[f'border-{edge}-width'] = bw
 
 
 def read_indent(parent, dest, XPath, get):
@@ -167,12 +167,12 @@ def read_indent(parent, dest, XPath, get):
         l, lc = get(indent, 'w:left'), get(indent, 'w:leftChars')
         pl = simple_float(lc, 0.01) if lc is not None else simple_float(l, 0.05) if l is not None else None
         if pl is not None:
-            padding_left = '%.3g%s' % (pl, 'em' if lc is not None else 'pt')
+            padding_left = '{:.3g}{}'.format(pl, 'em' if lc is not None else 'pt')
 
         r, rc = get(indent, 'w:right'), get(indent, 'w:rightChars')
         pr = simple_float(rc, 0.01) if rc is not None else simple_float(r, 0.05) if r is not None else None
         if pr is not None:
-            padding_right = '%.3g%s' % (pr, 'em' if rc is not None else 'pt')
+            padding_right = '{:.3g}{}'.format(pr, 'em' if rc is not None else 'pt')
 
         h, hc = get(indent, 'w:hanging'), get(indent, 'w:hangingChars')
         fl, flc = get(indent, 'w:firstLine'), get(indent, 'w:firstLineChars')
@@ -181,7 +181,7 @@ def read_indent(parent, dest, XPath, get):
         ti = (simple_float(hc, 0.01) if hc is not None else simple_float(h, 0.05) if h is not None else
               simple_float(flc, 0.01) if flc is not None else simple_float(fl, 0.05) if fl is not None else None)
         if ti is not None:
-            text_indent = '%.3g%s' % (ti, 'em' if hc is not None or (h is None and flc is not None) else 'pt')
+            text_indent = '{:.3g}{}'.format(ti, 'em' if hc is not None or (h is None and flc is not None) else 'pt')
 
     setattr(dest, 'margin_left', padding_left)
     setattr(dest, 'margin_right', padding_right)
@@ -209,18 +209,18 @@ def read_spacing(parent, dest, XPath, get):
         a, al, aa = get(s, 'w:after'), get(s, 'w:afterLines'), get(s, 'w:afterAutospacing')
         pb = None if aa in {'on', '1', 'true'} else simple_float(al, 0.02) if al is not None else simple_float(a, 0.05) if a is not None else None
         if pb is not None:
-            padding_bottom = '%.3g%s' % (pb, 'ex' if al is not None else 'pt')
+            padding_bottom = '{:.3g}{}'.format(pb, 'ex' if al is not None else 'pt')
 
         b, bl, bb = get(s, 'w:before'), get(s, 'w:beforeLines'), get(s, 'w:beforeAutospacing')
         pt = None if bb in {'on', '1', 'true'} else simple_float(bl, 0.02) if bl is not None else simple_float(b, 0.05) if b is not None else None
         if pt is not None:
-            padding_top = '%.3g%s' % (pt, 'ex' if bl is not None else 'pt')
+            padding_top = '{:.3g}{}'.format(pt, 'ex' if bl is not None else 'pt')
 
         l, lr = get(s, 'w:line'), get(s, 'w:lineRule', 'auto')
         if l is not None:
             lh = simple_float(l, 0.05) if lr in {'exact', 'atLeast'} else simple_float(l, 1/240.0)
             if lh is not None:
-                line_height = '%.3g%s' % (lh, 'pt' if lr in {'exact', 'atLeast'} else '')
+                line_height = '{:.3g}{}'.format(lh, 'pt' if lr in {'exact', 'atLeast'} else '')
 
     setattr(dest, 'margin_top', padding_top)
     setattr(dest, 'margin_bottom', padding_bottom)
@@ -305,12 +305,12 @@ class Frame:
         else:
             if self.h_rule != 'auto':
                 t = 'min-height' if self.h_rule == 'atLeast' else 'height'
-                ans[t] = '%.3gpt' % self.h
+                ans[t] = f'{self.h:.3g}pt'
             if self.w is not None:
-                ans['width'] = '%.3gpt' % self.w
-            ans['padding-top'] = ans['padding-bottom'] = '%.3gpt' % self.v_space
+                ans['width'] = f'{self.w:.3g}pt'
+            ans['padding-top'] = ans['padding-bottom'] = f'{self.v_space:.3g}pt'
             if self.wrap not in {None, 'none'}:
-                ans['padding-left'] = ans['padding-right'] = '%.3gpt' % self.h_space
+                ans['padding-left'] = ans['padding-right'] = f'{self.h_space:.3g}pt'
                 if self.x_align is None:
                     fl = 'left' if self.x/page.width < 0.5 else 'right'
                 else:
@@ -412,12 +412,12 @@ class ParagraphStyle:
                 c['page-break-after'] = 'avoid'
             for edge in ('left', 'top', 'right', 'bottom'):
                 border_to_css(edge, self, c)
-                val = getattr(self, 'padding_%s' % edge)
+                val = getattr(self, f'padding_{edge}')
                 if val is not inherit:
-                    c['padding-%s' % edge] = '%.3gpt' % val
-                val = getattr(self, 'margin_%s' % edge)
+                    c[f'padding-{edge}'] = f'{val:.3g}pt'
+                val = getattr(self, f'margin_{edge}')
                 if val is not inherit:
-                    c['margin-%s' % edge] = val
+                    c[f'margin-{edge}'] = val
 
             if self.line_height not in {inherit, '1'}:
                 c['line-height'] = self.line_height
@@ -426,7 +426,7 @@ class ParagraphStyle:
                 val = getattr(self, x)
                 if val is not inherit:
                     if x == 'font_size':
-                        val = '%.3gpt' % val
+                        val = f'{val:.3g}pt'
                     c[x.replace('_', '-')] = val
             ta = self.text_align
             if ta is not inherit:
@@ -453,23 +453,23 @@ class ParagraphStyle:
     def clear_borders(self):
         for edge in border_edges[:-1]:
             for prop in ('width', 'color', 'style'):
-                setattr(self, 'border_%s_%s' % (edge, prop), inherit)
+                setattr(self, f'border_{edge}_{prop}', inherit)
 
     def clone_border_styles(self):
         style = ParagraphStyle(self.namespace)
         for edge in border_edges[:-1]:
             for prop in ('width', 'color', 'style'):
-                attr = 'border_%s_%s' % (edge, prop)
+                attr = f'border_{edge}_{prop}'
                 setattr(style, attr, getattr(self, attr))
         return style
 
     def apply_between_border(self):
         for prop in ('width', 'color', 'style'):
-            setattr(self, 'border_bottom_%s' % prop, getattr(self, 'border_between_%s' % prop))
+            setattr(self, f'border_bottom_{prop}', getattr(self, f'border_between_{prop}'))
 
     def has_visible_border(self):
         for edge in border_edges[:-1]:
-            bw, bs = getattr(self, 'border_%s_width' % edge), getattr(self, 'border_%s_style' % edge)
+            bw, bs = getattr(self, f'border_{edge}_width'), getattr(self, f'border_{edge}_style')
             if bw is not inherit and bw and bs is not inherit and bs != 'none':
                 return True
         return False

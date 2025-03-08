@@ -1,17 +1,14 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 # License: GPLv3 Copyright: 2008, Kovid Goyal <kovid at kovidgoyal.net>
 
 
-from qt.core import (
-    QFormLayout, QIcon, QLabel, QLineEdit, QListWidget, Qt, QVBoxLayout, QDialog,
-    QDialogButtonBox, QPlainTextEdit
-)
+from qt.core import QDialog, QDialogButtonBox, QFormLayout, QIcon, QLabel, QLineEdit, QListWidget, QPlainTextEdit, Qt, QVBoxLayout
 
 from calibre import prepare_string_for_xml
 from calibre.gui2 import error_dialog
 from calibre.gui2.dialogs.confirm_delete import confirm
 from calibre.gui2.widgets2 import Dialog
+from calibre.utils.icu import lower as icu_lower
 from calibre.utils.icu import sort_key
 
 
@@ -101,15 +98,15 @@ class SavedSearchEditor(Dialog):
         db = get_gui().current_db
         self.l = l = QVBoxLayout(self)
         b = self.bb.addButton(_('&Add search'), QDialogButtonBox.ButtonRole.ActionRole)
-        b.setIcon(QIcon(I('plus.png')))
+        b.setIcon(QIcon.ic('search_add_saved.png'))
         b.clicked.connect(self.add_search)
 
         b = self.bb.addButton(_('&Remove search'), QDialogButtonBox.ButtonRole.ActionRole)
-        b.setIcon(QIcon(I('minus.png')))
+        b.setIcon(QIcon.ic('search_delete_saved.png'))
         b.clicked.connect(self.del_search)
 
         b = self.bb.addButton(_('&Edit search'), QDialogButtonBox.ButtonRole.ActionRole)
-        b.setIcon(QIcon(I('modified.png')))
+        b.setIcon(QIcon.ic('modified.png'))
         b.clicked.connect(self.edit_search)
 
         self.slist = QListWidget(self)
@@ -155,7 +152,7 @@ class SavedSearchEditor(Dialog):
 
     def add_search(self):
         d = AddSavedSearch(parent=self, commit_changes=False, validate=self.validate_add)
-        if d.exec_() != QDialog.DialogCode.Accepted:
+        if d.exec() != QDialog.DialogCode.Accepted:
             return
         name, expression = d.accepted_data
         self.searches[name] = expression
@@ -184,7 +181,7 @@ class SavedSearchEditor(Dialog):
         d.setWindowTitle(_('Edit saved search'))
         d.sname.setText(n)
         d.search.setPlainText(self.searches[n])
-        if d.exec_() != QDialog.DialogCode.Accepted:
+        if d.exec() != QDialog.DialogCode.Accepted:
             return
         name, expression = d.accepted_data
         self.slist.currentItem().setText(name)

@@ -1,18 +1,20 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
 
 __license__   = 'GPL v3'
 __copyright__ = '2009, Kovid Goyal <kovid@kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
 
-import subprocess, os, sys, time
+import os
+import subprocess
+import sys
+import time
 
-from calibre.constants import iswindows, ismacos, isfrozen
-from calibre.utils.config import prefs
+from calibre.constants import isfrozen, ismacos, iswindows
 from calibre.ptempfile import PersistentTemporaryFile, base_dir
+from calibre.utils.config import prefs
 from calibre.utils.serialize import msgpack_dumps
-from polyglot.builtins import string_or_bytes, environ_item, native_string_type, getcwd
 from polyglot.binary import as_hex_unicode
+from polyglot.builtins import environ_item, native_string_type, string_or_bytes
 
 if iswindows:
     try:
@@ -30,9 +32,19 @@ def renice(niceness):
         pass
 
 
+def macos_viewer_bundle_path():
+    base = os.path.dirname(sys.executables_location)
+    return os.path.join(base, 'ebook-viewer.app/Contents/MacOS/')
+
+
 def macos_edit_book_bundle_path():
     base = os.path.dirname(sys.executables_location)
     return os.path.join(base, 'ebook-viewer.app/Contents/ebook-edit.app/Contents/MacOS/')
+
+
+def macos_headless_bundle_path():
+    base = os.path.dirname(sys.executables_location)
+    return os.path.join(base, 'ebook-viewer.app/Contents/ebook-edit.app/Contents/headless.app/Contents/MacOS/')
 
 
 def exe_path(exe_name):
@@ -43,7 +55,7 @@ def exe_path(exe_name):
     e = exe_name
     if iswindows:
         return os.path.join(os.path.dirname(sys.executable),
-                e+'.exe' if isfrozen else 'Scripts\\%s.exe'%e)
+                e+'.exe' if isfrozen else f'Scripts\\{e}.exe')
     if ismacos:
         return os.path.join(sys.executables_location, e)
 
@@ -74,14 +86,15 @@ class Worker:
 
     @property
     def executable(self):
+        if ismacos and not hasattr(sys, 'running_from_setup'):
+            return os.path.join(macos_headless_bundle_path(), self.exe_name)
         return exe_path(self.exe_name)
 
     @property
     def gui_executable(self):
         if ismacos and not hasattr(sys, 'running_from_setup'):
             if self.job_name == 'ebook-viewer':
-                base = os.path.dirname(sys.executables_location)
-                return os.path.join(base, 'ebook-viewer.app/Contents/MacOS/', self.exe_name)
+                return os.path.join(macos_viewer_bundle_path(), self.exe_name)
             if self.job_name == 'ebook-edit':
                 return os.path.join(macos_edit_book_bundle_path(), self.exe_name)
 
@@ -138,11 +151,10 @@ class Worker:
         except:
             pass
 
-    def __init__(self, env, gui=False, job_name=None):
-        self._env = {}
+    def __init__(self, env=None, gui=False, job_name=None):
         self.gui = gui
         self.job_name = job_name
-        self._env = env.copy()
+        self._env = (env or {}).copy()
 
     def __call__(self, redirect_output=True, cwd=None, priority=None, pass_fds=()):
         '''
@@ -152,8 +164,8 @@ class Worker:
         exe = self.gui_executable if self.gui else self.executable
         env = self.env
         try:
-            origwd = cwd or os.path.abspath(getcwd())
-        except EnvironmentError:
+            origwd = cwd or os.path.abspath(os.getcwd())
+        except OSError:
             # cwd no longer exists
             origwd = cwd or os.path.expanduser('~')
         env[native_string_type('ORIGWD')] = environ_item(as_hex_unicode(msgpack_dumps(origwd)))
@@ -162,20 +174,20 @@ class Worker:
             priority = prefs['worker_process_priority']
         cmd = [exe] if isinstance(exe, string_or_bytes) else exe
         args = {
-                'env' : env,
-                'cwd' : _cwd,
+                'env': env,
+                'cwd': _cwd,
                 }
         if iswindows:
             priority = {
-                    'high'   : subprocess.HIGH_PRIORITY_CLASS,
-                    'normal' : subprocess.NORMAL_PRIORITY_CLASS,
-                    'low'    : subprocess.IDLE_PRIORITY_CLASS}[priority]
+                    'high'  : subprocess.HIGH_PRIORITY_CLASS,
+                    'normal': subprocess.NORMAL_PRIORITY_CLASS,
+                    'low'   : subprocess.IDLE_PRIORITY_CLASS}[priority]
             args['creationflags'] = subprocess.CREATE_NO_WINDOW|priority
         else:
             niceness = {
-                    'normal' : 0,
-                    'low'    : 10,
-                    'high'   : 20,
+                    'normal': 0,
+                    'low'   : 10,
+                    'high'  : 20,
             }[priority]
             args['env']['CALIBRE_WORKER_NICENESS'] = str(niceness)
         ret = None

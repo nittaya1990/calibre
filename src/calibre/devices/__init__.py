@@ -1,4 +1,3 @@
-
 __license__   = 'GPL v3'
 __copyright__ = '2008, Kovid Goyal <kovid at kovidgoyal.net>'
 
@@ -6,9 +5,10 @@ __copyright__ = '2008, Kovid Goyal <kovid at kovidgoyal.net>'
 Device drivers.
 '''
 
-import sys, time, pprint
+import pprint
+import sys
+import time
 from functools import partial
-from polyglot.builtins import zip, unicode_type
 
 DAY_MAP   = dict(Sun=0, Mon=1, Tue=2, Wed=3, Thu=4, Fri=5, Sat=6)
 MONTH_MAP = dict(Jan=1, Feb=2, Mar=3, Apr=4, May=5, Jun=6, Jul=7, Aug=8, Sep=9, Oct=10, Nov=11, Dec=12)
@@ -19,13 +19,13 @@ INVERSE_MONTH_MAP = dict(zip(MONTH_MAP.values(), MONTH_MAP.keys()))
 def strptime(src):
     src = src.strip()
     src = src.split()
-    src[0] = unicode_type(DAY_MAP[src[0][:-1]])+','
-    src[2] = unicode_type(MONTH_MAP[src[2]])
+    src[0] = str(DAY_MAP[src[0][:-1]])+','
+    src[2] = str(MONTH_MAP[src[2]])
     return time.strptime(' '.join(src), '%w, %d %m %Y %H:%M:%S %Z')
 
 
 def strftime(epoch, zone=time.gmtime):
-    src = time.strftime("%w, %d %m %Y %H:%M:%S GMT", zone(epoch)).split()
+    src = time.strftime('%w, %d %m %Y %H:%M:%S GMT', zone(epoch)).split()
     src[0] = INVERSE_DAY_MAP[int(src[0][:-1])]+','
     src[2] = INVERSE_MONTH_MAP[int(src[2])]
     return ' '.join(src)
@@ -69,11 +69,12 @@ def debug(ioreg_to_tmp=False, buf=None, plugins=None,
     device plugins as the plugins parameter.
     '''
     import textwrap
+
+    from calibre import prints
+    from calibre.constants import debug, is_debugging, ismacos, iswindows
     from calibre.customize.ui import device_plugins, disabled_device_plugins
     from calibre.debug import print_basic_debug_info
     from calibre.devices.scanner import DeviceScanner
-    from calibre.constants import iswindows, ismacos
-    from calibre import prints
     from polyglot.io import PolyglotStringIO
     oldo, olde = sys.stdout, sys.stderr
 
@@ -89,11 +90,13 @@ def debug(ioreg_to_tmp=False, buf=None, plugins=None,
             try:
                 d.startup()
             except:
-                out('Startup failed for device plugin: %s'%d)
+                out(f'Startup failed for device plugin: {d}')
 
     if disabled_plugins is None:
         disabled_plugins = list(disabled_device_plugins())
 
+    orig_debug = is_debugging()
+    debug(True)
     try:
         print_basic_debug_info(out=buf)
         s = DeviceScanner()
@@ -114,7 +117,11 @@ def debug(ioreg_to_tmp=False, buf=None, plugins=None,
             drives = pprint.pformat(Device.osx_get_usb_drives())
             ioreg = 'Output from mount:\n'+mount+'\n\n'
             ioreg += 'Output from osx_get_usb_drives:\n'+drives+'\n\n'
-            ioreg += Device.run_ioreg().decode('utf-8')
+            iro = Device.run_ioreg()
+            try:
+                ioreg += iro.decode('utf-8', 'replace')
+            except UnicodeDecodeError:
+                ioreg += repr(iro)
         connected_devices = []
         if disabled_plugins:
             out('\nDisabled plugins:', textwrap.fill(' '.join([x.__class__.__name__ for x in
@@ -180,7 +187,7 @@ def debug(ioreg_to_tmp=False, buf=None, plugins=None,
                 ioreg = 'IOREG Output\n'+ioreg
                 out(' ')
                 if ioreg_to_tmp:
-                    lopen('/tmp/ioreg.txt', 'w').write(ioreg)
+                    open('/tmp/ioreg.txt', 'w').write(ioreg)
                     out('Dont forget to send the contents of /tmp/ioreg.txt')
                     out('You can open it with the command: open /tmp/ioreg.txt')
                 else:
@@ -189,6 +196,7 @@ def debug(ioreg_to_tmp=False, buf=None, plugins=None,
         if hasattr(buf, 'getvalue'):
             return buf.getvalue()
     finally:
+        debug(orig_debug)
         sys.stdout = oldo
         sys.stderr = olde
         if plugins is None:

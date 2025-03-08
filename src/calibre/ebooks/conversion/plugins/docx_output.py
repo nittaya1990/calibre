@@ -1,11 +1,10 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 
 
 __license__ = 'GPL v3'
 __copyright__ = '2013, Kovid Goyal <kovid at kovidgoyal.net>'
 
-from calibre.customize.conversion import OutputFormatPlugin, OptionRecommendation
+from calibre.customize.conversion import OptionRecommendation, OutputFormatPlugin
 
 PAGE_SIZES = ['a0', 'a1', 'a2', 'a3', 'a4', 'a5', 'a6', 'b0', 'b1',
               'b2', 'b3', 'b4', 'b5', 'b6', 'legal', 'letter']
@@ -26,8 +25,8 @@ class DOCXOutput(OutputFormatPlugin):
             'are %s') % PAGE_SIZES),
 
         OptionRecommendation(name='docx_custom_page_size', recommended_value=None,
-            help=_('Custom size of the document. Use the form widthxheight '
-            'EG. `123x321` to specify the width and height (in pts). '
+            help=_('Custom size of the document. Use the form width x height, '
+            'for example: `123x321` to specify the width and height (in pts). '
             'This overrides any specified page-size.')),
 
         OptionRecommendation(name='docx_no_cover', recommended_value=False,
@@ -73,10 +72,12 @@ class DOCXOutput(OutputFormatPlugin):
     }
 
     def convert_metadata(self, oeb):
-        from lxml import etree
-        from calibre.ebooks.oeb.base import OPF, OPF2_NS
-        from calibre.ebooks.metadata.opf2 import OPF as ReadOPF
         from io import BytesIO
+
+        from lxml import etree
+
+        from calibre.ebooks.metadata.opf2 import OPF as ReadOPF
+        from calibre.ebooks.oeb.base import OPF, OPF2_NS
         package = etree.Element(OPF('package'), attrib={'version': '2.0'}, nsmap={None: OPF2_NS})
         oeb.metadata.to_opf2(package)
         self.mi = ReadOPF(BytesIO(etree.tostring(package, encoding='utf-8')), populate_spine=False, try_to_guess_cover=False).to_book_metadata()

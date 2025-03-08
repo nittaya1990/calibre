@@ -5,28 +5,52 @@ from __future__ import absolute_import, division, print_function, unicode_litera
 
 import re
 import socket
+import string
 import time
 from functools import partial
+
 try:
     from queue import Empty, Queue
 except ImportError:
     from Queue import Empty, Queue
+
 from threading import Thread
+
 try:
     from urllib.parse import urlparse
 except ImportError:
     from urlparse import urlparse
 
+from mechanize import HTTPError
+
 from calibre import as_unicode, browser, random_user_agent, xml_replace_entities
 from calibre.ebooks.metadata import check_isbn
 from calibre.ebooks.metadata.book.base import Metadata
 from calibre.ebooks.metadata.sources.base import Option, Source, fixauthors, fixcase
+from calibre.utils.icu import lower as icu_lower
 from calibre.utils.localization import canonicalize_lang
 from calibre.utils.random_ua import accept_header_for_ua
-from calibre.ebooks.oeb.base import urlquote
+
+
+def sort_matches_preferring_kindle_editions(matches):
+    upos_map = {url:i for i, url in enumerate(matches)}
+
+    def skey(url):
+        opos = upos_map[url]
+        parts = url.split('/')
+        try:
+            idx = parts.index('dp')
+        except Exception:
+            idx = -1
+        if idx < 0 or idx + 1 >= len(parts) or not parts[idx+1].startswith('B'):
+            return 1, opos
+        return 0, opos
+    matches.sort(key=skey)
+    return matches
 
 
 def iri_quote_plus(url):
+    from calibre.ebooks.oeb.base import urlquote
     ans = urlquote(url)
     if isinstance(ans, bytes):
         ans = ans.decode('utf-8')
@@ -45,6 +69,18 @@ class SearchFailed(ValueError):
     pass
 
 
+class UrlNotFound(ValueError):
+
+    def __init__(self, url):
+        ValueError.__init__(self, 'The URL {} was not found (HTTP 404)'.format(url))
+
+
+class UrlTimedOut(ValueError):
+
+    def __init__(self, url):
+        ValueError.__init__(self, 'Timed out fetching {} try again later'.format(url))
+
+
 def parse_html(raw):
     try:
         from html5_parser import parse
@@ -57,26 +93,37 @@ def parse_html(raw):
 
 
 def parse_details_page(url, log, timeout, browser, domain):
-    from calibre.utils.cleantext import clean_ascii_chars
-    from calibre.ebooks.chardet import xml_to_unicode
     from lxml.html import tostring
-    log('Getting details from:', url)
+
+    from calibre.ebooks.chardet import xml_to_unicode
+    from calibre.utils.cleantext import clean_ascii_chars
     try:
-        raw = browser.open_novisit(url, timeout=timeout).read().strip()
-    except Exception as e:
-        if callable(getattr(e, 'getcode', None)) and \
-                e.getcode() == 404:
-            log.error('URL malformed: %r' % url)
-            return
-        attr = getattr(e, 'args', [None])
-        attr = attr if attr else [None]
-        if isinstance(attr[0], socket.timeout):
-            msg = 'Details page timed out. Try again later.'
-            log.error(msg)
-        else:
-            msg = 'Failed to make details query: %r' % url
-            log.exception(msg)
-        return
+        from calibre.ebooks.metadata.sources.update import search_engines_module
+        get_data_for_cached_url = search_engines_module().get_data_for_cached_url
+    except Exception:
+        def get_data_for_cached_url(*a):
+            return None
+    raw = get_data_for_cached_url(url)
+    if raw:
+        log('Using cached details for url:', url)
+    else:
+        log('Downloading details from:', url)
+        try:
+            raw = browser.open_novisit(url, timeout=timeout).read().strip()
+        except Exception as e:
+            if callable(getattr(e, 'getcode', None)) and e.getcode() == 404:
+                log.error('URL not found: %r' % url)
+                raise UrlNotFound(url)
+            attr = getattr(e, 'args', [None])
+            attr = attr if attr else [None]
+            if isinstance(attr[0], socket.timeout):
+                msg = 'Details page timed out. Try again later.'
+                log.error(msg)
+                raise UrlTimedOut(url)
+            else:
+                msg = 'Failed to make details query: %r' % url
+                log.exception(msg)
+                raise ValueError('Could not make details query for {}'.format(url))
 
     oraw = raw
     if 'amazon.com.br' in url:
@@ -85,7 +132,7 @@ def parse_details_page(url, log, timeout, browser, domain):
     raw = xml_to_unicode(raw, strip_encoding_pats=True,
                          resolve_entities=True)[0]
     if '<title>404 - ' in raw:
-        raise ValueError('URL malformed: %r' % url)
+        raise ValueError('Got a 404 page for: %r' % url)
     if '>Could not find the requested document in the cache.<' in raw:
         raise ValueError('No cached entry for %s found' % url)
 
@@ -94,10 +141,10 @@ def parse_details_page(url, log, timeout, browser, domain):
     except Exception:
         msg = 'Failed to parse amazon details page: %r' % url
         log.exception(msg)
-        return
+        raise ValueError(msg)
     if domain == 'jp':
         for a in root.xpath('//a[@href]'):
-            if 'black-curtain-redirect.html' in a.get('href'):
+            if ('black-curtain-redirect.html' in a.get('href')) or ('/black-curtain/save-eligibility/black-curtain' in a.get('href')):
                 url = a.get('href')
                 if url:
                     if url.startswith('/'):
@@ -110,7 +157,7 @@ def parse_details_page(url, log, timeout, browser, domain):
         msg = 'Failed to parse amazon details page: %r' % url
         msg += tostring(errmsg, method='text', encoding='unicode').strip()
         log.error(msg)
-        return
+        raise ValueError(msg)
 
     from css_selectors import Select
     selector = Select(root)
@@ -185,7 +232,9 @@ class Worker(Thread):  # Get details {{{
                 7: ['juil'],
                 8: ['août'],
                 9: ['sept'],
-                12: ['déc'],
+                10: ['oct', 'octobre'],
+                11: ['nov', 'novembre'],
+                12: ['déc', 'décembre'],
             },
             'br': {
                 1: ['janeiro'],
@@ -281,10 +330,10 @@ class Worker(Thread):  # Get details {{{
             descendant::*[starts-with(text(), "Publication Date:") or \
                     starts-with(text(), "Audible.com Release Date:")]
         '''
-        self.publisher_names = {'Publisher', 'Uitgever', 'Verlag', 'Utgivare',
-                                'Editore', 'Editeur', 'Editor', 'Editora', '出版社'}
+        self.publisher_names = {'Publisher', 'Uitgever', 'Verlag', 'Utgivare', 'Herausgeber',
+                                'Editore', 'Editeur', 'Éditeur', 'Editor', 'Editora', '出版社'}
 
-        self.language_xpath =    '''
+        self.language_xpath = '''
             descendant::*[
                 starts-with(text(), "Language:") \
                 or text() = "Language" \
@@ -316,7 +365,7 @@ class Worker(Thread):  # Get details {{{
             r'([0-9.,]+) ?(out of|von|van|su|étoiles sur|つ星のうち|de un máximo de|de|av) '
             r'([\d\.]+)( (stars|Sternen|stelle|estrellas|estrelas|sterren|stjärnor)){0,1}'
         )
-        self.ratings_pat_cn = re.compile('平均([0-9.]+)')
+        self.ratings_pat_cn = re.compile(r'([0-9.]+) 颗星，最多 5 颗星')
         self.ratings_pat_jp = re.compile(r'\d+つ星のうち([\d\.]+)')
 
         lm = {
@@ -386,7 +435,7 @@ class Worker(Thread):  # Get details {{{
             with tempfile.NamedTemporaryFile(prefix=(asin or type('')(uuid.uuid4())) + '_',
                                              suffix='.html', delete=False) as f:
                 f.write(raw)
-            print('Downloaded html for', asin, 'saved in', f.name)
+            print('Downloaded HTML for', asin, 'saved in', f.name)
 
         try:
             title = self.parse_title(root)
@@ -448,6 +497,7 @@ class Worker(Thread):  # Get details {{{
         non_hero = tuple(self.selector(
             'div#bookDetails_container_div div#nonHeroSection')) or tuple(self.selector(
                 '#productDetails_techSpec_sections'))
+        feature_and_detail_bullets = root.xpath('//*[@data-feature-name="featureBulletsAndDetailBullets"]')
         if detail_bullets:
             self.parse_detail_bullets(root, mi, detail_bullets[0])
         elif non_hero:
@@ -456,6 +506,8 @@ class Worker(Thread):  # Get details {{{
             except:
                 self.log.exception(
                     'Failed to parse new-style book details section')
+        elif feature_and_detail_bullets:
+            self.parse_detail_bullets(root, mi, feature_and_detail_bullets[0], ul_selector='ul')
 
         else:
             pd = root.xpath(self.pd_xpath)
@@ -511,16 +563,19 @@ class Worker(Thread):  # Get details {{{
     def totext(self, elem, only_printable=False):
         res = self.tostring(elem, encoding='unicode', method='text')
         if only_printable:
-            filtered_characters = list(s for s in res if s.isprintable())
-            res = ''.join(filtered_characters).strip()
-        return res
+            try:
+                filtered_characters = [s for s in res if s.isprintable()]
+            except AttributeError:
+                filtered_characters = [s for s in res if s in string.printable]
+            res = ''.join(filtered_characters)
+        return res.strip()
 
     def parse_title(self, root):
 
         def sanitize_title(title):
-            ans = re.sub(r'[(\[].*[)\]]', '', title).strip()
-            if not ans:
-                ans = title.rpartition('[')[0].strip()
+            ans = title.strip()
+            if not ans.startswith('['):
+                ans = re.sub(r'[(\[].*[)\]]', '', title).strip()
             return ans
 
         h1 = root.xpath('//h1[@id="title"]')
@@ -529,11 +584,18 @@ class Worker(Thread):  # Get details {{{
             for child in h1.xpath('./*[contains(@class, "a-color-secondary")]'):
                 h1.remove(child)
             return sanitize_title(self.totext(h1))
+        # audiobooks
+        elem = root.xpath('//*[@id="productTitle"]')
+        if elem:
+            return sanitize_title(self.totext(elem[0]))
         tdiv = root.xpath('//h1[contains(@class, "parseasinTitle")]')
         if not tdiv:
             span = root.xpath('//*[@id="ebooksTitle"]')
             if span:
                 return sanitize_title(self.totext(span[0]))
+            h1 = root.xpath('//h1[@data-feature-name="title"]')
+            if h1:
+                return sanitize_title(self.totext(h1[0]))
             raise ValueError('No title block found')
         tdiv = tdiv[0]
         actual_title = tdiv.xpath('descendant::*[@id="btAsinTitle"]')
@@ -552,6 +614,7 @@ class Worker(Thread):  # Get details {{{
                 '#bylineInfo .author .contributorNameID',
                 '#bylineInfo .author a.a-link-normal',
                 '#bylineInfo #bylineContributor',
+                '#bylineInfo #contributorLink',
         ):
             matches = tuple(self.selector(sel))
             if matches:
@@ -618,6 +681,16 @@ class Worker(Thread):  # Get details {{{
                 ans = parse_ratings_text(t)
                 if ans is not None:
                     return ans
+        else:
+            # found in kindle book pages on amazon.com
+            for x in root.xpath('//a[@id="acrCustomerReviewLink"]'):
+                spans = x.xpath('./span')
+                if spans:
+                    txt = self.tostring(spans[0], method='text', encoding='unicode', with_tail=False).strip()
+                    try:
+                        return float(txt.replace(',', '.'))
+                    except Exception:
+                        pass
 
     def _render_comments(self, desc):
         from calibre.library.comments import sanitize_comments_html
@@ -638,6 +711,10 @@ class Worker(Thread):  # Get details {{{
         for a in desc.xpath('descendant::a[@href]'):
             del a.attrib['href']
             a.tag = 'span'
+        for a in desc.xpath('descendant::span[@class="a-text-italic"]'):
+            a.tag = 'i'
+        for a in desc.xpath('descendant::span[@class="a-text-bold"]'):
+            a.tag = 'b'
         desc = self.tostring(desc, method='html', encoding='unicode').strip()
         desc = xml_replace_entities(desc, 'utf-8')
 
@@ -647,8 +724,8 @@ class Worker(Thread):  # Get details {{{
         # remove all attributes from tags
         desc = re.sub(r'<([a-zA-Z0-9]+)\s[^>]+>', r'<\1>', desc)
         # Collapse whitespace
-        # desc = re.sub('\n+', '\n', desc)
-        # desc = re.sub(' +', ' ', desc)
+        # desc = re.sub(r'\n+', '\n', desc)
+        # desc = re.sub(r' +', ' ', desc)
         # Remove the notice about text referring to out of print editions
         desc = re.sub(r'(?s)<em>--This text ref.*?</em>', '', desc)
         # Remove comments
@@ -661,22 +738,44 @@ class Worker(Thread):  # Get details {{{
         except ImportError:
             from urllib import unquote
         ans = ''
-        ns = tuple(self.selector('#bookDescription_feature_div noscript'))
-        if ns:
-            ns = ns[0]
-            if len(ns) == 0 and ns.text:
-                import html5lib
-                # html5lib parsed noscript as CDATA
-                ns = html5lib.parseFragment(
-                    '<div>%s</div>' % (ns.text), treebuilder='lxml', namespaceHTMLElements=False)[0]
-            else:
-                ns.tag = 'div'
-            ans = self._render_comments(ns)
+        ovr = tuple(self.selector('#drengr_MobileTabbedDescriptionOverviewContent_feature_div')) or tuple(
+            self.selector('#drengr_DesktopTabbedDescriptionOverviewContent_feature_div'))
+        if ovr:
+            ovr = ovr[0]
+            ovr.tag = 'div'
+            ans = self._render_comments(ovr)
+            ovr = tuple(self.selector('#drengr_MobileTabbedDescriptionEditorialsContent_feature_div')) or tuple(
+                self.selector('#drengr_DesktopTabbedDescriptionEditorialsContent_feature_div'))
+            if ovr:
+                ovr = ovr[0]
+                ovr.tag = 'div'
+                ans += self._render_comments(ovr)
         else:
-            desc = root.xpath('//div[@id="ps-content"]/div[@class="content"]')
-            if desc:
-                ans = self._render_comments(desc[0])
+            ns = tuple(self.selector('#bookDescription_feature_div noscript'))
+            if ns:
+                ns = ns[0]
+                if len(ns) == 0 and ns.text:
+                    import html5lib
 
+                    # html5lib parsed noscript as CDATA
+                    ns = html5lib.parseFragment(
+                        '<div>%s</div>' % (ns.text), treebuilder='lxml', namespaceHTMLElements=False)[0]
+                else:
+                    ns.tag = 'div'
+                ans = self._render_comments(ns)
+            else:
+                desc = root.xpath('//div[@id="ps-content"]/div[@class="content"]')
+                if desc:
+                    ans = self._render_comments(desc[0])
+                else:
+                    ns = tuple(self.selector('#bookDescription_feature_div .a-expander-content'))
+                    if ns:
+                        ans = self._render_comments(ns[0])
+        # audiobooks
+        if not ans:
+            elem = root.xpath('//*[@id="audible_desktopTabbedDescriptionOverviewContent_feature_div"]')
+            if elem:
+                ans = self._render_comments(elem[0])
         desc = root.xpath(
             '//div[@id="productDescription"]/*[@class="content"]')
         if desc:
@@ -706,6 +805,20 @@ class Worker(Thread):  # Get details {{{
     def parse_series(self, root):
         ans = (None, None)
 
+        # This is found on kindle pages for books on amazon.com
+        series = root.xpath('//*[@id="rpi-attribute-book_details-series"]')
+        if series:
+            spans = series[0].xpath('descendant::span')
+            if spans:
+                texts = [self.tostring(x, encoding='unicode', method='text', with_tail=False).strip() for x in spans]
+                texts = list(filter(None, texts))
+                if len(texts) == 2:
+                    idxinfo, series = texts
+                    m = re.search(r'[0-9.]+', idxinfo.strip())
+                    if m is not None:
+                        ans = series, float(m.group())
+                        return ans
+
         # This is found on the paperback/hardback pages for books on amazon.com
         series = root.xpath('//div[@data-feature-name="seriesTitle"]')
         if series:
@@ -724,21 +837,17 @@ class Worker(Thread):  # Get details {{{
                         if series:
                             ans = (series, series_index)
         else:
-            series = root.xpath('//div[@id="seriesBullet_feature_div"]')
+            series = root.xpath('//div[@id="seriesBulletWidget_feature_div"]')
             if series:
-                series = series[0]
-                spans = series.xpath('descendant::span')
-                if spans:
-                    span = spans[0]
-                    b = span.xpath('./b')
-                    a = span.xpath('./a')
-                    if a and b:
-                        series = self.tostring(a[0], encoding='unicode', method='text', with_tail=False).strip()
-                        if series:
-                            raw = self.tostring(b[0], encoding='unicode', method='text', with_tail=False).strip()
-                            m = re.search(r'[0-9.]+', raw)
-                            if m is not None:
-                                ans = (series, float(m.group()))
+                a = series[0].xpath('descendant::a')
+                if a:
+                    raw = self.tostring(a[0], encoding='unicode', method='text', with_tail=False)
+                    if self.domain == 'jp':
+                        m = re.search(r'(?P<index>[0-9.]+)\s*(?:巻|冊)\s*\(全\s*([0-9.]+)\s*(?:巻|冊)\):\s*(?P<series>.+)', raw.strip())
+                    else:
+                        m = re.search(r'(?:Book|Libro|Buch)\s+(?P<index>[0-9.]+)\s+(?:of|de|von)\s+([0-9.]+)\s*:\s*(?P<series>.+)', raw.strip())
+                    if m is not None:
+                        ans = (m.group('series').strip(), float(m.group('index')))
 
         # This is found on Kindle edition pages on amazon.com
         if ans == (None, None):
@@ -801,11 +910,16 @@ class Worker(Thread):  # Get details {{{
                         seen.add(lraw)
         return ans
 
-    def parse_cover(self, root, raw=b""):
+    def parse_cover(self, root, raw=b''):
         # Look for the image URL in javascript, using the first image in the
         # image gallery as the cover
         import json
-        imgpat = re.compile(r"""'imageGalleryData'\s*:\s*(\[\s*{.+])""")
+        imgpat = re.compile(r'"hiRes":"(.+?)","thumb"')
+        for script in root.xpath('//script'):
+            m = imgpat.search(script.text or '')
+            if m is not None:
+                return m.group(1)
+        imgpat = re.compile(r''''imageGalleryData'\s*:\s*(\[\s*{.+])''')
         for script in root.xpath('//script'):
             m = imgpat.search(script.text or '')
             if m is not None:
@@ -854,6 +968,7 @@ class Worker(Thread):  # Get details {{{
                             if width > mwidth:
                                 mwidth = width
                                 url = iurl
+
                         return url
                     except Exception:
                         pass
@@ -872,8 +987,11 @@ class Worker(Thread):  # Get details {{{
                 if url:
                     return url
 
-    def parse_detail_bullets(self, root, mi, container):
-        ul = next(self.selector('.detail-bullet-list', root=container))
+    def parse_detail_bullets(self, root, mi, container, ul_selector='.detail-bullet-list'):
+        try:
+            ul = next(self.selector(ul_selector, root=container))
+        except StopIteration:
+            return
         for span in self.selector('.a-list-item', root=ul):
             cells = span.xpath('./span')
             if len(cells) >= 2:
@@ -889,10 +1007,11 @@ class Worker(Thread):  # Get details {{{
     def parse_detail_cells(self, mi, c1, c2):
         name = self.totext(c1, only_printable=True).strip().strip(':').strip()
         val = self.totext(c2)
+        val = val.replace('\u200e', '').replace('\u200f', '')
         if not val:
             return
         if name in self.language_names:
-            ans = self.lang_map.get(val, None)
+            ans = self.lang_map.get(val)
             if not ans:
                 ans = canonicalize_lang(val)
             if ans:
@@ -971,7 +1090,7 @@ class Worker(Thread):  # Get details {{{
 class Amazon(Source):
 
     name = 'Amazon.com'
-    version = (1, 2, 19)
+    version = (1, 3, 12)
     minimum_calibre_version = (2, 82, 0)
     description = _('Downloads metadata and covers from Amazon')
 
@@ -993,6 +1112,7 @@ class Amazon(Source):
         'jp': _('Japan'),
         'es': _('Spain'),
         'br': _('Brazil'),
+        'in': _('India'),
         'nl': _('Netherlands'),
         'cn': _('China'),
         'ca': _('Canada'),
@@ -1005,12 +1125,13 @@ class Amazon(Source):
         'bing': _('Bing search cache'),
         'google': _('Google search cache'),
         'wayback': _('Wayback machine cache (slow)'),
+        'ddg': _('DuckDuckGo search and Google cache'),
     }
 
     options = (
         Option('domain', 'choices', 'com', _('Amazon country website to use:'),
                _('Metadata from Amazon will be fetched using this '
-                 'country\'s Amazon website.'), choices=AMAZON_DOMAINS),
+                 "country's Amazon website."), choices=AMAZON_DOMAINS),
         Option('server', 'choices', 'auto', _('Server to get data from:'),
                _(
                    'Amazon has started blocking attempts to download'
@@ -1026,11 +1147,33 @@ class Amazon(Source):
                    ' MOBI file came from a different Amazon country store, you could get'
                    ' incorrect results.'
                )),
+        Option('prefer_kindle_edition', 'bool', False, _('Prefer the Kindle edition, when available'),
+               _(
+                   'When searching for a book and the search engine returns both paper and Kindle editions,'
+                   ' always prefer the Kindle edition, instead of whatever the search engine returns at the'
+                   ' top.')
+        ),
     )
 
     def __init__(self, *args, **kwargs):
         Source.__init__(self, *args, **kwargs)
         self.set_amazon_id_touched_fields()
+
+    def id_from_url(self, url):
+        from polyglot.urllib import urlparse
+        purl = urlparse(url)
+        if purl.netloc and purl.path and '/dp/' in purl.path:
+            host_parts = tuple(x.lower() for x in purl.netloc.split('.'))
+            if 'amazon' in host_parts:
+                domain = host_parts[-1]
+            parts = purl.path.split('/')
+            idx = parts.index('dp')
+            try:
+                val = parts[idx+1]
+            except IndexError:
+                return
+            aid = 'amazon' if domain == 'com' else ('amazon_' + domain)
+            return aid, val
 
     def test_fields(self, mi):
         '''
@@ -1076,7 +1219,7 @@ class Amazon(Source):
         self.set_amazon_id_touched_fields()
 
     def set_amazon_id_touched_fields(self):
-        ident_name = "identifier:amazon"
+        ident_name = 'identifier:amazon'
         if self.domain != 'com':
             ident_name += '_' + self.domain
         tf = [x for x in self.touched_fields if not
@@ -1105,11 +1248,12 @@ class Amazon(Source):
             'au':  'https://www.amazon.com.au/',
             'br':  'https://www.amazon.com.br/',
             'jp':  'https://www.amazon.co.jp/',
+            'mx':  'https://www.amazon.com.mx/',
         }.get(domain, 'https://www.amazon.%s/' % domain)
 
     def _get_book_url(self, identifiers):  # {{{
         domain, asin = self.get_domain_and_asin(
-            identifiers, extra_domains=('in', 'au', 'ca'))
+            identifiers, extra_domains=('au', 'ca'))
         if domain and asin:
             url = None
             r = self.referrer_for_domain(domain)
@@ -1186,9 +1330,9 @@ class Amazon(Source):
     def create_query(self, log, title=None, authors=None, identifiers={},  # {{{
                      domain=None, for_amazon=True):
         try:
-            from urllib.parse import urlencode, unquote_plus
+            from urllib.parse import unquote_plus, urlencode
         except ImportError:
-            from urllib import urlencode, unquote_plus
+            from urllib import unquote_plus, urlencode
         if domain is None:
             domain = self.domain
 
@@ -1200,7 +1344,7 @@ class Amazon(Source):
         terms = []
         q = {'search-alias': 'aps',
              'unfiltered': '1',
-             }
+        }
 
         if domain == 'com':
             q['sort'] = 'relevanceexprank'
@@ -1237,7 +1381,8 @@ class Amazon(Source):
         if not ('field-keywords' in q or 'field-isbn' in q or
                 ('field-title' in q)):
             # Insufficient metadata to make an identify query
-            return None, None
+            log.error('Insufficient metadata to construct query, none of title, ISBN or ASIN supplied')
+            raise SearchFailed()
 
         if not for_amazon:
             return terms, domain
@@ -1250,8 +1395,7 @@ class Amazon(Source):
                 q['field-keywords'] += ' ' + q.pop(f, '')
             q['field-keywords'] = q['field-keywords'].strip()
 
-        encoded_q = dict([(x.encode('utf-8', 'ignore'), y.encode(
-            'utf-8', 'ignore')) for x, y in q.items()])
+        encoded_q = {x.encode('utf-8', 'ignore'): y.encode('utf-8', 'ignore') for x, y in q.items()}
         url_query = urlencode(encoded_q)
         # amazon's servers want IRIs with unicode characters not percent esaped
         parts = []
@@ -1298,9 +1442,10 @@ class Amazon(Source):
             return True
 
         for query in (
-                '//div[contains(@class, "s-result-list")]//h2/a[@href]',
-                '//div[contains(@class, "s-result-list")]//div[@data-index]//h5//a[@href]',
-                r'//li[starts-with(@id, "result_")]//a[@href and contains(@class, "s-access-detail-page")]',
+            '//div[contains(@class, "s-result-list")]//h2/a[@href]',
+            '//div[contains(@class, "s-result-list")]//div[@data-index]//h5//a[@href]',
+            r'//li[starts-with(@id, "result_")]//a[@href and contains(@class, "s-access-detail-page")]',
+            '//div[@data-cy="title-recipe"]/a[@href]',
         ):
             result_links = root.xpath(query)
             if result_links:
@@ -1356,14 +1501,12 @@ class Amazon(Source):
     # }}}
 
     def search_amazon(self, br, testing, log, abort, title, authors, identifiers, timeout):  # {{{
-        from calibre.utils.cleantext import clean_ascii_chars
         from calibre.ebooks.chardet import xml_to_unicode
+        from calibre.utils.cleantext import clean_ascii_chars
         matches = []
         query, domain = self.create_query(log, title=title, authors=authors,
                                           identifiers=identifiers)
-        if query is None:
-            log.error('Insufficient metadata to construct query')
-            raise SearchFailed()
+        time.sleep(1)
         try:
             raw = br.open_novisit(query, timeout=timeout).read().strip()
         except Exception as e:
@@ -1409,20 +1552,34 @@ class Amazon(Source):
 
     def search_search_engine(self, br, testing, log, abort, title, authors, identifiers, timeout, override_server=None):  # {{{
         from calibre.ebooks.metadata.sources.update import search_engines_module
+        se = search_engines_module()
         terms, domain = self.create_query(log, title=title, authors=authors,
                                           identifiers=identifiers, for_amazon=False)
         site = self.referrer_for_domain(
             domain)[len('https://'):].partition('/')[0]
         matches = []
-        se = search_engines_module()
         server = override_server or self.server
-        if server in ('bing',):
+        if server == 'bing':
             urlproc, sfunc = se.bing_url_processor, se.bing_search
-        elif server in ('auto', 'google'):
-            urlproc, sfunc = se.google_url_processor, se.google_search
         elif server == 'wayback':
             urlproc, sfunc = se.wayback_url_processor, se.ddg_search
-        results, qurl = sfunc(terms, site, log=log, br=br, timeout=timeout)
+        elif server == 'ddg':
+            urlproc, sfunc = se.ddg_url_processor, se.ddg_search
+        elif server == 'google':
+            urlproc, sfunc = se.google_url_processor, se.google_search
+        else:  # auto or unknown
+            # urlproc, sfunc = se.google_url_processor, se.google_search
+            urlproc, sfunc = se.bing_url_processor, se.bing_search
+        try:
+            results, qurl = sfunc(terms, site, log=log, br=br, timeout=timeout)
+        except HTTPError as err:
+            if err.code == 429 and sfunc is se.google_search:
+                log('Got too many requests error from Google, trying via DuckDuckGo')
+                urlproc, sfunc = se.ddg_url_processor, se.ddg_search
+                results, qurl = sfunc(terms, site, log=log, br=br, timeout=timeout)
+            else:
+                raise
+
         br.set_current_header('Referer', qurl)
         for result in results:
             if abort.is_set():
@@ -1430,13 +1587,10 @@ class Amazon(Source):
 
             purl = urlparse(result.url)
             if '/dp/' in purl.path and site in purl.netloc:
-                url = result.cached_url
-                if url is None:
-                    url = se.wayback_machine_cached_url(
-                        result.url, br, timeout=timeout)
-                if url is None:
-                    log('Failed to find cached page for:', result.url)
-                    continue
+                # We cannot use cached URL as wayback machine no longer caches
+                # amazon and Google and Bing web caches are no longer
+                # accessible.
+                url = result.url
                 if url not in matches:
                     matches.append(url)
                 if len(matches) >= 3:
@@ -1507,6 +1661,9 @@ class Amazon(Source):
             log.error('No matches found with query: %r' % query)
             return
 
+        if self.prefs['prefer_kindle_edition']:
+            matches = sort_matches_preferring_kindle_editions(matches)
+
         workers = [Worker(
             url, result_queue, br, log, i, domain, self, testing=testing, timeout=timeout,
             cover_url_processor=cover_url_processor, filter_result=partial(
@@ -1537,13 +1694,20 @@ class Amazon(Source):
         if not self.use_search_engine:
             return True
         if title is not None:
+            import regex
+            only_punctuation_pat = regex.compile(r'^\p{P}+$')
 
             def tokenize_title(x):
-                return icu_lower(x).replace("'", '').replace('"', '').rstrip(':')
+                ans = icu_lower(x).replace("'", '').replace('"', '').rstrip(':')
+                if only_punctuation_pat.match(ans) is not None:
+                    ans = ''
+                return ans
 
             tokens = {tokenize_title(x) for x in title.split() if len(x) > 3}
+            tokens.discard('')
             if tokens:
                 result_tokens = {tokenize_title(x) for x in mi.title.split()}
+                result_tokens.discard('')
                 if not tokens.intersection(result_tokens):
                     log('Ignoring result:', mi.title, 'as its title does not match')
                     return False
@@ -1608,14 +1772,20 @@ class Amazon(Source):
 def manual_tests(domain, **kw):  # {{{
     # To run these test use:
     # calibre-debug -c "from calibre.ebooks.metadata.sources.amazon import *; manual_tests('com')"
-    from calibre.ebooks.metadata.sources.test import (test_identify_plugin,
-                                                      isbn_test, title_test, authors_test, comments_test, series_test)
+    from calibre.ebooks.metadata.sources.test import authors_test, comments_test, isbn_test, series_test, test_identify_plugin, title_test
     all_tests = {}
     all_tests['com'] = [  # {{{
+        (  # in title
+            {'title': 'Expert C# 2008 Business Objects',
+             'authors': ['Lhotka']},
+            [title_test('Expert C#'),
+             authors_test(['Rockford Lhotka'])
+             ]
+        ),
+
         (   # Paperback with series
             {'identifiers': {'amazon': '1423146786'}},
-            [title_test('The Heroes of Olympus, Book Five The Blood of Olympus',
-                        exact=True), series_test('The Heroes of Olympus', 5)]
+            [title_test('Heroes of Olympus', exact=False), series_test('The Heroes of Olympus', 5)]
         ),
 
         (   # Kindle edition with series
@@ -1634,24 +1804,21 @@ def manual_tests(domain, **kw):  # {{{
         (  # Different comments markup, using Book Description section
             {'identifiers': {'amazon': '0982514506'}},
             [title_test(
-                "Griffin's Destiny: Book Three: The Griffin's Daughter Trilogy",
+                "Griffin's Destiny",
                 exact=True),
              comments_test('Jelena'), comments_test('Ashinji'),
              ]
         ),
 
-        (  # # in title
-            {'title': 'Expert C# 2008 Business Objects',
-             'authors': ['Lhotka']},
-            [title_test('Expert C#'),
-             authors_test(['Rockford Lhotka'])
-             ]
+        (   # New search results page markup (Dec 2024)
+            {'title': 'Come si scrive un articolo medico-scientifico'},
+            [title_test('Come si scrive un articolo medico-scientifico', exact=True)]
         ),
 
         (  # No specific problems
             {'identifiers': {'isbn': '0743273567'}},
-            [title_test('The great gatsby', exact=True),
-             authors_test(['Francis Scott Fitzgerald'])]
+            [title_test('the great gatsby'),
+             authors_test(['f. Scott Fitzgerald'])]
         ),
 
     ]
@@ -1659,14 +1826,22 @@ def manual_tests(domain, **kw):  # {{{
     # }}}
 
     all_tests['de'] = [  # {{{
+        # series
+        (
+            {'identifiers': {'isbn': '3499275120'}},
+            [title_test('Vespasian: Das Schwert des Tribuns: Historischer Roman',
+                        exact=False), authors_test(['Robert Fabbri']), series_test('Die Vespasian-Reihe', 1)
+             ]
+
+        ),
+
         (  # umlaut in title/authors
             {'title': 'Flüsternde Wälder',
              'authors': ['Nicola Förg']},
             [title_test('Flüsternde Wälder'),
-             authors_test(['Nicola Förg'])
+             authors_test(['Nicola Förg'], subset=True)
              ]
         ),
-
 
         (
             {'identifiers': {'isbn': '9783453314979'}},
@@ -1704,7 +1879,7 @@ def manual_tests(domain, **kw):  # {{{
         ),
         (
             {'identifiers': {'isbn': '2221116798'}},
-            [title_test('L\'étrange voyage de Monsieur Daldry',
+            [title_test("L'étrange voyage de Monsieur Daldry",
                         exact=True), authors_test(['Marc Levy'])
              ]
 
@@ -1752,9 +1927,13 @@ def manual_tests(domain, **kw):  # {{{
 
     all_tests['br'] = [  # {{{
         (
+            {'title': 'A Ascensão da Sombra'},
+            [title_test('A Ascensão da Sombra'), authors_test(['Robert Jordan'])]
+        ),
+
+        (
             {'title': 'Guerra dos Tronos'},
-            [title_test('A Guerra dos Tronos - As Crônicas de Gelo e Fogo',
-                        exact=True), authors_test(['George R. R. Martin'])
+            [title_test('A Guerra dos Tronos. As Crônicas de Gelo e Fogo - Livro 1'), authors_test(['George R. R. Martin'])
              ]
 
         ),
@@ -1791,7 +1970,7 @@ def manual_tests(domain, **kw):  # {{{
             [title_test('Parting Shot', exact=True),
              authors_test(['Mary Calmes'])]
         ),
-        (  # # in title
+        (  # in title
             {'title': 'Expert C# 2008 Business Objects',
              'authors': ['Lhotka']},
             [title_test('Expert C# 2008 Business Objects'),
@@ -1801,6 +1980,13 @@ def manual_tests(domain, **kw):  # {{{
             {'identifiers': {'amazon_ca': '162380874X'}},
             [title_test('Parting Shot', exact=True), authors_test(['Mary Calmes'])
              ]
+        ),
+    ]  # }}}
+
+    all_tests['in'] = [  # {{{
+        (   # Paperback with series
+            {'identifiers': {'amazon_in': '1423146786'}},
+            [title_test('The Heroes of Olympus, Book Five The Blood of Olympus', exact=True)]
         ),
     ]  # }}}
 

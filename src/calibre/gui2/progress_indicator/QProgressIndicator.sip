@@ -7,10 +7,19 @@
 
 %ModuleHeaderCode
 #include <QPainter>
-int load_style(QHash<int,QString> icon_map, int transient_scroller);
 void set_no_activate_on_click(QWidget *widget);
 void draw_snake_spinner(QPainter &painter, QRect rect, int angle, const QColor & light, const QColor & dark);
 %End
+
+class CalibreStyle : QProxyStyle {
+%TypeHeaderCode
+#include <QProgressIndicator.h>
+%End
+
+public:
+    CalibreStyle(int transient_scroller);
+};
+
 
 class SpinAnimator : QObject {
 
@@ -74,6 +83,11 @@ signals:
 
 };
 
-int load_style(QHash<int,QString> icon_map, int transient_scroller);
 void set_no_activate_on_click(QWidget *widget);
 void draw_snake_spinner(QPainter &painter, QRect rect, int angle, const QColor & light, const QColor & dark) /ReleaseGIL/;
+void set_menu_on_action(QAction* ac, QMenu* menu);
+QMenu* menu_for_action(const QAction *ac);
+void set_image_allocation_limit(int megabytes);
+int get_image_allocation_limit();
+QImage image_from_hicon(void*);
+QImage image_from_hbitmap(void*);

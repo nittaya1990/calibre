@@ -1,8 +1,10 @@
 #!/usr/bin/env python
 # vim:fileencoding=utf-8
 # https://manual.calibre-ebook.com/news_recipe.html
-from __future__ import unicode_literals, division, absolute_import, print_function
+from __future__ import absolute_import, division, print_function, unicode_literals
+
 from calibre.web.feeds.news import BasicNewsRecipe
+
 '''
 Børsen.dk
 '''
@@ -20,9 +22,9 @@ class Borsen_dk(BasicNewsRecipe):
     language              = 'da'
 
     keep_only_tags = [
-        dict(name="h1", attrs={'itemprop': 'headline'}),
-        dict(name="div", attrs={'itemprob': 'datePublished'}),
-        dict(name="div", attrs={'itemprop': 'articleBody'}),
+        dict(name='h1', attrs={'itemprop': 'headline'}),
+        dict(name='div', attrs={'itemprob': 'datePublished'}),
+        dict(name='div', attrs={'itemprop': 'articleBody'}),
     ]
 
     # Feed are found here:

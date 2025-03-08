@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
 
 
 __license__   = 'GPL v3'
@@ -8,10 +7,10 @@ __docformat__ = 'restructuredtext en'
 
 import textwrap
 
-from calibre.gui2.preferences import ConfigWidgetBase, test_widget, Setting
-from calibre.gui2.preferences.misc_ui import Ui_Form
-from calibre.gui2 import config, open_local_file, gprefs
 from calibre import get_proxies
+from calibre.gui2 import config, gprefs, open_local_file
+from calibre.gui2.preferences import ConfigWidgetBase, Setting, test_widget
+from calibre.gui2.preferences.misc_ui import Ui_Form
 from polyglot.builtins import iteritems
 
 
@@ -46,7 +45,7 @@ class ConfigWidget(ConfigWidgetBase, Ui_Form):
         proxies = get_proxies(debug=False)
         txt = _('No proxies used')
         if proxies:
-            lines = ['<br><code>%s: %s</code>'%(t, p) for t, p in
+            lines = [f'<br><code>{t}: {p}</code>' for t, p in
                     iteritems(proxies)]
             txt = _('<b>Using proxies:</b>') + ''.join(lines)
         self.proxies.setText(txt)
@@ -58,12 +57,12 @@ class ConfigWidget(ConfigWidgetBase, Ui_Form):
     def debug_device_detection(self, *args):
         from calibre.gui2.preferences.device_debug import DebugDevice
         d = DebugDevice(self.gui, self)
-        d.exec_()
+        d.exec()
 
     def user_defined_device(self, *args):
         from calibre.gui2.preferences.device_user_defined import UserDefinedDevice
         d = UserDefinedDevice(self)
-        d.exec_()
+        d.exec()
 
     def open_config_dir(self, *args):
         from calibre.utils.config import config_dir

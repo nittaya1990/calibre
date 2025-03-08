@@ -1,9 +1,8 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 # License: GPL v3 Copyright: 2019, Kovid Goyal <kovid at kovidgoyal.net>
 
 
-from qt.core import QWidget, Qt, QFontInfo, QLabel, QVBoxLayout, QPalette
+from qt.core import QFontInfo, QLabel, QPalette, Qt, QVBoxLayout, QWidget
 
 from calibre.gui2.progress_indicator import ProgressIndicator
 
@@ -71,4 +70,4 @@ if __name__ == '__main__':
     app = Application([])
     w = LoadingOverlay()
     w.show()
-    app.exec_()
+    app.exec()

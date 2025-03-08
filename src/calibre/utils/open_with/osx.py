@@ -1,11 +1,13 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 
 
 __license__ = 'GPL v3'
 __copyright__ = '2015, Kovid Goyal <kovid at kovidgoyal.net>'
 
-import os, re, mimetypes, subprocess
+import mimetypes
+import os
+import re
+import subprocess
 from collections import defaultdict
 from plistlib import loads
 
@@ -15,13 +17,14 @@ from polyglot.builtins import iteritems, string_or_bytes
 
 application_locations = ('/Applications', '~/Applications', '~/Desktop')
 
+
 # Public UTI MAP {{{
 
-
 def generate_public_uti_map():
-    from lxml import etree
-    from polyglot.urllib import urlopen
     from html5_parser import parse
+    from lxml import etree
+
+    from polyglot.urllib import urlopen
     raw = urlopen(
         'https://developer.apple.com/library/ios/documentation/Miscellaneous/Reference/UTIRef/Articles/System-DeclaredUniformTypeIdentifiers.html').read()
     root = parse(raw)
@@ -215,7 +218,7 @@ PUBLIC_UTI_RMAP = dict(PUBLIC_UTI_RMAP)
 def find_applications_in(base):
     try:
         entries = os.listdir(base)
-    except EnvironmentError:
+    except OSError:
         return
     for name in entries:
         path = os.path.join(base, name)
@@ -223,15 +226,13 @@ def find_applications_in(base):
             if name.lower().endswith('.app'):
                 yield path
             else:
-                for app in find_applications_in(path):
-                    yield app
+                yield from find_applications_in(path)
 
 
 def find_applications():
     for base in application_locations:
         base = os.path.expanduser(base)
-        for app in find_applications_in(base):
-            yield app
+        yield from find_applications_in(base)
 
 
 def get_extensions_from_utis(utis, plist):
@@ -325,7 +326,7 @@ def get_icon(path, pixmap_to_data=None, as_data=False, size=64):
             return
         try:
             names = os.listdir(iconset)
-        except EnvironmentError:
+        except OSError:
             return
         if not names:
             return

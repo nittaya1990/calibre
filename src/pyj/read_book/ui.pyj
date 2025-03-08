@@ -18,8 +18,10 @@ from read_book.db import get_db
 from read_book.globals import ui_operations
 from read_book.tts import Client
 from read_book.view import View
+from session import get_interface_data
 from utils import debounce, full_screen_element, human_readable, request_full_screen
 from widgets import create_button
+from image_popup import show_image
 
 RENDER_VERSION = __RENDER_VERSION__
 MATHJAX_VERSION = "__MATHJAX_VERSION__"
@@ -64,6 +66,7 @@ class ReadUI:
         ui_operations.update_url_state = self.update_url_state.bind(self)
         ui_operations.update_last_read_time = self.db.update_last_read_time
         ui_operations.show_error = self.show_error.bind(self)
+        ui_operations.update_reading_rates = self.update_reading_rates.bind(self)
         ui_operations.redisplay_book = self.redisplay_book.bind(self)
         ui_operations.reload_book = self.reload_book.bind(self)
         ui_operations.forward_gesture = self.forward_gesture.bind(self)
@@ -92,6 +95,16 @@ class ReadUI:
         ui_operations.find_next = self.view.search_overlay.find_next
         ui_operations.open_url = def(url):
             window.open(url, '_blank')
+        ui_operations.show_help = def(which):
+            if which is 'viewer':
+                path = '/viewer.html'
+            else:
+                return
+            if get_interface_data().lang_code_for_user_manual:
+                path = f'/{get_interface_data().lang_code_for_user_manual}{path}'
+            url = 'https://manual.calibre-ebook.com' + path
+            window.open(url, '_blank')
+
         ui_operations.copy_selection = def(text, html):
             # try using document.execCommand which on chrome allows the
             # copy on non-secure origin if this is close to a user
@@ -123,6 +136,28 @@ class ReadUI:
                 error_dialog(_('Could not copy to clipboard'), _('No permission to write to clipboard'))
             )
 
+        ui_operations.get_all_profiles = def(proceed):
+            ajax('reader-profiles/get-all', def(end_type, xhr, ev):
+                if end_type is not 'load':
+                    if end_type is 'abort': return
+                    return self.show_error(_('Failed to load profiles'), _(
+                        'Could not load profiles: with error: {}').format(xhr.error_html))
+                try:
+                    result = JSON.parse(xhr.responseText)
+                except Exception:
+                    return self.show_error(_('Failed to parse profiles'), _('Unparseable data received for profiles'))
+                proceed(result)
+            ).send()
+
+        ui_operations.save_profile = def(profile_name, profile, proceed):
+            ajax_send('reader-profiles/save', {'name': profile_name, 'profile': profile}, def(end_type, xhr, ev):
+                if end_type is not 'load':
+                    if end_type is 'abort': return
+                    return self.show_error(_('Failed to load profiles'), _(
+                        'Could not load profiles: with error: {}').format(xhr.error_html))
+                proceed()
+            )
+
     def on_resize(self):
         self.view.on_resize()
 
@@ -150,7 +185,7 @@ class ReadUI:
         div.appendChild(E.div(style='padding: 2ex 2rem; display:table; margin: auto'))
         div = div.lastChild
         dp = E.div()
-        create_simple_dialog_markup(title, _('Could not open {}. {}').format(book, msg), details, 'bug', '', dp)
+        create_simple_dialog_markup(title, _('Could not open {}. {}').format(book, msg), details, 'bug', '', 'red', dp)
         div.appendChild(dp)
         div.appendChild(E.div(
             style='margin-top: 1ex; padding-top: 1ex; border-top: solid 1px currentColor',
@@ -207,7 +242,7 @@ class ReadUI:
         ui_operations.get_file(
             self.view.book, image_file_name, def(blob, name, mimetype):
                 url = window.URL.createObjectURL(blob)
-                window.open(url)
+                show_image(url)
         )
 
     def load_book(self, library_id, book_id, fmt, metadata, force_reload):
@@ -298,6 +333,7 @@ class ReadUI:
 
     def start_load(self, book_id, fmt, metadata, force_reload):
         self.current_book_id = book_id
+        self.current_book_fmt = fmt
         metadata = metadata or library_data.metadata[book_id]
         self.current_metadata = metadata or {'title':_('Book id #') + book_id}
         update_window_title('', self.current_metadata.title)
@@ -331,6 +367,12 @@ class ReadUI:
         if end_type is 'abort':
             return
         if end_type is not 'load':
+            if xhr.status is 404:
+                fmt = (self.current_book_fmt or 'UNKNOWN').toUpperCase()
+                if 'cannot be viewed' in xhr.error_html:
+                    return self.show_error(
+                        _('Failed to view book'), _('Viewing of the {} format is not supported.').format(fmt), xhr.error_html)
+                return self.show_error(_('Failed to view book'), _('The {} format is not available.').format(fmt), xhr.error_html)
             return self.show_error(_('Failed to load book manifest'),
                 _('The book manifest failed to load, click "Show details" for more information.').format(title=self.current_metadata.title),
                                 xhr.error_html)
@@ -425,6 +467,11 @@ class ReadUI:
             self.downloads_in_progress.remove(xhr)
             progress_track[this] = raster_cover_size if this is raster_cover_name else files[this].size
             update_progress()
+            if len(queued):
+                for fname in queued:
+                    start_download(fname, base_path + encodeURIComponent(fname).replace(/%2[fF]/g, '/'))
+                    queued.discard(fname)
+                    break
             if end_type is 'abort':
                 files_left.discard(this)
                 return
@@ -457,9 +504,17 @@ class ReadUI:
         if raster_cover_name:
             start_download(raster_cover_name, 'get/cover/' + book_id + '/' + encodeURIComponent(library_id))
 
+        count = 0
+        queued = set()
         for fname in files_left:
             if fname is not raster_cover_name:
-                start_download(fname, base_path + encodeURIComponent(fname).replace(/%2[fF]/, '/'))
+                count += 1
+                # Chrome starts killing AJAX requests if there are too many in flight, unlike Firefox
+                # which is smart enough to queue them
+                if count < 20:
+                    start_download(fname, base_path + encodeURIComponent(fname).replace(/%2[fF]/g, '/'))
+                else:
+                    queued.add(fname)
 
     def ensure_maths(self, proceed):
         self.db.get_mathjax_info(def(mathjax_info):
@@ -631,3 +686,9 @@ class ReadUI:
             self.tts_client.speak_marked_text(data.marked_text, self.view.read_aloud.handle_tts_event)
         else:
             getattr(self.tts_client, event)()
+
+    def update_reading_rates(self, rates):
+        if not self.view?.book:
+            return
+        book = self.view.book
+        self.db.save_reading_rates(book, rates)

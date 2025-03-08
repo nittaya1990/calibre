@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
 
 
 __license__   = 'GPL v3'
@@ -22,7 +21,7 @@ class EntityDeclarationProcessor:  # {{{
                 self.declared_entities[tokens[0].strip()] = tokens[1].strip().replace('"', '')
         self.processed_html = html
         for key, val in iteritems(self.declared_entities):
-            self.processed_html = self.processed_html.replace('&%s;'%key, val)
+            self.processed_html = self.processed_html.replace(f'&{key};', val)
 # }}}
 
 
@@ -30,7 +29,7 @@ def self_closing_sub(match):
     tag = match.group(1)
     if tag.lower().strip() == 'br':
         return match.group()
-    return '<%s%s></%s>'%(match.group(1), match.group(2), match.group(1))
+    return f'<{match.group(1)}{match.group(2)}></{match.group(1)}>'
 
 
 def cleanup_html(html):
@@ -50,7 +49,7 @@ def load_as_html(html):
 def load_html(path, view, codec='utf-8', mime_type=None,
               pre_load_callback=lambda x:None, path_is_html=False,
               force_as_html=False, loading_url=None):
-    from qt.core import QUrl, QByteArray
+    from qt.core import QByteArray, QUrl
     if mime_type is None:
         mime_type = guess_type(path)[0]
         if not mime_type:

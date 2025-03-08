@@ -18,6 +18,7 @@ from read_book.shortcuts import shortcut_for_key_event
 from read_book.toc import family_for_toc_node, get_toc_nodes_bordering_spine_item
 from uuid import short_uuid
 from widgets import create_button
+from utils import parse_url_params
 
 DRAG_SCROLL_ZONE_MIN_HEIGHT = 10
 BUTTON_MARGIN = '0.5rem'
@@ -191,10 +192,10 @@ def all_actions():
             'search': a('search', _('Search for selection in the book') + ' [F]', 'book_search'),
             'bookmark': a('bookmark', _('Create a bookmark') + ' [Ctrl+Alt+B]', 'new_bookmark'),
             'search_net': a('global-search', _('Search for selection on the net') + ' [S]', 'internet_search'),
-            'remove_highlight': a('trash', _('Remove this highlight') + ' [Delete or D]', 'remove_highlight', True),
+            'remove_highlight': a('trash', _('Remove this highlight') + _(' [Delete or D]'), 'remove_highlight', True),
             'clear': a('close', _('Clear selection') + ' [Esc]', 'clear_selection'),
             'speak': a('bullhorn', _('Read aloud') + ' [T]', 'speak_aloud'),
-            'cite': a('reference-mode', _('Copy citation to clipboard') + ' [X]', 'cite'),
+            'cite': a('reference-mode', _('Copy a citation to this text') + ' [X]', 'cite'),
         }
         qh = all_actions.ans.quick_highlight
         qh.icon_function = quick_highlight_icon.bind(None, qh.icon, qh.text)
@@ -295,7 +296,7 @@ class SelectionBar:
         notes = self.annotations_manager.notes_for_highlight(annot_id)
         bar_container = self.bar
         clear(bar_container)
-        bar_container.style.maxWidth = 'min(50rem, 90vw)' if self.supports_css_min_max else '50rem'
+        bar_container.style.maxWidth = 'min(50rem, 90vw)'
         bar_container.style.backgroundColor = get_color("window-background")
         notes_container = E.div()
         notes_container.addEventListener('wheel', def(evt): evt.stopPropagation();, {'passive': False})
@@ -372,18 +373,11 @@ class SelectionBar:
         c = notes_container.lastChild
         notes_container.style.display = notes_container.previousSibling.style.display = 'block'
         c.style.overflow = 'auto'
-        if self.supports_css_min_max:
-            c.style.maxHeight = 'min(20ex, 40vh)'
-        else:
-            c.style.maxHeight = '20ex'
+        c.style.maxHeight = 'min(20ex, 40vh)'
         render_notes(notes, c, True)
     # }}}
 
     # accessors {{{
-    @property
-    def supports_css_min_max(self):
-        return not runtime.is_standalone_viewer or runtime.QT_VERSION >= 0x050f00
-
     @property
     def container(self):
         return document.getElementById('book-selection-bar-overlay')
@@ -1010,6 +1004,9 @@ class SelectionBar:
             self.view.overlay.show_word_actions(self.view.currently_showing.selection.text)
 
     def book_search(self):
+        cs = self.view.currently_showing?.selection?.text
+        if not cs or len(str.strip(cs)) < 2:
+            return error_dialog(_('Too little text'), _('Cannot search as too little text is selected. You must select at least two characters.'))
         self.view.show_search(True)
         self.clear_selection()
 
@@ -1071,8 +1068,18 @@ class SelectionBar:
     def remove_highlight(self):
         annot_id = self.view.currently_showing.selection.annot_id
         if annot_id:
+            q = _('Are you sure you want to delete this highlight permanently?')
+            text = self.annotations_manager.text_for_highlight(annot_id)
+            if text and text.length:
+                if text.length > 20:
+                    text = text[:20] + '…'
+                notes = self.annotations_manager.notes_for_highlight(annot_id)
+                if notes and notes.length:
+                    q = _('Are you sure you want to delete the highlighting of "{}" and the associated notes permanently?').format(text)
+                else:
+                    q = _('Are you sure you want to delete the highlighting of "{}" permanently?').format(text)
             question_dialog(
-                _('Are you sure?'), _('Are you sure you want to delete this highlight permanently?'),
+                _('Are you sure?'), q,
                 def (yes):
                     if yes:
                         self.remove_highlight_with_id(annot_id)
@@ -1114,6 +1121,19 @@ class SelectionBar:
                     toc_family = family_for_toc_node(before.id)
             self.annotations_manager.add_highlight(
                 msg, self.current_highlight_style.style, notes, toc_family)
+        elif msg.type is 'highlight-overlapped':
+            question_dialog(
+                _('Are you sure?'), _('This highlight overlaps existing highlights. Creating it will cause notes'
+                                      ' in the existing highlights to be lost. Create it anyway?'),
+                def (yes):
+                    if yes:
+                        self.send_message(
+                            'apply-highlight-overwrite', style=msg.style, uuid=msg.uuid, existing=msg.existing, has_notes=msg.has_notes)
+                    else:
+                        if self.current_notes:
+                            self.show_editor(self.current_highlight_style, self.current_notes)
+                ,
+            )
         elif msg.type is 'edit-highlight':
             if self.state is WAITING:
                 self.create_highlight()
@@ -1122,15 +1142,46 @@ class SelectionBar:
         elif msg.type is 'double-click':
             self.last_double_click_at = window.performance.now()
         elif msg.type is 'cite-data':
-            spine_index = self.view.currently_showing.spine_index
-            spine_index = (1 + spine_index) * 2
-            cfi = msg.bounds.start
-            link_prefix = get_current_link_prefix()
-            if not link_prefix:
-                return self.view.show_not_a_library_book_error()
-            url = link_to_epubcfi(f'epubcfi(/{spine_index}{cfi})', link_prefix)
-            text = msg.highlighted_text.replace(/\[/g, r'\[').replace(/\]/g, r'\]')
-            ui_operations.copy_selection(f'[{text}]({url})')
+            annot_id = self.view.currently_showing.selection.annot_id
+            # If selected text is highlighted
+            if annot_id:
+                data = self.annotations_manager.data_for_highlight(annot_id)
+                spine_index = self.view.currently_showing.spine_index
+                cfi = self.annotations_manager.cfi_for_highlight(annot_id, spine_index)
+
+                if runtime.is_standalone_viewer:
+                    url = get_current_link_prefix() + "?open_at=" + cfi
+                else:
+                    url = get_current_link_prefix() + f"bookpos={cfi}"
+                    for key, value in Object.entries(parse_url_params()):
+                        if key != "bookpos":
+                            url = url + f"&{key}={value}"
+                info = { "text" : data.highlighted_text,
+                            "url": url,
+                            "timestamp": data.timestamp,
+                            "style_type": data.style.type,
+                            "style_kind": data.style.kind,
+                            "style_which": data.style.which,
+                            "chapter": data.toc_family_titles[0] if data.toc_family_titles[0] else "",
+                            "notes": data.notes if "notes" in data else "",
+                        }
+                copy_info = get_session_data().get('cite_hl_template').format(**info)
+            # If selected text isn't highlighted
+            else:
+                spine_index = self.view.currently_showing.spine_index
+                spine_index = (1 + spine_index) * 2
+                cfi = msg.bounds.start
+                link_prefix = get_current_link_prefix()
+                if not link_prefix:
+                    return self.view.show_not_a_library_book_error()
+                text = msg.highlighted_text.replace(/\[/g, r'\[').replace(/\]/g, r'\]')
+                url = link_to_epubcfi(f'epubcfi(/{spine_index}{cfi})', link_prefix)
+                info = { "text" : text,
+                            "url": url,
+                        }
+                copy_info = get_session_data().get('cite_text_template').format(**info)
+
+            ui_operations.copy_selection(copy_info)
         else:
             print('Ignoring annotations message with unknown type:', msg.type)
 

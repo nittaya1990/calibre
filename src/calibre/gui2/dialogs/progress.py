@@ -5,28 +5,26 @@ __license__   = 'GPL v3'
 __copyright__ = '2009, Kovid Goyal kovid@kovidgoyal.net'
 __docformat__ = 'restructuredtext en'
 
-from qt.core import (
-    QDialog, pyqtSignal, Qt, QVBoxLayout, QLabel, QFont, QProgressBar, QSize,
-    QDialogButtonBox, QApplication, QFontMetrics, QHBoxLayout, QIcon)
+from qt.core import QApplication, QDialog, QDialogButtonBox, QFont, QFontMetrics, QHBoxLayout, QIcon, QLabel, QProgressBar, QSize, Qt, QVBoxLayout, pyqtSignal
 
-from calibre.gui2 import elided_text
+from calibre.gui2 import elided_text, question_dialog
 from calibre.gui2.progress_indicator import ProgressIndicator
-from polyglot.builtins import unicode_type
 
 
 class ProgressDialog(QDialog):
 
     canceled_signal = pyqtSignal()
 
-    def __init__(self, title, msg='\u00a0', min=0, max=99, parent=None, cancelable=True, icon=None):
+    def __init__(self, title, msg='\u00a0', min=0, max=99, parent=None, cancelable=True, icon=None, cancel_confirm_msg=''):
         QDialog.__init__(self, parent)
+        self.cancel_confirm_msg = cancel_confirm_msg
         if icon is None:
             self.l = l = QVBoxLayout(self)
         else:
             self.h = h = QHBoxLayout(self)
             self.icon = i = QLabel(self)
             if not isinstance(icon, QIcon):
-                icon = QIcon(I(icon))
+                icon = QIcon.ic(icon)
             i.setPixmap(icon.pixmap(64))
             h.addWidget(i, alignment=Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignHCenter)
             self.l = l = QVBoxLayout()
@@ -102,7 +100,7 @@ class ProgressDialog(QDialog):
 
     @title.setter
     def title(self, val):
-        self.title_label.setText(unicode_type(val or ''))
+        self.title_label.setText(str(val or ''))
 
     @property
     def msg(self):
@@ -110,10 +108,16 @@ class ProgressDialog(QDialog):
 
     @msg.setter
     def msg(self, val):
-        val = unicode_type(val or '')
+        val = str(val or '')
         self.message.setText(elided_text(val, self.font(), self.message.minimumWidth()-10))
 
     def _canceled(self, *args):
+        if self.cancel_confirm_msg:
+            if not question_dialog(
+                self, _('Are you sure?'), self.cancel_confirm_msg, override_icon='dialog_warning.png',
+                yes_text=_('Yes, abort'), no_text=_('No, keep copying')
+            ):
+                return
         self.canceled = True
         self.button_box.setDisabled(True)
         self.title = _('Aborting...')
@@ -172,5 +176,5 @@ if __name__ == '__main__':
     app = QApplication([])
     d = ProgressDialog('A title', 'A message', icon='lt.png')
     d.show(), d.canceled_signal.connect(app.quit)
-    QTimer.singleShot(1000, lambda : (setattr(d, 'value', 10), setattr(d, 'msg', ('A message ' * 100))))
-    app.exec_()
+    QTimer.singleShot(1000, lambda: (setattr(d, 'value', 10), setattr(d, 'msg', ('A message ' * 100))))
+    app.exec()

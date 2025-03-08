@@ -1,6 +1,3 @@
-# -*- coding: utf-8 -*-
-
-
 '''
 Read meta information from Plucker pdb files.
 '''
@@ -14,9 +11,7 @@ from datetime import datetime
 
 from calibre.ebooks.metadata import MetaInformation
 from calibre.ebooks.pdb.header import PdbHeaderReader
-from calibre.ebooks.pdb.plucker.reader import SectionHeader, DATATYPE_METADATA, \
-    MIBNUM_TO_NAME
-from polyglot.builtins import range
+from calibre.ebooks.pdb.plucker.reader import DATATYPE_METADATA, MIBNUM_TO_NAME, SectionHeader
 
 
 def get_metadata(stream, extract_cover=True):

@@ -1,20 +1,20 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
 # License: GPLv3 Copyright: 2010, Kovid Goyal <kovid at kovidgoyal.net>
 
 
 import re
 import textwrap
 
-from qt.core import QAbstractTableModel, QFont, Qt, QAbstractItemView
+from qt.core import QAbstractItemView, QAbstractTableModel, QFont, Qt
 
 from calibre.gui2 import gprefs
 from calibre.gui2.preferences import AbortCommit, ConfigWidgetBase, test_widget
 from calibre.gui2.preferences.email_ui import Ui_Form
+from calibre.startup import connect_lambda
 from calibre.utils.config import ConfigProxy
 from calibre.utils.icu import numeric_sort_key
 from calibre.utils.smtp import config as smtp_prefs
-from polyglot.builtins import unicode_type, map, as_unicode
+from polyglot.builtins import as_unicode
 
 
 class EmailAccounts(QAbstractTableModel):  # {{{
@@ -106,7 +106,7 @@ class EmailAccounts(QAbstractTableModel):  # {{{
         if role in [Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole]:
             if col == 0:
                 return (account)
-            if col ==  1:
+            if col == 1:
                 return ', '.join(x.strip() for x in (self.accounts[account][0] or '').split(','))
             if col == 2:
                 return (self.subjects.get(account, ''))
@@ -146,17 +146,17 @@ class EmailAccounts(QAbstractTableModel):  # {{{
             if aval:
                 self.tags[account] = aval
         elif col == 1:
-            self.accounts[account][0] = re.sub(',+', ',', re.sub(r'\s+', ',', as_unicode(value or '').upper()))
+            self.accounts[account][0] = re.sub(r',+', ',', re.sub(r'\s+', ',', as_unicode(value or '').upper()))
         elif col == 0:
-            na = as_unicode(value or '')
+            na = as_unicode(value or '').strip()
             from email.utils import parseaddr
             addr = parseaddr(na)[-1]
-            if not addr:
+            if not addr or '@' not in na:
                 return False
             self.accounts[na] = self.accounts.pop(account)
             self.account_order[row] = na
             if '@kindle.com' in addr:
-                self.accounts[na][0] = 'AZW, MOBI, TPZ, PRC, AZW1'
+                self.accounts[na][0] = 'EPUB, TPZ'
 
         self.dataChanged.emit(
                 self.index(index.row(), 0), self.index(index.row(), 3))
@@ -177,7 +177,7 @@ class EmailAccounts(QAbstractTableModel):  # {{{
         c = 0
         while y in self.accounts:
             c += 1
-            y = x + unicode_type(c)
+            y = x + str(c)
         auto_send = len(self.accounts) < 1
         self.beginResetModel()
         self.accounts[y] = ['MOBI, EPUB', auto_send,
@@ -187,22 +187,29 @@ class EmailAccounts(QAbstractTableModel):  # {{{
         self.endResetModel()
         return self.index(self.account_order.index(y), 0)
 
+    def remove_rows(self, *rows):
+        for row in sorted(rows, reverse=True):
+            try:
+                account = self.account_order[row]
+            except Exception:
+                continue
+            self.accounts.pop(account)
+        self.account_order = sorted(self.accounts)
+        has_default = False
+        for account in self.account_order:
+            if self.accounts[account][2]:
+                has_default = True
+                break
+        if not has_default and self.account_order:
+            self.accounts[self.account_order[0]][2] = True
+
+        self.beginResetModel()
+        self.endResetModel()
+        self.do_sort()
+
     def remove(self, index):
         if index.isValid():
-            row = index.row()
-            account = self.account_order[row]
-            self.accounts.pop(account)
-            self.account_order = sorted(self.accounts)
-            has_default = False
-            for account in self.account_order:
-                if self.accounts[account][2]:
-                    has_default = True
-                    break
-            if not has_default and self.account_order:
-                self.accounts[self.account_order[0]][2] = True
-
-            self.beginResetModel()
-            self.endResetModel()
+            self.remove(index.row())
 
 # }}}
 
@@ -252,7 +259,7 @@ class ConfigWidget(ConfigWidgetBase, Ui_Form):
         to_set = bool(self._email_accounts.accounts)
         if not self.send_email_widget.set_email_settings(to_set):
             raise AbortCommit('abort')
-        self.proxy['accounts'] =  self._email_accounts.accounts
+        self.proxy['accounts'] = self._email_accounts.accounts
         self.proxy['subjects'] = self._email_accounts.subjects
         self.proxy['aliases'] = self._email_accounts.aliases
         self.proxy['tags'] = self._email_accounts.tags
@@ -271,8 +278,10 @@ class ConfigWidget(ConfigWidgetBase, Ui_Form):
         self.changed_signal.emit()
 
     def remove_email_account(self, *args):
-        idx = self.email_view.currentIndex()
-        self._email_accounts.remove(idx)
+        rows = set()
+        for idx in self.email_view.selectionModel().selectedIndexes():
+            rows.add(idx.row())
+        self._email_accounts.remove_rows(*rows)
         self.changed_signal.emit()
 
     def refresh_gui(self, gui):

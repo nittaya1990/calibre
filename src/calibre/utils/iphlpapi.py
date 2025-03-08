@@ -1,15 +1,11 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 # License: GPLv3 Copyright: 2015, Kovid Goyal <kovid at kovidgoyal.net>
 
 
 import ctypes
-from ctypes import windll
-from ctypes import wintypes
 from collections import namedtuple
 from contextlib import contextmanager
-
-from calibre.constants import is64bit
+from ctypes import windll, wintypes
 
 # Wraps (part of) the IPHelper API, useful to enumerate the network routes and
 # adapters on the local machine
@@ -17,10 +13,10 @@ from calibre.constants import is64bit
 
 class GUID(ctypes.Structure):
     _fields_ = [
-        ("data1", wintypes.DWORD),
-        ("data2", wintypes.WORD),
-        ("data3", wintypes.WORD),
-        ("data4", wintypes.BYTE * 8)]
+        ('data1', wintypes.DWORD),
+        ('data2', wintypes.WORD),
+        ('data3', wintypes.WORD),
+        ('data4', wintypes.BYTE * 8)]
 
     def __init__(self, l, w1, w2, b1, b2, b3, b4, b5, b6, b7, b8):
         self.data1 = l
@@ -256,7 +252,7 @@ GetProcessHeap.argtypes = []
 GetProcessHeap.restype = wintypes.HANDLE
 
 HeapAlloc = windll.kernel32.HeapAlloc
-HeapAlloc.argtypes = [wintypes.HANDLE, wintypes.DWORD, ctypes.c_uint64 if is64bit else ctypes.c_uint32]
+HeapAlloc.argtypes = [wintypes.HANDLE, wintypes.DWORD, ctypes.c_uint64]
 HeapAlloc.restype = wintypes.LPVOID
 
 HeapFree = windll.kernel32.HeapFree
@@ -296,7 +292,7 @@ def _get_forward_table():
                 yield p_forward_table
                 break
             else:
-                raise OSError('Unable to get IP forward table. Error: %s' % err)
+                raise OSError(f'Unable to get IP forward table. Error: {err}')
         if p_forward_table is None:
             raise OSError('Failed to get IP routing table, table appears to be changing rapidly')
     finally:
@@ -324,7 +320,7 @@ def _get_adapters():
                 buf = _heap_alloc(heap, size)
                 addresses = ctypes.cast(buf, ctypes.POINTER(IP_ADAPTER_ADDRESSES))
             else:
-                raise OSError('Failed to determine size for adapters table with error: %s' % err)
+                raise OSError(f'Failed to determine size for adapters table with error: {err}')
         if addresses is None:
             raise OSError('Failed to get adapter addresses, table appears to be changing rapidly')
     finally:

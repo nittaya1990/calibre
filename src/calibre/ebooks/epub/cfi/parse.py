@@ -1,16 +1,13 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 
 
 __license__ = 'GPL v3'
 __copyright__ = '2014, Kovid Goyal <kovid at kovidgoyal.net>'
 
 import regex
-from polyglot.builtins import map, zip
 
 
 class Parser:
-
     ''' See epubcfi.ebnf for the specification that this parser tries to
     follow. I have implemented it manually, since I dont want to depend on
     grako, and the grammar is pretty simple. This parser is thread-safe, i.e.
@@ -19,39 +16,42 @@ class Parser:
     def __init__(self):
         # All allowed unicode characters + escaped special characters
         special_char = r'[\[\](),;=^]'
-        unescaped_char = '[[\t\n\r -\ud7ff\ue000-\ufffd\U00010000-\U0010ffff]--%s]' % special_char
-        escaped_char = r'\^' + special_char
-        chars = r'(?:%s|(?:%s))+' % (unescaped_char, escaped_char)
+        unescaped_char = f'[[\t\n\r -\ud7ff\ue000-\ufffd\U00010000-\U0010ffff]--{special_char}]'
+        # calibre used to escape hyphens as well, so recognize them even though
+        # not strictly spec compliant
+        escaped_char = r'\^' + special_char[:-1] + '-]'
+        chars = fr'(?:{unescaped_char}|(?:{escaped_char}))+'
         chars_no_space = chars.replace('0020', '0021')
         # No leading zeros allowed for integers
         integer = r'(?:[1-9][0-9]*)|0'
         # No leading zeros, except for numbers in (0, 1) and no trailing zeros for the fractional part
-        frac = r'\.[0-9]*[1-9]'
-        number = r'(?:[1-9][0-9]*(?:{0})?)|(?:0{0})|(?:0)'.format(frac)
-        c = lambda x:regex.compile(x, flags=regex.VERSION1)
+        frac = r'\.[0-9]{1,}'
+        number = rf'(?:[1-9][0-9]*(?:{frac})?)|(?:0{frac})|(?:0)'
+        def c(x):
+            return regex.compile(x, flags=regex.VERSION1)
 
         # A step of the form /integer
-        self.step_pat = c(r'/(%s)' % integer)
+        self.step_pat = c(rf'/({integer})')
         # An id assertion of the form [characters]
-        self.id_assertion_pat = c(r'\[(%s)\]' % chars)
+        self.id_assertion_pat = c(rf'\[({chars})\]')
 
         # A text offset of the form :integer
-        self.text_offset_pat = c(r':(%s)' % integer)
+        self.text_offset_pat = c(rf':({integer})')
         # A temporal offset of the form ~number
-        self.temporal_offset_pat = c(r'~(%s)' % number)
+        self.temporal_offset_pat = c(rf'~({number})')
         # A spatial offset of the form @number:number
-        self.spatial_offset_pat = c(r'@({0}):({0})'.format(number))
+        self.spatial_offset_pat = c(rf'@({number}):({number})')
         # A spatio-temporal offset of the form ~number@number:number
-        self.st_offset_pat = c(r'~({0})@({0}):({0})'.format(number))
+        self.st_offset_pat = c(rf'~({number})@({number}):({number})')
 
         # Text assertion patterns
-        self.ta1_pat = c(r'({0})(?:,({0})){{0,1}}'.format(chars))
-        self.ta2_pat = c(r',(%s)' % chars)
-        self.parameters_pat = c(r'(?:;(%s)=((?:%s,?)+))+' % (chars_no_space, chars))
-        self.csv_pat = c(r'(?:(%s),?)+' % chars)
+        self.ta1_pat = c(rf'({chars})(?:,({chars})){{0,1}}')
+        self.ta2_pat = c(rf',({chars})')
+        self.parameters_pat = c(fr'(?:;({chars_no_space})=((?:{chars},?)+))+')
+        self.csv_pat = c(rf'(?:({chars}),?)+')
 
         # Unescape characters
-        unescape_pat = c(r'%s(%s)' % (escaped_char[:2], escaped_char[2:]))
+        unescape_pat = c(fr'{escaped_char[:2]}({escaped_char[2:]})')
         self.unescape = lambda x: unescape_pat.sub(r'\1', x)
 
     def parse_epubcfi(self, raw):
@@ -194,7 +194,7 @@ def cfi_sort_key(cfi, only_path=True):
         return (), (0, (0, 0), 0)
     if not pcfi:
         import sys
-        print('Failed to parse CFI: %r' % cfi, file=sys.stderr)
+        print(f'Failed to parse CFI: {cfi!r}', file=sys.stderr)
         return (), (0, (0, 0), 0)
     steps = get_steps(pcfi)
     step_nums = tuple(s.get('num', 0) for s in steps)
@@ -214,7 +214,7 @@ def decode_cfi(root, cfi):
         return
     if not pcfi:
         import sys
-        print('Failed to parse CFI: %r' % pcfi, file=sys.stderr)
+        print(f'Failed to parse CFI: {pcfi!r}', file=sys.stderr)
         return
     steps = get_steps(pcfi)
     ans = root
@@ -222,7 +222,7 @@ def decode_cfi(root, cfi):
         num = step.get('num', 0)
         node_id = step.get('id')
         try:
-            match = ans.xpath('descendant::*[@id="%s"]' % node_id)
+            match = ans.xpath(f'descendant::*[@id="{node_id}"]')
         except XPathEvalError:
             match = ()
         if match:
@@ -238,3 +238,8 @@ def decode_cfi(root, cfi):
         else:
             return
     return ans
+
+
+if __name__ == '__main__':
+    import sys
+    print(cfi_sort_key(sys.argv[-1], only_path=False))

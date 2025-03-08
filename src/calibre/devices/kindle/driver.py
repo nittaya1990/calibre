@@ -1,21 +1,26 @@
-# -*- coding: utf-8 -*-
-
-
 __license__   = 'GPL v3'
 __copyright__ = '2009, John Schember <john at nachtimwald.com>'
 __docformat__ = 'restructuredtext en'
+
+from calibre.devices.kindle.apnx import APNXBuilder
 
 '''
 Device driver for Amazon's Kindle
 '''
 
-import datetime, os, re, json, hashlib, errno
+import errno
+import hashlib
+import json
+import os
+import re
 
+from calibre import fsync, prints, strftime
 from calibre.constants import DEBUG, filesystem_encoding
+from calibre.devices.interface import OpenPopupMessage
 from calibre.devices.kindle.bookmark import Bookmark
 from calibre.devices.usbms.driver import USBMS
-from calibre import strftime, fsync, prints
-from polyglot.builtins import unicode_type, as_bytes, as_unicode
+from calibre.utils.date import utcfromtimestamp
+from polyglot.builtins import as_bytes, as_unicode
 
 '''
 Notes on collections:
@@ -40,6 +45,26 @@ file metadata.
 '''
 
 
+def thumbnail_filename(stream) -> str:
+    from calibre.ebooks.metadata.kfx import CONTAINER_MAGIC, read_book_key_kfx
+    from calibre.ebooks.mobi.reader.headers import MetadataHeader
+    from calibre.utils.logging import default_log
+    stream.seek(0)
+    is_kfx = stream.read(4) == CONTAINER_MAGIC
+    stream.seek(0)
+    uuid = cdetype = None
+    if is_kfx:
+        uuid, cdetype = read_book_key_kfx(stream)
+    else:
+        mh = MetadataHeader(stream, default_log)
+        if mh.exth is not None:
+            uuid = mh.exth.uuid
+            cdetype = mh.exth.cdetype
+    if not uuid or not cdetype:
+        return ''
+    return f'thumbnail_{uuid}_{cdetype}_portrait.jpg'
+
+
 def get_files_in(path):
     if hasattr(os, 'scandir'):
         for dir_entry in os.scandir(path):
@@ -57,8 +82,8 @@ def get_files_in(path):
 class KINDLE(USBMS):
 
     name           = 'Kindle Device Interface'
-    gui_name       = 'Amazon Kindle'
-    icon           = I('devices/kindle.png')
+    gui_name       = 'Amazon Kindle Keyboard'
+    icon           = 'devices/kindle.png'
     description    = _('Communicate with the Kindle e-book reader.')
     author         = 'John Schember'
     supported_platforms = ['windows', 'osx', 'linux']
@@ -98,6 +123,19 @@ class KINDLE(USBMS):
         ' Click "Show details" to see the list of books.'
     )
 
+    @classmethod
+    def get_open_popup_message(cls):
+        from calibre.utils.localization import localize_website_link
+        return OpenPopupMessage(title=_('WARNING: E-book covers'), message=_(
+            'Amazon has <b>broken display of covers</b> for books sent to the Kindle by USB cable. To workaround it,'
+            ' you have to either keep your Kindle in Airplane mode, or:'
+            '<ol><li>Send the books to the Kindle</li><li>Disconnect the Kindle and wait for the covers to be deleted'
+            ' by Amazon</li><li>Reconnect the Kindle and calibre will restore the covers.</li></ol> After this the'
+            ' covers for those books should stay put. <a href="{}">Click here</a> for details.').format(localize_website_link(
+                'https://manual.calibre-ebook.com/faq.html#covers-for-books-i'
+                '-send-to-my-e-ink-kindle-show-up-momentarily-and-then-are-replaced-by-a-generic-cover')
+        ))
+
     def is_allowed_book_file(self, filename, path, prefix):
         lpath = os.path.join(path, filename).partition(self.normalize_path(prefix))[2].replace('\\', '/')
         return '.sdr/' not in lpath
@@ -108,13 +146,13 @@ class KINDLE(USBMS):
             from calibre.ebooks.metadata.kfx import read_metadata_kfx
             try:
                 kfx_path = path
-                with lopen(kfx_path, 'rb') as f:
+                with open(kfx_path, 'rb') as f:
                     if f.read(8) != b'\xeaDRMION\xee':
                         f.seek(0)
                         mi = read_metadata_kfx(f)
                     else:
                         kfx_path = os.path.join(path.rpartition('.')[0] + '.sdr', 'assets', 'metadata.kfx')
-                        with lopen(kfx_path, 'rb') as mf:
+                        with open(kfx_path, 'rb') as mf:
                             mi = read_metadata_kfx(mf)
             except Exception:
                 import traceback
@@ -205,9 +243,9 @@ class KINDLE(USBMS):
 
         mc_path = get_my_clippings(storage, bookmarked_books)
         if mc_path:
-            timestamp = datetime.datetime.utcfromtimestamp(os.path.getmtime(mc_path))
+            timestamp = utcfromtimestamp(os.path.getmtime(mc_path))
             bookmarked_books['clippings'] = self.UserAnnotation(type='kindle_clippings',
-                                              value=dict(path=mc_path,timestamp=timestamp))
+                                              value={'path': mc_path, 'timestamp': timestamp})
 
         # This returns as job.result in gui2.ui.annotations_fetched(self,job)
         return bookmarked_books
@@ -216,7 +254,7 @@ class KINDLE(USBMS):
         from calibre.ebooks.BeautifulSoup import BeautifulSoup
         # Returns <div class="user_annotations"> ... </div>
         last_read_location = bookmark.last_read_location
-        timestamp = datetime.datetime.utcfromtimestamp(bookmark.timestamp)
+        timestamp = utcfromtimestamp(bookmark.timestamp)
         percent_read = bookmark.percent_read
 
         ka_soup = BeautifulSoup()
@@ -226,13 +264,13 @@ class KINDLE(USBMS):
 
         # Add the last-read location
         if bookmark.book_format == 'pdf':
-            markup = _("%(time)s<br />Last page read: %(loc)d (%(pr)d%%)") % dict(
+            markup = _('%(time)s<br />Last page read: %(loc)d (%(pr)d%%)') % dict(
                     time=strftime('%x', timestamp.timetuple()),
                     loc=last_read_location,
                     pr=percent_read)
         else:
-            markup = _("%(time)s<br />Last page read: Location %(loc)d (%(pr)d%%)") % dict(
-                    time=strftime(u'%x', timestamp.timetuple()),
+            markup = _('%(time)s<br />Last page read: Location %(loc)d (%(pr)d%%)') % dict(
+                    time=strftime('%x', timestamp.timetuple()),
                     loc=last_read_location,
                     pr=percent_read)
         spanTag = BeautifulSoup('<span style="font-weight:bold">' + markup + '</span>').find('span')
@@ -256,7 +294,7 @@ class KINDLE(USBMS):
                                 typ=user_notes[location]['type'],
                                 text=(user_notes[location]['text'] if
                                       user_notes[location]['type'] == 'Note' else
-                                      '<i>%s</i>' % user_notes[location]['text'])))
+                                      '<i>{}</i>'.format(user_notes[location]['text']))))
                 else:
                     if bookmark.book_format == 'pdf':
                         annotations.append(
@@ -274,12 +312,12 @@ class KINDLE(USBMS):
                 divTag.insert(dtc, annot)
                 dtc += 1
 
-        ka_soup.insert(0,divTag)
+        ka_soup.insert(0, divTag)
         return ka_soup
 
     def add_annotation_to_library(self, db, db_id, annotation):
-        from calibre.ebooks.metadata import MetaInformation
         from calibre.ebooks.BeautifulSoup import prettify
+        from calibre.ebooks.metadata import MetaInformation
 
         bm = annotation
         ignore_tags = {'Catalog', 'Clippings'}
@@ -313,7 +351,7 @@ class KINDLE(USBMS):
                                             bm.value.path, index_is_id=True)
         elif bm.type == 'kindle_clippings':
             # Find 'My Clippings' author=Kindle in database, or add
-            last_update = 'Last modified %s' % strftime(u'%x %X',bm.value['timestamp'].timetuple())
+            last_update = 'Last modified {}'.format(strftime('%x %X',bm.value['timestamp'].timetuple()))
             mc_id = list(db.data.search_getting_ids('title:"My Clippings"', '', sort_results=False))
             if mc_id:
                 db.add_format_with_hooks(mc_id[0], 'TXT', bm.value['path'],
@@ -331,7 +369,8 @@ class KINDLE(USBMS):
 class KINDLE2(KINDLE):
 
     name           = 'Kindle 2/3/4/Touch/PaperWhite/Voyage Device Interface'
-    description    = _('Communicate with the Kindle 2/3/4/Touch/PaperWhite/Voyage e-book reader.')
+    gui_name = 'Amazon Kindle'
+    description    = _('Communicate with the Kindle 2/3/4/Touch/Paperwhite/Voyage e-book reader.')
 
     FORMATS     = ['azw', 'mobi', 'azw3', 'prc', 'azw1', 'tpz', 'azw4', 'kfx', 'pobi', 'pdf', 'txt']
     DELETE_EXTS    = KINDLE.DELETE_EXTS + ['.mbp1', '.mbs', '.sdr', '.han']
@@ -340,7 +379,7 @@ class KINDLE2(KINDLE):
     # the .sdr sidecar folder
 
     PRODUCT_ID = [0x0002, 0x0004, 0x0324]
-    BCD        = [0x0100, 0x0310, 0x401]
+    BCD        = [0x0100, 0x0310, 0x401, 0x409]
     # SUPPORTS_SUB_DIRS = False # Apparently the Paperwhite doesn't like files placed in subdirectories
     # SUPPORTS_SUB_DIRS_FOR_SCAN = True
 
@@ -383,7 +422,7 @@ class KINDLE2(KINDLE):
             ' Since APNX files are usually deleted when a book is removed from'
             ' the Kindle, this is mostly useful when resending a book to the'
             ' device which is already on the device (e.g. after making a'
-            ' modification.)'),
+            ' modification).'),
 
     ]
     EXTRA_CUSTOMIZATION_DEFAULT = [
@@ -398,7 +437,7 @@ class KINDLE2(KINDLE):
     OPT_APNX_CUST_COL        = 2
     OPT_APNX_METHOD_COL      = 3
     OPT_APNX_OVERWRITE       = 4
-    EXTRA_CUSTOMIZATION_CHOICES = {OPT_APNX_METHOD:{'fast', 'accurate', 'pagebreak'}}
+    EXTRA_CUSTOMIZATION_CHOICES = {OPT_APNX_METHOD: set(APNXBuilder.generators.keys())}
 
     # x330 on the PaperWhite
     # x262 on the Touch. Doesn't choke on x330, though.
@@ -430,7 +469,7 @@ class KINDLE2(KINDLE):
         return bl
 
     def kindle_update_booklist(self, bl, collections):
-        with lopen(collections, 'rb') as f:
+        with open(collections, 'rb') as f:
             collections = f.read()
         collections = json.loads(collections)
         path_map = {}
@@ -484,28 +523,12 @@ class KINDLE2(KINDLE):
         return os.path.join(self._main_prefix, 'system', 'thumbnails')
 
     def thumbpath_from_filepath(self, filepath):
-        from calibre.ebooks.metadata.kfx import (CONTAINER_MAGIC, read_book_key_kfx)
-        from calibre.ebooks.mobi.reader.headers import MetadataHeader
-        from calibre.utils.logging import default_log
         thumb_dir = self.amazon_system_thumbnails_dir()
-        if not os.path.exists(thumb_dir):
-            return
-        with lopen(filepath, 'rb') as f:
-            is_kfx = f.read(4) == CONTAINER_MAGIC
-            f.seek(0)
-            uuid = cdetype = None
-            if is_kfx:
-                uuid, cdetype = read_book_key_kfx(f)
-            else:
-                mh = MetadataHeader(f, default_log)
-                if mh.exth is not None:
-                    uuid = mh.exth.uuid
-                    cdetype = mh.exth.cdetype
-        if not uuid or not cdetype:
-            return
-        return os.path.join(thumb_dir,
-                'thumbnail_{uuid}_{cdetype}_portrait.jpg'.format(
-                    uuid=uuid, cdetype=cdetype))
+        if os.path.exists(thumb_dir):
+            with open(filepath, 'rb') as f:
+                tfname = thumbnail_filename(f)
+            if tfname:
+                return os.path.join(thumb_dir, tfname)
 
     def amazon_cover_bug_cache_dir(self):
         # see https://www.mobileread.com/forums/showthread.php?t=329945
@@ -518,15 +541,15 @@ class KINDLE2(KINDLE):
 
         tp = self.thumbpath_from_filepath(filepath)
         if tp:
-            with lopen(tp, 'wb') as f:
+            with open(tp, 'wb') as f:
                 f.write(coverdata[2])
                 fsync(f)
             cache_dir = self.amazon_cover_bug_cache_dir()
             try:
                 os.mkdir(cache_dir)
-            except EnvironmentError:
+            except OSError:
                 pass
-            with lopen(os.path.join(cache_dir, os.path.basename(tp)), 'wb') as f:
+            with open(os.path.join(cache_dir, os.path.basename(tp)), 'wb') as f:
                 f.write(coverdata[2])
                 fsync(f)
 
@@ -545,7 +568,7 @@ class KINDLE2(KINDLE):
             dest_path = os.path.join(dest_dir, name)
             try:
                 dest_stat_result = os.lstat(dest_path)
-            except EnvironmentError:
+            except OSError:
                 needs_sync = True
             else:
                 needs_sync = src_stat_result.st_size != dest_stat_result.st_size
@@ -553,11 +576,11 @@ class KINDLE2(KINDLE):
                 count += 1
                 if DEBUG:
                     prints('Restoring cover thumbnail:', name)
-                with lopen(os.path.join(src_dir, name), 'rb') as src, lopen(dest_path, 'wb') as dest:
+                with open(os.path.join(src_dir, name), 'rb') as src, open(dest_path, 'wb') as dest:
                     shutil.copyfileobj(src, dest)
                     fsync(dest)
         if DEBUG:
-            prints('Restored {} cover thumbnails that were destroyed by Amazon'.format(count))
+            prints(f'Restored {count} cover thumbnails that were destroyed by Amazon')
 
     def delete_single_book(self, path):
         try:
@@ -567,9 +590,9 @@ class KINDLE2(KINDLE):
                 for tp in (tp1, tp2):
                     try:
                         os.remove(tp)
-                    except EnvironmentError as err:
+                    except OSError as err:
                         if err.errno != errno.ENOENT:
-                            prints('Failed to delete thumbnail for {!r} at {!r} with error: {}'.format(path, tp, err))
+                            prints(f'Failed to delete thumbnail for {path!r} at {tp!r} with error: {err}')
         except Exception:
             import traceback
             traceback.print_exc()
@@ -588,7 +611,7 @@ class KINDLE2(KINDLE):
 
         # Create the sidecar folder if necessary
         if (self.sidecar_apnx):
-            path = os.path.join(os.path.dirname(filepath), filename+".sdr")
+            path = os.path.join(os.path.dirname(filepath), filename+'.sdr')
 
             if not os.path.exists(path):
                 os.makedirs(path)
@@ -601,7 +624,7 @@ class KINDLE2(KINDLE):
             except:
                 pass
 
-        apnx_path = '%s.apnx' % os.path.join(path, filename)
+        apnx_path = f'{os.path.join(path, filename)}.apnx'
         apnx_builder = APNXBuilder()
         # Check to see if there is an existing apnx file on Kindle we should keep.
         if opts.extra_customization[self.OPT_APNX_OVERWRITE] or not os.path.exists(apnx_path):
@@ -610,11 +633,11 @@ class KINDLE2(KINDLE):
                 cust_col_name = opts.extra_customization[self.OPT_APNX_METHOD_COL]
                 if cust_col_name:
                     try:
-                        temp = unicode_type(metadata.get(cust_col_name)).lower()
+                        temp = str(metadata.get(cust_col_name)).lower()
                         if temp in self.EXTRA_CUSTOMIZATION_CHOICES[self.OPT_APNX_METHOD]:
                             method = temp
                         else:
-                            print("Invalid method choice for this book (%r), ignoring." % temp)
+                            print(f'Invalid method choice for this book ({temp!r}), ignoring.')
                     except:
                         print('Could not retrieve override method choice, using default.')
                 apnx_builder.write_apnx(filepath, apnx_path, method=method, page_count=custom_page_count)
@@ -627,6 +650,7 @@ class KINDLE2(KINDLE):
 class KINDLE_DX(KINDLE2):
 
     name           = 'Kindle DX Device Interface'
+    gui_name       = 'Amazon Kindle DX'
     description    = _('Communicate with the Kindle DX e-book reader.')
 
     FORMATS = ['azw', 'mobi', 'prc', 'azw1', 'tpz', 'azw4', 'pobi', 'pdf', 'txt']
@@ -644,7 +668,7 @@ class KINDLE_FIRE(KINDLE2):
 
     name = 'Kindle Fire Device Interface'
     description = _('Communicate with the Kindle Fire')
-    gui_name = 'Fire'
+    gui_name = 'Amazon Kindle Fire'
     FORMATS = ['azw3', 'azw', 'mobi', 'prc', 'azw1', 'tpz', 'azw4', 'kfx', 'pobi', 'pdf', 'txt']
 
     PRODUCT_ID = [0x0006]

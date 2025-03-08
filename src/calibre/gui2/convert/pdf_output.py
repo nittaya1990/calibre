@@ -1,17 +1,14 @@
-# -*- coding: utf-8 -*-
-
-
 __license__ = 'GPL 3'
 __copyright__ = '2009, John Schember <john@nachtimwald.com>'
 __docformat__ = 'restructuredtext en'
 
 
-from qt.core import QHBoxLayout, QFormLayout, QDoubleSpinBox, QCheckBox, QVBoxLayout
+from qt.core import QCheckBox, QDoubleSpinBox, QFormLayout, QHBoxLayout, QVBoxLayout
 
-from calibre.gui2.convert.pdf_output_ui import Ui_Form
-from calibre.gui2.convert import Widget
-from calibre.utils.localization import localize_user_manual_link
 from calibre.ebooks.conversion.config import OPTIONS
+from calibre.gui2.convert import Widget
+from calibre.gui2.convert.pdf_output_ui import Ui_Form
+from calibre.utils.localization import localize_user_manual_link
 
 paper_size_model = None
 orientation_model = None
@@ -22,7 +19,7 @@ class PluginWidget(Widget, Ui_Form):
     TITLE = _('PDF output')
     HELP = _('Options specific to')+' PDF '+_('output')
     COMMIT_NAME = 'pdf_output'
-    ICON = I('mimetypes/pdf.png')
+    ICON = 'mimetypes/pdf.png'
 
     def __init__(self, parent, get_option, get_help, db=None, book_id=None):
         Widget.__init__(self, parent, OPTIONS['output']['pdf'])

@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:fdm=marker:ai
 
 
 __license__   = 'GPL v3'
@@ -9,21 +8,23 @@ __docformat__ = 'restructuredtext en'
 import sys
 from functools import partial
 
-from lxml.etree import tostring
 import regex
+from lxml.etree import tostring
+from tinycss.fonts3 import parse_font_family
 
 from calibre.ebooks.oeb.base import XHTML, css_text
-from calibre.ebooks.oeb.polish.cascade import iterrules, resolve_styles, iterdeclaration
+from calibre.ebooks.oeb.polish.cascade import iterdeclaration, iterrules, resolve_styles
+from calibre.utils.icu import lower as icu_lower
 from calibre.utils.icu import ord_string, safe_chr
-from polyglot.builtins import iteritems, itervalues, range, unicode_type
-from tinycss.fonts3 import parse_font_family
+from calibre.utils.icu import upper as icu_upper
+from polyglot.builtins import iteritems, itervalues
 
 
 def normalize_font_properties(font):
     w = font.get('font-weight', None)
     if not w and w != 0:
         w = 'normal'
-    w = unicode_type(w)
+    w = str(w)
     w = {'normal':'400', 'bold':'700'}.get(w, w)
     if w not in {'100', '200', '300', '400', '500', '600', '700',
             '800', '900'}:
@@ -161,7 +162,7 @@ def get_font_dict(elem, resolve_property, pseudo=None):
     for p in 'weight', 'style', 'stretch':
         p = 'font-' + p
         rp = resolve_property(elem, p) if pseudo is None else resolve_property(elem, pseudo, p)
-        ans[p] = unicode_type(rp[0].value)
+        ans[p] = str(rp[0].value)
     normalize_font_properties(ans)
     return ans
 
@@ -185,7 +186,7 @@ class StatsCollector:
     def __init__(self, container, do_embed=False):
         if self.first_letter_pat is None:
             StatsCollector.first_letter_pat = self.first_letter_pat = regex.compile(
-                r'^[\p{Ps}\p{Ps}\p{Pe}\p{Pi}\p{Pf}\p{Po}]+', regex.VERSION1 | regex.UNICODE)
+                r'^[\p{P}]*[\p{L}\p{N}]', regex.VERSION1 | regex.UNICODE)
             StatsCollector.capitalize_pat = self.capitalize_pat = regex.compile(
                 r'[\p{L}\p{N}]', regex.VERSION1 | regex.UNICODE)
 
@@ -213,7 +214,7 @@ class StatsCollector:
                                 cssdict['src'] = fname
                                 break
                         else:
-                            container.log.warn('The @font-face rule refers to a font file that does not exist in the book: %s' % css_text(prop.propertyValue))
+                            container.log.warn(f'The @font-face rule refers to a font file that does not exist in the book: {css_text(prop.propertyValue)}')
                 if 'src' not in cssdict:
                     continue
                 ff = cssdict.get('font-family')
@@ -250,8 +251,7 @@ class StatsCollector:
         update_usage_for_embed(font, chars)
         for rule in get_matching_rules(font_face_rules, font):
             self.font_stats[rule['src']] |= chars
-        q = resolve_pseudo_property(elem, 'first-letter', 'font-family', abort_on_missing=True)
-        if q is not None:
+        if resolve_pseudo_property(elem, 'first-letter', 'font-family', check_if_pseudo_applies=True):
             font = get_font_dict(elem, resolve_pseudo_property, pseudo='first-letter')
             text = get_element_text(elem, resolve_property, resolve_pseudo_property, self.capitalize_pat, for_pseudo='first-letter')
             m = self.first_letter_pat.search(text.lstrip())
@@ -260,9 +260,8 @@ class StatsCollector:
                 update_usage_for_embed(font, chars)
                 for rule in get_matching_rules(font_face_rules, font):
                     self.font_stats[rule['src']] |= chars
-        q = resolve_pseudo_property(elem, 'first-line', 'font-family', abort_on_missing=True)
-        if q is not None:
-            font = get_font_dict(elem, resolve_pseudo_property, pseudo='first-letter')
+        if resolve_pseudo_property(elem, 'first-line', 'font-family', check_if_pseudo_applies=True, check_ancestors=True):
+            font = get_font_dict(elem, partial(resolve_pseudo_property, check_ancestors=True), pseudo='first-line')
             text = get_element_text(elem, resolve_property, resolve_pseudo_property, self.capitalize_pat, for_pseudo='first-line')
             chars = frozenset(ord_string(text)) - exclude_chars
             update_usage_for_embed(font, chars)

@@ -6,23 +6,35 @@ __license__ = 'GPL v3'
 __copyright__ = '2009, Kovid Goyal <kovid@kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
 
-import sys, os
+import os
+import re
+import sys
+
+src_base = os.path.dirname(os.path.abspath(__file__))
 
 
-def check_version_info(minver=(3, 7, 0)):
-    vi = sys.version_info
-    if vi < minver:
-        def fmt(v):
-            return '.'.join(map(str, v[:3]))
-        exit('calibre requires Python >= {}. Current Python version: {}'.format(fmt(minver), fmt(vi)))
+def check_version_info():
+    with open(os.path.join(src_base, 'pyproject.toml')) as f:
+        raw = f.read()
+    m = re.search(r'''^requires-python\s*=\s*['"](.+?)['"]''', raw, flags=re.MULTILINE)
+    assert m is not None
+    minver = m.group(1)
+    m = re.match(r'(>=?)(\d+)\.(\d+)', minver)
+    q = int(m.group(2)), int(m.group(3))
+    if m.group(1) == '>=':
+        is_ok = sys.version_info >= q
+    else:
+        is_ok = sys.version_info > q
+    if not is_ok:
+        exit(f'calibre requires Python {minver}. Current Python version: {".".join(map(str, sys.version_info[:3]))}')
 
 
 check_version_info()
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, src_base)
 
 import setup.commands as commands
-from setup import prints, get_warnings
+from setup import get_warnings, prints
 
 
 def option_parser():
@@ -62,7 +74,7 @@ def main(args=sys.argv):
         print('\nWhere command is one of:')
         print()
         for x in sorted(commands.__all__):
-            print('{:20} -'.format(x), end=' ')
+            print(f'{x:20} -', end=' ')
             c = getattr(commands, x)
             desc = getattr(c, 'short_description', c.description)
             print(desc)
@@ -82,7 +94,7 @@ def main(args=sys.argv):
     parser = option_parser()
     command.add_all_options(parser)
     parser.set_usage(
-        'Usage: python setup.py {} [options]\n\n'.format(args[1]) + command.description)
+        f'Usage: python setup.py {args[1]} [options]\n\n' + command.description)
 
     opts, args = parser.parse_args(args)
     opts.cli_args = args[2:]

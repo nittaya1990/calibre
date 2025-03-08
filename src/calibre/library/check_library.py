@@ -1,20 +1,27 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
 
 
 __license__   = 'GPL v3'
 __copyright__ = '2010, Kovid Goyal <kovid@kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
 
-import re, os, traceback, fnmatch
+import fnmatch
+import os
+import re
+import traceback
 
 from calibre import isbytestring
 from calibre.constants import filesystem_encoding
+from calibre.db.constants import COVER_FILE_NAME, DATA_DIR_NAME, METADATA_FILE_NAME, NOTES_DIR_NAME, TRASH_DIR_NAME
 from calibre.ebooks import BOOK_EXTENSIONS
-from polyglot.builtins import iteritems, filter
+from calibre.utils.localization import _
+from polyglot.builtins import iteritems
 
 EBOOK_EXTENSIONS = frozenset(BOOK_EXTENSIONS)
-NORMALS = frozenset(['metadata.opf', 'cover.jpg'])
+NORMALS = frozenset({METADATA_FILE_NAME, COVER_FILE_NAME, DATA_DIR_NAME})
+IGNORE_AT_TOP_LEVEL = frozenset({
+    'metadata.db', 'metadata_db_prefs_backup.json', 'metadata_pre_restore.db', 'full-text-search.db', TRASH_DIR_NAME, NOTES_DIR_NAME
+})
 
 '''
 Checks fields:
@@ -48,10 +55,10 @@ class CheckLibrary:
 
         self.is_case_sensitive = db.is_case_sensitive
 
-        self.all_authors = frozenset([x[1] for x in db.all_authors()])
-        self.all_ids = frozenset([id_ for id_ in db.all_ids()])
+        self.all_authors = frozenset(x[1] for x in db.all_authors())
+        self.all_ids = frozenset(id_ for id_ in db.all_ids())
         self.all_dbpaths = frozenset(self.dbpath(id_) for id_ in self.all_ids)
-        self.all_lc_dbpaths = frozenset([f.lower() for f in self.all_dbpaths])
+        self.all_lc_dbpaths = frozenset(f.lower() for f in self.all_dbpaths)
 
         self.db_id_regexp = re.compile(r'^.* \((\d+)\)$')
 
@@ -91,12 +98,11 @@ class CheckLibrary:
 
     def scan_library(self, name_ignores, extension_ignores):
         self.ignore_names = frozenset(name_ignores)
-        self.ignore_ext = frozenset(['.'+ e for e in extension_ignores])
+        self.ignore_ext = frozenset('.'+ e for e in extension_ignores)
 
         lib = self.src_library_path
         for auth_dir in os.listdir(lib):
-            if self.ignore_name(auth_dir) or auth_dir in {'metadata.db',
-                    'metadata_db_prefs_backup.json'}:
+            if self.ignore_name(auth_dir) or auth_dir in IGNORE_AT_TOP_LEVEL:
                 continue
             auth_path = os.path.join(lib, auth_dir)
             # First check: author must be a directory
@@ -158,14 +164,14 @@ class CheckLibrary:
             path = self.dbpath(id_)
             if not os.path.exists(os.path.join(lib, path)):
                 title_dir = os.path.basename(path)
-                book_formats = frozenset([x for x in
-                            self.db.format_files(id_, index_is_id=True)])
+                book_formats = frozenset(x for x in
+                            self.db.format_files(id_, index_is_id=True))
                 for fmt in book_formats:
                     self.missing_formats.append((title_dir,
                             os.path.join(path, fmt[0]+'.'+fmt[1].lower()), id_))
                 if self.db.has_cover(id_):
                     self.missing_covers.append((title_dir,
-                            os.path.join(path, 'cover.jpg'), id_))
+                            os.path.join(path, COVER_FILE_NAME), id_))
 
     def is_ebook_file(self, filename):
         ext = os.path.splitext(filename)[1]
@@ -179,14 +185,15 @@ class CheckLibrary:
         return False
 
     def process_book(self, lib, book_info):
-        (db_path, title_dir, book_id) = book_info
-        filenames = frozenset([f for f in os.listdir(os.path.join(lib, db_path))
-                               if os.path.splitext(f)[1] not in self.ignore_ext or
-                               f == 'cover.jpg'])
+        db_path, title_dir, book_id = book_info
+        filenames = frozenset(f for f in os.listdir(os.path.join(lib, db_path))
+                               if not self.ignore_name(f) and (
+                                   os.path.splitext(f)[1] not in self.ignore_ext or
+                                   f == COVER_FILE_NAME))
         book_id = int(book_id)
         formats = frozenset(filter(self.is_ebook_file, filenames))
-        book_formats = frozenset([x[0]+'.'+x[1].lower() for x in
-                            self.db.format_files(book_id, index_is_id=True)])
+        book_formats = frozenset(x[0]+'.'+x[1].lower() for x in
+                            self.db.format_files(book_id, index_is_id=True))
 
         if self.is_case_sensitive:
             unknowns = frozenset(filenames-formats-NORMALS)
@@ -219,10 +226,10 @@ class CheckLibrary:
                         fn[ff] = f
                 return fn
 
-            filenames_lc = frozenset([f.lower() for f in filenames])
-            formats_lc = frozenset([f.lower() for f in formats])
+            filenames_lc = frozenset(f.lower() for f in filenames)
+            formats_lc = frozenset(f.lower() for f in formats)
             unknowns = frozenset(filenames_lc-formats_lc-NORMALS)
-            book_formats_lc = frozenset([f.lower() for f in book_formats])
+            book_formats_lc = frozenset(f.lower() for f in book_formats)
             missing = book_formats_lc - formats_lc
 
             # Check: any books that aren't formats or normally there?
@@ -247,10 +254,10 @@ class CheckLibrary:
 
         # check cached has_cover
         if self.db.has_cover(book_id):
-            if 'cover.jpg' not in filenames:
+            if COVER_FILE_NAME not in filenames:
                 self.missing_covers.append((title_dir,
-                        os.path.join(db_path, 'cover.jpg'), book_id))
+                        os.path.join(db_path, COVER_FILE_NAME), book_id))
         else:
-            if 'cover.jpg' in filenames:
+            if COVER_FILE_NAME in filenames:
                 self.extra_covers.append((title_dir,
-                        os.path.join(db_path, 'cover.jpg'), book_id))
+                        os.path.join(db_path, COVER_FILE_NAME), book_id))

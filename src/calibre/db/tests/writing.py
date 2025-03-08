@@ -1,21 +1,22 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:fdm=marker:ai
 
 
 __license__   = 'GPL v3'
 __copyright__ = '2013, Kovid Goyal <kovid at kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
 
+import os
 from collections import namedtuple
 from functools import partial
 from io import BytesIO
 
+from calibre.db.backend import FTSQueryError
+from calibre.db.constants import RESOURCE_URL_SCHEME
+from calibre.db.tests.base import IMG, BaseTest
 from calibre.ebooks.metadata import author_to_author_sort, title_sort
 from calibre.ebooks.metadata.book.base import Metadata
 from calibre.utils.date import UNDEFINED_DATE
-from calibre.db.tests.base import BaseTest, IMG
-from calibre.db.backend import FTSQueryError
-from polyglot.builtins import iteritems, itervalues, unicode_type
+from polyglot.builtins import iteritems, itervalues
 
 
 class WritingTest(BaseTest):
@@ -24,20 +25,23 @@ class WritingTest(BaseTest):
     def create_getter(self, name, getter=None):
         if getter is None:
             if name.endswith('_index'):
-                ans = lambda db:partial(db.get_custom_extra, index_is_id=True,
-                                        label=name[1:].replace('_index', ''))
+                def ans(db):
+                    return partial(db.get_custom_extra, index_is_id=True, label=name[1:].replace('_index', ''))
             else:
-                ans = lambda db:partial(db.get_custom, label=name[1:],
-                                       index_is_id=True)
+                def ans(db):
+                    return partial(db.get_custom, label=name[1:], index_is_id=True)
         else:
-            ans = lambda db:partial(getattr(db, getter), index_is_id=True)
+            def ans(db):
+                return partial(getattr(db, getter), index_is_id=True)
         return ans
 
     def create_setter(self, name, setter=None):
         if setter is None:
-            ans = lambda db:partial(db.set_custom, label=name[1:], commit=True)
+            def ans(db):
+                return partial(db.set_custom, label=name[1:], commit=True)
         else:
-            ans = lambda db:partial(getattr(db, setter), commit=True)
+            def ans(db):
+                return partial(getattr(db, setter), commit=True)
         return ans
 
     def create_test(self, name, vals, getter=None, setter=None):
@@ -61,19 +65,16 @@ class WritingTest(BaseTest):
                 if test.name.endswith('_index'):
                     val = float(val) if val is not None else 1.0
                     self.assertEqual(sqlite_res, val,
-                        'Failed setting for %s with value %r, sqlite value not the same. val: %r != sqlite_val: %r'%(
-                            test.name, val, val, sqlite_res))
+                        f'Failed setting for {test.name} with value {val!r}, sqlite value not the same. val: {val!r} != sqlite_val: {sqlite_res!r}')
                 else:
                     test.setter(db)(1, val)
                     old_cached_res = getter(1)
                     self.assertEqual(old_cached_res, cached_res,
-                                    'Failed setting for %s with value %r, cached value not the same. Old: %r != New: %r'%(
-                            test.name, val, old_cached_res, cached_res))
+                        f'Failed setting for {test.name} with value {val!r}, cached value not the same. Old: {old_cached_res!r} != New: {cached_res!r}')
                     db.refresh()
                     old_sqlite_res = getter(1)
                     self.assertEqual(old_sqlite_res, sqlite_res,
-                        'Failed setting for %s, sqlite value not the same: %r != %r'%(
-                            test.name, old_sqlite_res, sqlite_res))
+                        f'Failed setting for {test.name}, sqlite value not the same: {old_sqlite_res!r} != {sqlite_res!r}')
                 del db
     # }}}
 
@@ -319,8 +320,9 @@ class WritingTest(BaseTest):
         af(self.init_cache(cl).dirtied_cache)
 
         prev = cache.field_for('last_modified', 3)
-        import calibre.db.cache as c
         from datetime import timedelta
+
+        import calibre.db.cache as c
         utime = prev+timedelta(days=1)
         onowf = c.nowf
         c.nowf = lambda: utime
@@ -352,6 +354,9 @@ class WritingTest(BaseTest):
         try:
             ae(sf('title', {1:'title1', 2:'title2', 3:'title3'}), {1,2,3})
             ae(sf('authors', {1:'author1 & author2', 2:'author1 & author2', 3:'author1 & author2'}), {1,2,3})
+            ae(sf('tags', {1:'tag1', 2:'tag1,tag2', 3:'XXX'}), {1,2,3})
+            ae(cache.set_link_map('authors', {'author1': 'link1'}), {1,2,3})
+            ae(cache.set_link_map('tags', {'XXX': 'YYY', 'tag2': 'link2'}), {2,3})
             count = 6
             while cache.dirty_queue_length() and count > 0:
                 mb.join(2)
@@ -362,11 +367,61 @@ class WritingTest(BaseTest):
         mb.join(2)
         af(mb.is_alive())
         from calibre.ebooks.metadata.opf2 import OPF
-        for book_id in (1, 2, 3):
+        book_ids = (1,2,3)
+
+        def read_all_formats():
+            fbefore = {}
+            for book_id in book_ids:
+                ff = fbefore[book_id] = {}
+                for fmt in cache.formats(book_id):
+                    ff[fmt] = cache.format(book_id, fmt)
+            return fbefore
+
+        def read_all_extra_files(book_id=1):
+            ans = {}
+            bp = cache.field_for('path', book_id)
+            for (relpath, fobj, stat_result) in cache.backend.iter_extra_files(book_id, bp, cache.fields['formats']):
+                ans[relpath] = fobj.read()
+            return ans
+
+        for book_id in book_ids:
             raw = cache.read_backup(book_id)
             opf = OPF(BytesIO(raw))
-            ae(opf.title, 'title%d'%book_id)
+            ae(opf.title, f'title{book_id}')
             ae(opf.authors, ['author1', 'author2'])
+        tested_fields = 'title authors tags'.split()
+        before = {f:cache.all_field_for(f, book_ids) for f in tested_fields}
+        lbefore = tuple(cache.get_all_link_maps_for_book(i) for i in book_ids)
+        fbefore = read_all_formats()
+        bookdir = os.path.dirname(cache.format_abspath(1, '__COVER_INTERNAL__'))
+        with open(os.path.join(bookdir, 'exf'), 'w') as f:
+            f.write('exf')
+        os.mkdir(os.path.join(bookdir, 'sub'))
+        with open(os.path.join(bookdir, 'sub', 'recurse'), 'w') as f:
+            f.write('recurse')
+        ebefore = read_all_extra_files()
+        authors = sorted(cache.all_field_ids('authors'))
+        h1 = cache.add_notes_resource(b'resource1', 'r1.jpg')
+        h2 = cache.add_notes_resource(b'resource2', 'r2.jpg')
+        doc = f'simple notes for an author <img src="{RESOURCE_URL_SCHEME}://{h1.replace(":", "/",1)}"> '
+        cache.set_notes_for('authors', authors[0], doc, resource_hashes=(h1,))
+        doc += f'2 <img src="{RESOURCE_URL_SCHEME}://{h2.replace(":", "/",1)}">'
+        cache.set_notes_for('authors', authors[1], doc, resource_hashes=(h1,h2))
+        notes_before = {cache.get_item_name('authors', aid): cache.export_note('authors', aid) for aid in authors}
+        cache.close()
+        from calibre.db.restore import Restore
+        restorer = Restore(cl)
+        restorer.start()
+        restorer.join(60)
+        af(restorer.is_alive())
+        cache = self.init_cache(cl)
+        ae(before, {f:cache.all_field_for(f, book_ids) for f in tested_fields})
+        ae(lbefore, tuple(cache.get_all_link_maps_for_book(i) for i in book_ids))
+        ae(fbefore, read_all_formats())
+        ae(ebefore, read_all_extra_files())
+        authors = sorted(cache.all_field_ids('authors'))
+        notes_after = {cache.get_item_name('authors', aid): cache.export_note('authors', aid) for aid in authors}
+        ae(notes_before, notes_after)
     # }}}
 
     def test_set_cover(self):  # {{{
@@ -384,9 +439,9 @@ class WritingTest(BaseTest):
         ae(cache.set_cover({bid:img for bid in (1, 2, 3)}), {1, 2, 3})
         old = self.init_old()
         for book_id in (1, 2, 3):
-            ae(cache.cover(book_id), img, 'Cover was not set correctly for book %d' % book_id)
+            ae(cache.cover(book_id), img, f'Cover was not set correctly for book {book_id}')
             ae(cache.field_for('cover', book_id), 1)
-            ae(old.cover(book_id, index_is_id=True), img, 'Cover was not set correctly for book %d' % book_id)
+            ae(old.cover(book_id, index_is_id=True), img, f'Cover was not set correctly for book {book_id}')
             self.assertTrue(old.has_cover(book_id))
         old.close()
         old.break_cycles()
@@ -402,10 +457,10 @@ class WritingTest(BaseTest):
         mi = cache.get_metadata(1)
         old_path = cache.field_for('path', 1)
         old_title, old_author = mi.title, mi.authors[0]
-        ae(old_path, '%s/%s (1)' % (old_author, old_title))
+        ae(old_path, f'{old_author}/{old_title} (1)')
         mi.title, mi.authors = 'New Title', ['New Author']
         cache.set_metadata(1, mi)
-        ae(cache.field_for('path', 1), '%s/%s (1)' % (mi.authors[0], mi.title))
+        ae(cache.field_for('path', 1), f'{mi.authors[0]}/{mi.title} (1)')
         p = cache.format_abspath(1, 'FMT1')
         self.assertTrue(mi.authors[0] in p and mi.title in p)
 
@@ -439,8 +494,12 @@ class WritingTest(BaseTest):
         # auto-generated authors sort
         mi = Metadata('empty', ['a1', 'a2'])
         cache.set_metadata(1, mi)
+        self.assertEqual(cache.get_item_ids('authors', ('a1', 'a2')), cache.get_item_ids('authors', ('a1', 'a2'), case_sensitive=True))
+        self.assertEqual(
+            set(cache.get_item_ids('authors', ('A1', 'a2')).values()),
+            set(cache.get_item_ids('authors', ('a1', 'a2'), case_sensitive=True).values()))
         self.assertEqual('a1 & a2', cache.field_for('author_sort', 1))
-        cache.set_sort_for_authors({cache.get_item_id('authors', 'a1'): 'xy'})
+        cache.set_sort_for_authors({cache.get_item_id('authors', 'a1', case_sensitive=True): 'xy'})
         self.assertEqual('xy & a2', cache.field_for('author_sort', 1))
         mi = Metadata('empty', ['a1'])
         cache.set_metadata(1, mi)
@@ -527,6 +586,24 @@ class WritingTest(BaseTest):
 
     def test_rename_items(self):  # {{{
         ' Test renaming of many-(many,one) items '
+        # Test renaming authors removes folders with junk in them
+        cl = self.cloned_library
+        cache = self.init_cache(cl)
+        fmtpath = cache.format_abspath(1, 'FMT1')
+        bookpath = os.path.dirname(fmtpath)
+        authorpath = os.path.dirname(bookpath)
+        self.assertTrue(os.path.exists(authorpath))
+        author = cache.field_for('authors', 1)[0]
+        os.mkdir(os.path.join(authorpath, '.DS_Store'))
+        open(os.path.join(authorpath, 'Thumbs.db'), 'wb').close()
+        amap = {v:k for k, v in cache.get_id_map('authors').items()}
+        cache.rename_items('authors', {amap[author]: 'renamed'})
+        try:
+            items = os.listdir(authorpath)
+        except FileNotFoundError:
+            items = []
+        self.assertFalse(items, 'Items in author folder: ' + ' '.join(items))
+
         cl = self.cloned_library
         cache = self.init_cache(cl)
         # Check that renaming authors updates author sort and path
@@ -619,6 +696,7 @@ class WritingTest(BaseTest):
             self.assertEqual(c.field_for('tags', 1), ('r', 'q', 'c'))
             self.assertEqual(c.field_for('tags', 2), ('X', 'y', 'z'))
             self.assertEqual(c.field_for('tags', 3), ('a', 'X', 'z'))
+
     # }}}
 
     def test_composite_cache(self):  # {{{
@@ -651,30 +729,34 @@ class WritingTest(BaseTest):
 
     def test_dump_and_restore(self):  # {{{
         ' Test roundtripping the db through SQL '
-        cache = self.init_cache()
-        uv = int(cache.backend.user_version)
-        all_ids = cache.all_book_ids()
-        cache.dump_and_restore()
-        self.assertEqual(cache.set_field('title', {1:'nt'}), {1}, 'database connection broken')
-        cache = self.init_cache()
-        self.assertEqual(cache.all_book_ids(), all_ids, 'dump and restore broke database')
-        self.assertEqual(int(cache.backend.user_version), uv)
+        import warnings
+        with warnings.catch_warnings():
+            # on python 3.10 apsw raises a deprecation warning which causes this test to fail on CI
+            warnings.simplefilter('ignore', DeprecationWarning)
+            cache = self.init_cache()
+            uv = int(cache.backend.user_version)
+            all_ids = cache.all_book_ids()
+            cache.dump_and_restore()
+            self.assertEqual(cache.set_field('title', {1:'nt'}), {1}, 'database connection broken')
+            cache = self.init_cache()
+            self.assertEqual(cache.all_book_ids(), all_ids, 'dump and restore broke database')
+            self.assertEqual(int(cache.backend.user_version), uv)
     # }}}
 
     def test_set_author_data(self):  # {{{
         cache = self.init_cache()
         adata = cache.author_data()
-        ldata = {aid:unicode_type(aid) for aid in adata}
+        ldata = {aid:str(aid) for aid in adata}
         self.assertEqual({1,2,3}, cache.set_link_for_authors(ldata))
         for c in (cache, self.init_cache()):
             self.assertEqual(ldata, {aid:d['link'] for aid, d in iteritems(c.author_data())})
-        self.assertEqual({3}, cache.set_link_for_authors({aid:'xxx' if aid == max(adata) else unicode_type(aid) for aid in adata}),
+        self.assertEqual({3}, cache.set_link_for_authors({aid:'xxx' if aid == max(adata) else str(aid) for aid in adata}),
                          'Setting the author link to the same value as before, incorrectly marked some books as dirty')
-        sdata = {aid:'%s, changed' % aid for aid in adata}
+        sdata = {aid:f'{aid}, changed' for aid in adata}
         self.assertEqual({1,2,3}, cache.set_sort_for_authors(sdata))
         for bid in (1, 2, 3):
             self.assertIn(', changed', cache.field_for('author_sort', bid))
-        sdata = {aid:'%s, changed' % (aid*2 if aid == max(adata) else aid) for aid in adata}
+        sdata = {aid:f'{aid*2 if aid == max(adata) else aid}, changed' for aid in adata}
         self.assertEqual({3}, cache.set_sort_for_authors(sdata),
                          'Setting the author sort to the same value as before, incorrectly marked some books as dirty')
     # }}}
@@ -689,9 +771,9 @@ class WritingTest(BaseTest):
         conn.execute('INSERT INTO publishers (name) VALUES ("MŪS")')
         uid = conn.last_insert_rowid()
         conn.execute('DELETE FROM books_publishers_link')
-        conn.execute('INSERT INTO books_publishers_link (book,publisher) VALUES (1, %d)' % lid)
-        conn.execute('INSERT INTO books_publishers_link (book,publisher) VALUES (2, %d)' % uid)
-        conn.execute('INSERT INTO books_publishers_link (book,publisher) VALUES (3, %d)' % uid)
+        conn.execute(f'INSERT INTO books_publishers_link (book,publisher) VALUES (1, {lid})')
+        conn.execute(f'INSERT INTO books_publishers_link (book,publisher) VALUES (2, {uid})')
+        conn.execute(f'INSERT INTO books_publishers_link (book,publisher) VALUES (3, {uid})')
         cache.reload_from_db()
         t = cache.fields['publisher'].table
         for x in (lid, uid):
@@ -705,7 +787,7 @@ class WritingTest(BaseTest):
             self.assertNotIn(uid, t.id_map)
             self.assertNotIn(uid, t.col_book_map)
             for bid in (1, 2, 3):
-                ae(c.field_for('publisher', bid), "mūs")
+                ae(c.field_for('publisher', bid), 'mūs')
             c.close()
 
         cache = self.init_cache()
@@ -744,7 +826,7 @@ class WritingTest(BaseTest):
         changes = []
         cache.backend.conn.setupdatehook(lambda typ, dbname, tblname, rowid: changes.append(rowid))
         prefs = cache.backend.prefs
-        prefs['test mutable'] =  [1, 2, 3]
+        prefs['test mutable'] = [1, 2, 3]
         self.assertEqual(len(changes), 1)
         a = prefs['test mutable']
         a.append(4)
@@ -761,7 +843,7 @@ class WritingTest(BaseTest):
 
     def test_annotations(self):  # {{{
         'Test handling of annotations'
-        from calibre.utils.date import utcnow, EPOCH
+        from calibre.utils.date import EPOCH, utcnow
         cl = self.cloned_library
         cache = self.init_cache(cl)
         # First empty dirtied
@@ -835,14 +917,20 @@ class WritingTest(BaseTest):
         cache.restore_annotations(1, list(opf.read_annotations()))
         amap = cache.annotations_map_for_book(1, 'moo')
         self.assertEqual([x[0] for x in annot_list], map_as_list(amap))
-
     # }}}
 
     def test_changed_events(self):  # {{{
         def ae(l, r):
             # We need to sleep a bit to allow events to happen on its thread
             import time
-            time.sleep(.001)
+            st = time.monotonic()
+            while time.monotonic() - st < 1:
+                time.sleep(0.01)
+                try:
+                    self.assertEqual(l, r)
+                    return
+                except Exception:
+                    pass
             self.assertEqual(l, r)
 
         cache = self.init_cache(self.cloned_library)
@@ -906,4 +994,59 @@ class WritingTest(BaseTest):
         ae(cache.field_for('series_index', 1), 2.0)
         ae(cache.field_for('series_index', 2), 3.5)
 
+    def test_link_maps(self):
+        cache = self.init_cache()
+
+        # Add two tags
+        cache.set_field('tags', {1:'foo'})
+        self.assertEqual(('foo',), cache.field_for('tags', 1), 'Setting tag foo failed')
+        cache.set_field('tags', {1:'foo, bar'})
+        self.assertEqual(('foo', 'bar'), cache.field_for('tags', 1), 'Adding second tag failed')
+
+        # Check adding a link
+        links = cache.get_link_map('tags')
+        self.assertDictEqual(links, {}, 'Initial tags link dict is not empty')
+        links['foo'] = 'url'
+        cache.set_link_map('tags', links)
+        links2 = cache.get_link_map('tags')
+        self.assertDictEqual(links2, links, 'tags link dict mismatch')
+
+        # Check getting links for a book and that links are correct
+        cache.set_field('publisher', {1:'random'})
+        cache.set_link_map('publisher', {'random': 'url2'})
+        links = cache.get_all_link_maps_for_book(1)
+        self.assertSetEqual(set(links.keys()), {'tags', 'publisher'}, 'Wrong link keys')
+        self.assertSetEqual(set(links['tags'].keys()), {'foo', }, 'Should be "foo"')
+        self.assertSetEqual(set(links['publisher'].keys()), {'random', }, 'Should be "random"')
+        self.assertEqual('url', links['tags']['foo'], 'link for tag foo is wrong')
+        self.assertEqual('url2', links['publisher']['random'], 'link for publisher random is wrong')
+
+        # Check that renaming a tag keeps the link and clears the link map cache for the book
+        self.assertTrue(1 in cache.link_maps_cache, 'book not in link_map_cache')
+        tag_id = cache.get_item_id('tags', 'foo')
+        cache.rename_items('tags', {tag_id: 'foobar'})
+        self.assertTrue(1 not in cache.link_maps_cache, 'book still in link_map_cache')
+        links = cache.get_link_map('tags')
+        self.assertTrue('foobar' in links, 'rename foo lost the link')
+        self.assertEqual(links['foobar'], 'url', 'The link changed contents')
+        links = cache.get_all_link_maps_for_book(1)
+        self.assertTrue(1 in cache.link_maps_cache, 'book not put back into link_map_cache')
+        self.assertDictEqual({'publisher': {'random': 'url2'}, 'tags': {'foobar': 'url'}},
+                             links, 'book links incorrect after tag rename')
+
+        # Check ProxyMetadata
+        mi = cache.get_proxy_metadata(1)
+        self.assertDictEqual({'publisher': {'random': 'url2'}, 'tags': {'foobar': 'url'}},
+                             mi.link_maps, "ProxyMetadata didn't return the right link map")
+
+        # Now test deleting the links.
+        links = cache.get_link_map('tags')
+        to_del = {l:'' for l in links.keys()}
+        cache.set_link_map('tags', to_del)
+        self.assertEqual({}, cache.get_link_map('tags'), 'links on tags were not deleted')
+        links = cache.get_link_map('publisher')
+        to_del = {l:'' for l in links.keys()}
+        cache.set_link_map('publisher', to_del)
+        self.assertEqual({}, cache.get_link_map('publisher'), 'links on publisher were not deleted')
+        self.assertEqual({}, cache.get_all_link_maps_for_book(1), 'Not all links for book were deleted')
     # }}}

@@ -25,6 +25,7 @@ DEFAULT_COLORS = {
     'window-error-foreground': c('red', '#C40233'),
     'window-hover-foreground': c('red', '#C40233'),
     'link-foreground': c('blue', '#6cb4ee'),
+    'faded-text': c('#666', '#7f7f7f'),
 
     # Top bar specific colors
     'bar-background': c(DARK, DT_DARK_LIGHTER),
@@ -74,10 +75,15 @@ def set_ui_colors(is_dark_theme):
         s.setProperty('--calibre-color-' + k, val)
     get_color_as_rgba.cache = {}
     cached_color_to_rgba.cache = {}
+    document.documentElement.style.colorScheme = 'dark' if is_dark_theme else 'light'
 
 
 def browser_in_dark_mode():
     return window.matchMedia('(prefers-color-scheme: dark)').matches
+
+
+def color_scheme():
+    return 'dark' if browser_in_dark_mode() or document.documentElement.style.colorScheme is 'dark' else 'light'
 
 
 def css_for_variables():
@@ -96,7 +102,7 @@ def css_for_variables():
     for k in DEFAULT_COLORS:
         val = DEFAULT_COLORS[k][attr]
         ans.push(f'--calibre-color-{k}: {val};')
-    return ':root { ' + ans.join('\n') + '}\n\n' + input_css
+    return f':root {{ color-scheme: {attr}; ' + ans.join('\n') + '}\n\n' + input_css
 
 
 def get_color(name):

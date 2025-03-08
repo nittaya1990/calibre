@@ -120,7 +120,7 @@ wpd_uninit(PyObject *self, PyObject *args) {
 // enumerate_devices() {{{
 static PyObject *
 wpd_enumerate_devices(PyObject *self, PyObject *args) {
-    PyObject *refresh = NULL, *ans = NULL, *temp;
+    PyObject *ans = NULL, *temp;
     HRESULT hr;
     DWORD num_of_devices, i;
     PWSTR *pnp_device_ids;
@@ -185,7 +185,7 @@ wpd_device_info(PyObject *self, PyObject *args) {
     if (client_information) {
         device = open_device(pnp_id.ptr(), client_information);
         CComPtr<IPortableDevicePropertiesBulk> properties_bulk;
-        if (device) ans = get_device_information(device, properties_bulk);
+        if (device) ans = get_device_information(pnp_id.ptr(), device, properties_bulk);
     }
 
     if (device) device->Close();

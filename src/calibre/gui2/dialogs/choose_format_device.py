@@ -1,13 +1,10 @@
-
-
 __license__   = 'GPL v3'
 __copyright__ = '2011, John Schember <john@nachtimwald.com>'
 
-from qt.core import QDialog, QTreeWidgetItem, QIcon, QModelIndex
+from qt.core import QDialog, QIcon, QModelIndex, QTreeWidgetItem
 
 from calibre.gui2 import file_icon_provider
 from calibre.gui2.dialogs.choose_format_device_ui import Ui_ChooseFormatDeviceDialog
-from polyglot.builtins import unicode_type
 
 
 class ChooseFormatDeviceDialog(QDialog, Ui_ChooseFormatDeviceDialog):
@@ -33,7 +30,7 @@ class ChooseFormatDeviceDialog(QDialog, Ui_ChooseFormatDeviceDialog):
             t_item.setText(0, format.upper())
             t_item.setText(1, exists)
             if convertible:
-                t_item.setIcon(2, QIcon(I('ok.png')))
+                t_item.setIcon(2, QIcon.ic('ok.png'))
             self.formats.addTopLevelItem(t_item)
             if i == 0:
                 self.formats.setCurrentItem(t_item)
@@ -51,5 +48,5 @@ class ChooseFormatDeviceDialog(QDialog, Ui_ChooseFormatDeviceDialog):
         return self._format
 
     def accept(self):
-        self._format = unicode_type(self.formats.currentItem().text(0))
+        self._format = str(self.formats.currentItem().text(0))
         return QDialog.accept(self)

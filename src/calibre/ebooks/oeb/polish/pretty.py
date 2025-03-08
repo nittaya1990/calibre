@@ -1,21 +1,18 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 
 
 __license__ = 'GPL v3'
 __copyright__ = '2013, Kovid Goyal <kovid at kovidgoyal.net>'
 
 import textwrap
-from polyglot.builtins import iteritems, map
 
 # from lxml.etree import Element
-
 from calibre import force_unicode
-from calibre.ebooks.oeb.base import (
-    serialize, OEB_DOCS, barename, OEB_STYLES, XPNSMAP, XHTML, SVG)
+from calibre.ebooks.oeb.base import OEB_DOCS, OEB_STYLES, SVG, XHTML, XPNSMAP, barename, serialize
 from calibre.ebooks.oeb.polish.container import OPF_NAMESPACES
 from calibre.ebooks.oeb.polish.utils import guess_type
 from calibre.utils.icu import sort_key
+from polyglot.builtins import iteritems
 
 
 def isspace(x):
@@ -45,7 +42,7 @@ def pretty_opf(root):
     def dckey(x):
         return {'title':0, 'creator':1}.get(barename(x.tag), 2)
     for metadata in root.xpath('//opf:metadata', namespaces=OPF_NAMESPACES):
-        dc_tags = metadata.xpath('./*[namespace-uri()="%s"]' % OPF_NAMESPACES['dc'])
+        dc_tags = metadata.xpath('./*[namespace-uri()="{}"]'.format(OPF_NAMESPACES['dc']))
         dc_tags.sort(key=dckey)
         for x in reversed(dc_tags):
             metadata.insert(0, x)
@@ -67,7 +64,7 @@ def pretty_opf(root):
             cat = 2
         elif mt.startswith('image/'):
             cat = 3
-        elif ext in {'otf', 'ttf', 'woff'}:
+        elif ext in {'otf', 'ttf', 'woff', 'woff2'}:
             cat = 4
         elif mt.startswith('audio/'):
             cat = 5
@@ -78,7 +75,7 @@ def pretty_opf(root):
             i = spine_ids.get(x.get('id', None), 1000000000)
         else:
             i = sort_key(href)
-        return (cat, i)
+        return cat, i
 
     for manifest in root.xpath('//opf:manifest', namespaces=OPF_NAMESPACES):
         try:

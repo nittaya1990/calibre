@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
 
 
 __license__   = 'GPL v3'
@@ -12,8 +11,11 @@ BASH completion for calibre commands that are too complex for simple
 completion.
 '''
 
-import sys, os, shlex, glob, re
-
+import glob
+import os
+import re
+import shlex
+import sys
 
 prints = print
 
@@ -57,9 +59,9 @@ def get_opts_from_parser(parser, prefix):
 
 
 def send(ans):
-    pat = re.compile('([^0-9a-zA-Z_./-])')
+    pat = re.compile(r'([^0-9a-zA-Z_./-])')
     for x in sorted(set(ans)):
-        x = pat.sub(lambda m : '\\'+m.group(1), x)
+        x = pat.sub(lambda m: '\\'+m.group(1), x)
         if x.endswith('\\ '):
             x = x[:-2]+' '
         prints(x)

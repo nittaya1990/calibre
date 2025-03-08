@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 
 
 __license__ = 'GPL v3'
@@ -9,17 +8,37 @@ import re
 from threading import Thread
 
 from qt.core import (
-    QTextBrowser, QVBoxLayout, QDialog, QDialogButtonBox, QIcon, QLabel,
-    QCheckBox, Qt, QListWidgetItem, QHBoxLayout, QListWidget, QPixmap,
-    QSpinBox, QStyledItemDelegate, QSize, QStyle, QPen, QPalette,
-    QProgressBar, pyqtSignal, QApplication, QAbstractItemView
+    QAbstractItemView,
+    QApplication,
+    QCheckBox,
+    QDialog,
+    QDialogButtonBox,
+    QHBoxLayout,
+    QIcon,
+    QLabel,
+    QListWidget,
+    QListWidgetItem,
+    QPalette,
+    QPen,
+    QPixmap,
+    QProgressBar,
+    QSize,
+    QSpinBox,
+    QStyle,
+    QStyledItemDelegate,
+    Qt,
+    QTextBrowser,
+    QVBoxLayout,
+    QWidget,
+    pyqtSignal,
 )
 
-from calibre import human_readable, fit_image, force_unicode
+from calibre import fit_image, force_unicode, human_readable
 from calibre.ebooks.oeb.polish.main import CUSTOMIZATION
 from calibre.gui2 import empty_index, question_dialog
-from calibre.gui2.tweak_book import tprefs, current_container, set_current_container
+from calibre.gui2.tweak_book import current_container, set_current_container, tprefs
 from calibre.gui2.tweak_book.widgets import Dialog
+from calibre.startup import connect_lambda
 from calibre.utils.icu import numeric_sort_key
 
 
@@ -72,7 +91,7 @@ def customize_remove_unused_css(name, parent, ans):
     d.l.addWidget(d.bb)
     d.bb.rejected.connect(d.reject)
     d.bb.accepted.connect(d.accept)
-    ret = d.exec_()
+    ret = d.exec()
     ans['remove_unused_classes'] = tprefs['remove_unused_classes'] = c.isChecked()
     ans['merge_identical_selectors'] = tprefs['merge_identical_selectors'] = m.isChecked()
     ans['merge_rules_with_identical_properties'] = tprefs['merge_rules_with_identical_properties'] = p.isChecked()
@@ -106,7 +125,7 @@ def get_customization(action, name, parent):
 def format_report(title, report):
     from calibre.ebooks.markdown import markdown
     report = [force_unicode(line) for line in report]
-    return markdown('# %s\n\n'%force_unicode(title) + '\n\n'.join(report), output_format='html4')
+    return markdown(f'# {force_unicode(title)}\n\n' + '\n\n'.join(report), output_format='html4')
 
 
 def show_report(changed, title, report, parent, show_current_diff):
@@ -122,10 +141,10 @@ def show_report(changed, title, report, parent, show_current_diff):
     d.show_changes = False
     if changed:
         b = d.b = d.bb.addButton(_('See what &changed'), QDialogButtonBox.ButtonRole.AcceptRole)
-        b.setIcon(QIcon(I('diff.png'))), b.setAutoDefault(False)
+        b.setIcon(QIcon.ic('diff.png')), b.setAutoDefault(False)
         connect_lambda(b.clicked, d, lambda d: setattr(d, 'show_changes', True))
     b = d.bb.addButton(_('&Copy to clipboard'), QDialogButtonBox.ButtonRole.ActionRole)
-    b.setIcon(QIcon(I('edit-copy.png'))), b.setAutoDefault(False)
+    b.setIcon(QIcon.ic('edit-copy.png')), b.setAutoDefault(False)
 
     def copy_report():
         text = re.sub(r'</.+?>', '\n', report)
@@ -139,13 +158,13 @@ def show_report(changed, title, report, parent, show_current_diff):
     d.bb.rejected.connect(d.reject)
     d.bb.accepted.connect(d.accept)
     d.resize(600, 400)
-    d.exec_()
+    d.exec()
     b.clicked.disconnect()
     if d.show_changes:
         show_current_diff(allow_revert=True)
 
-# CompressImages {{{
 
+# CompressImages {{{
 
 class ImageItemDelegate(QStyledItemDelegate):
 
@@ -177,6 +196,35 @@ class ImageItemDelegate(QStyledItemDelegate):
         painter.restore()
 
 
+class LossyCompression(QWidget):
+
+    def __init__(self, image_type, default_compression=80, parent=None):
+        super().__init__(parent)
+        l = QVBoxLayout(self)
+        image_type = image_type.upper()
+        self.enable_lossy = el = QCheckBox(_('Enable &lossy compression of {} images').format(image_type))
+        el.setToolTip(_('This allows you to change the quality factor used for {} images.\nBy lowering'
+                        ' the quality you can greatly reduce file size, at the expense of the image looking blurred.').format(image_type))
+        l.addWidget(el)
+        self.h2 = h = QHBoxLayout()
+        l.addLayout(h)
+        self.jq = jq = QSpinBox(self)
+        image_type = image_type.lower()
+        self.image_type = image_type
+        self.quality_pref_name = f'{image_type}_compression_quality_for_lossless_compression'
+        jq.setMinimum(1), jq.setMaximum(100), jq.setValue(tprefs.get(self.quality_pref_name, default_compression))
+        jq.setEnabled(False)
+        jq.setToolTip(_('The image quality, 1 is high compression with low image quality, 100 is low compression with high image quality'))
+        jq.valueChanged.connect(self.save_compression_quality)
+        el.toggled.connect(jq.setEnabled)
+        self.jql = la = QLabel(_('Image &quality:'))
+        la.setBuddy(jq)
+        h.addWidget(la), h.addWidget(jq)
+
+    def save_compression_quality(self):
+        tprefs.set(self.quality_pref_name, self.jq.value())
+
+
 class CompressImages(Dialog):
 
     def __init__(self, parent=None):
@@ -184,7 +232,7 @@ class CompressImages(Dialog):
 
     def setup_ui(self):
         from calibre.ebooks.oeb.polish.images import get_compressible_images
-        self.setWindowIcon(QIcon(I('compress-image.png')))
+        self.setWindowIcon(QIcon.ic('compress-image.png'))
         self.h = h = QHBoxLayout(self)
         self.images = i = QListWidget(self)
         h.addWidget(i)
@@ -204,28 +252,13 @@ class CompressImages(Dialog):
             ' without affecting image quality. Typically image size is reduced by 5 - 15%.'))
         la.setWordWrap(True)
         la.setMinimumWidth(250)
-        l.addWidget(la), l.addSpacing(30)
-
-        self.enable_lossy = el = QCheckBox(_('Enable &lossy compression of JPEG images'))
-        el.setToolTip(_('This allows you to change the quality factor used for JPEG images.\nBy lowering'
-                        ' the quality you can greatly reduce file size, at the expense of the image looking blurred.'))
-        l.addWidget(el)
-        self.h2 = h = QHBoxLayout()
-        l.addLayout(h)
-        self.jq = jq = QSpinBox(self)
-        jq.setMinimum(0), jq.setMaximum(100), jq.setValue(tprefs.get('jpeg_compression_quality_for_lossless_compression', 80)), jq.setEnabled(False)
-        jq.setToolTip(_('The compression quality, 1 is high compression, 100 is low compression.\nImage'
-                        ' quality is inversely correlated with compression quality.'))
-        jq.valueChanged.connect(self.save_compression_quality)
-        el.toggled.connect(jq.setEnabled)
-        self.jql = la = QLabel(_('Compression &quality:'))
-        la.setBuddy(jq)
-        h.addWidget(la), h.addWidget(jq)
+        l.addWidget(la)
+        self.jpeg = LossyCompression('jpeg', parent=self)
+        l.addSpacing(30), l.addWidget(self.jpeg)
+        self.webp = LossyCompression('webp', default_compression=75, parent=self)
+        l.addSpacing(30), l.addWidget(self.webp)
         l.addStretch(10)
         l.addWidget(self.bb)
-
-    def save_compression_quality(self):
-        tprefs.set('jpeg_compression_quality_for_lossless_compression', self.jq.value())
 
     @property
     def names(self):
@@ -233,9 +266,15 @@ class CompressImages(Dialog):
 
     @property
     def jpeg_quality(self):
-        if not self.enable_lossy.isChecked():
+        if not self.jpeg.enable_lossy.isChecked():
             return None
-        return self.jq.value()
+        return self.jpeg.jq.value()
+
+    @property
+    def webp_quality(self):
+        if not self.webp.enable_lossy.isChecked():
+            return None
+        return self.webp.jq.value()
 
 
 class CompressImagesProgress(Dialog):
@@ -243,8 +282,9 @@ class CompressImagesProgress(Dialog):
     gui_loop = pyqtSignal(object, object, object)
     cidone = pyqtSignal()
 
-    def __init__(self, names=None, jpeg_quality=None, parent=None):
+    def __init__(self, names=None, jpeg_quality=None, webp_quality=None, parent=None):
         self.names, self.jpeg_quality = names, jpeg_quality
+        self.webp_quality = webp_quality
         self.keep_going = True
         self.result = (None, '')
         Dialog.__init__(self, _('Compressing images...'), 'compress-images-progress', parent=parent)
@@ -255,12 +295,12 @@ class CompressImagesProgress(Dialog):
         t.start()
 
     def run_compress(self):
-        from calibre.gui2.tweak_book import current_container
         from calibre.ebooks.oeb.polish.images import compress_images
+        from calibre.gui2.tweak_book import current_container
         report = []
         try:
             self.result = (compress_images(
-                current_container(), report=report.append, names=self.names, jpeg_quality=self.jpeg_quality,
+                current_container(), report=report.append, names=self.names, jpeg_quality=self.jpeg_quality, webp_quality=self.webp_quality,
                 progress_callback=self.progress_callback
             )[0], report)
         except Exception:
@@ -269,7 +309,7 @@ class CompressImagesProgress(Dialog):
         self.cidone.emit()
 
     def setup_ui(self):
-        self.setWindowIcon(QIcon(I('compress-image.png')))
+        self.setWindowIcon(QIcon.ic('compress-image.png'))
         self.setCursor(Qt.CursorShape.BusyCursor)
         self.setMinimumWidth(350)
         self.l = l = QVBoxLayout(self)
@@ -305,12 +345,15 @@ class CompressImagesProgress(Dialog):
 if __name__ == '__main__':
     from calibre.gui2 import Application
     app = Application([])
-    import sys, sip
+    import sys
+
+    import sip
+
     from calibre.ebooks.oeb.polish.container import get_container
     c = get_container(sys.argv[-1], tweak_mode=True)
     set_current_container(c)
     d = CompressImages()
-    if d.exec_() == QDialog.DialogCode.Accepted:
+    if d.exec() == QDialog.DialogCode.Accepted:
         pass
     sip.delete(app)
     del app

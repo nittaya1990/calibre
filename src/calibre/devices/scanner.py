@@ -1,4 +1,3 @@
-
 __license__   = 'GPL v3'
 __copyright__ = '2008, Kovid Goyal <kovid at kovidgoyal.net>'
 '''
@@ -6,14 +5,14 @@ Device scanner that fetches list of devices on system ina  platform dependent
 manner.
 '''
 
-import sys, os, time
+import os
+import sys
+import time
 from collections import namedtuple
 from threading import Lock
 
-from calibre import prints, as_unicode
-from calibre.constants import (iswindows, ismacos, islinux, isfreebsd,
-        isnetbsd)
-from polyglot.builtins import range
+from calibre import as_unicode, prints
+from calibre.constants import isfreebsd, islinux, ismacos, isnetbsd, iswindows
 
 osx_scanner = linux_scanner = freebsd_scanner = netbsd_scanner = None
 
@@ -41,16 +40,14 @@ _USBDevice = namedtuple('USBDevice',
 class USBDevice(_USBDevice):
 
     def __new__(cls, *args, **kwargs):
-        self = super(USBDevice, cls).__new__(cls, *args)
+        self = super().__new__(cls, *args)
         self.busnum = self.devnum = -1
         return self
 
     def __repr__(self):
-        return (u'USBDevice(busnum=%s, devnum=%s, '
-                'vendor_id=0x%04x, product_id=0x%04x, bcd=0x%04x, '
-                'manufacturer=%s, product=%s, serial=%s)')%(
-                self.busnum, self.devnum, self.vendor_id, self.product_id,
-                self.bcd, self.manufacturer, self.product, self.serial)
+        return (f'USBDevice(busnum={self.busnum}, devnum={self.devnum}, '
+                f'vendor_id=0x{self.vendor_id:04x}, product_id=0x{self.product_id:04x}, bcd=0x{self.bcd:04x}, '
+                f'manufacturer={self.manufacturer}, product={self.product}, serial={self.serial})')
 
     __str__ = __repr__
     __unicode__ = __repr__
@@ -81,6 +78,7 @@ class LibUSBScanner:
 
     def check_for_mem_leak(self):
         import gc
+
         from calibre.utils.mem import memory
         memory()
         for num in (1, 10, 100):
@@ -109,7 +107,7 @@ class LinuxScanner:
             raise RuntimeError('DeviceScanner requires the /sys filesystem to work.')
 
         def read(f):
-            with lopen(f, 'rb') as s:
+            with open(f, 'rb') as s:
                 return s.read().strip()
 
         for x in os.listdir(self.base):
@@ -142,15 +140,15 @@ class LinuxScanner:
             try:
                 dev.append(read(man).decode('utf-8'))
             except Exception:
-                dev.append(u'')
+                dev.append('')
             try:
                 dev.append(read(prod_string).decode('utf-8'))
             except Exception:
-                dev.append(u'')
+                dev.append('')
             try:
                 dev.append(read(serial).decode('utf-8'))
             except Exception:
-                dev.append(u'')
+                dev.append('')
 
             dev = USBDevice(*dev)
             try:
@@ -201,8 +199,9 @@ class DeviceScanner:
 
 
 def test_for_mem_leak():
-    from calibre.utils.mem import memory, gc_histogram, diff_hists
     import gc
+
+    from calibre.utils.mem import diff_hists, gc_histogram, memory
     gc.disable()
     scanner = DeviceScanner()
     scanner.scan()
@@ -220,8 +219,7 @@ def test_for_mem_leak():
         for i in range(3):
             gc.collect()
         usedmem = memory(startmem)
-        prints('Memory used in %d repetitions of scan(): %.5f KB'%(reps,
-            1024*usedmem))
+        prints(f'Memory used in {reps} repetitions of scan(): {1024 * usedmem:.5f} KB')
         prints('Differences in python object counts:')
         diff_hists(h1, gc_histogram())
         prints()

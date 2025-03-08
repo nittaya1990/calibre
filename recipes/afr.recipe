@@ -1,0 +1,84 @@
+#!/usr/bin/env python
+from datetime import date
+
+from calibre.web.feeds.news import BasicNewsRecipe
+
+
+def absurl(url):
+    if url.startswith('/'):
+        return 'https://www.afr.com' + url
+
+
+class afr(BasicNewsRecipe):
+    title = 'Australian Financial Review'
+    __author__ = 'unkn0wn'
+    description = (
+        'For more than 65 years The Australian Financial Review has been the authority on business,'
+        ' finance and investment news in Australia. It has a reputation for independent, award-winning '
+        "journalism and is essential reading for Australia's business and investor community."
+    )
+    masthead_url = 'https://www.nineforbrands.com.au/wp-content/uploads/2020/08/AFR-DHOSP-Logo-black-RGB.png'
+    encoding = 'utf-8'
+    language = 'en_AU'
+
+    use_embedded_content = False
+    timefmt = ' [%d %b %Y]'
+    max_articles_per_feed = 25
+    no_stylesheets = True
+    remove_attributes = ['style', 'height', 'width']
+
+    keep_only_tags = [
+        dict(name=['article', 'main'], attrs={'id':'content'})
+    ]
+
+    remove_tags = [
+        dict(attrs={'data-testid': [
+                'ArticleTools', 'ArticleBreadcrumb-Links', 'ad-wrapper', 'ArticleFooter', 'ArticleTags',
+                'beyondwords-player-wrapper'
+        ]}),
+        dict(name=['button', 'aside', 'svg']),
+    ]
+
+    remove_tags_after= [dict(name='aside', attrs={'id':'stickyContainer'})]
+
+    extra_css = '''
+        #img-cap {font-size:small; text-align:center;}
+        [data-testid="AuthorNames"], [data-testid="ArticleTimestamp"] {font-size:small;}
+    '''
+
+    ignore_duplicate_articles = {'title', 'url'}
+    resolve_internal_links  = True
+    remove_empty_feeds = True
+
+    def preprocess_html(self, soup):
+        for img in soup.findAll('img', attrs={'data-src':True}):
+            img['src'] = img['data-src']
+        for fig in soup.findAll('figcaption'):
+            fig['id'] = 'img-cap'
+        return soup
+
+    def parse_index(self):
+        index = 'https://www.afr.com/'
+        sections = [
+            'companies', 'market', 'politics', 'policy', 'world', 'wealth', 'street-talk',
+            'chaticleer', 'rear-window', 'life-and-luxury', 'technology', 'property',
+            'work-and-careers',
+        ]
+        feeds = []
+        soup = self.index_to_soup(index)
+        for sec in sections:
+            section = sec.capitalize()
+            self.log(section)
+            articles = []
+            for a in soup.findAll('a', attrs={'href':lambda x: x and x.startswith('/' + sec + '/')}):
+                url = absurl(a['href'].split('?')[0])
+                if url in {index + sec + '/', index + sec}:
+                    continue
+                if date.today().strftime('%Y') not in url:
+                    continue
+                title = self.tag_to_string(a)
+                self.log('\t', title, '\n\t\t', url)
+                articles.append({'title': title, 'url': url})
+            if articles:
+                feeds.append((section, articles))
+        return feeds

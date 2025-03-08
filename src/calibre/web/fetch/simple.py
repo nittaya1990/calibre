@@ -17,6 +17,7 @@ import sys
 import threading
 import time
 import traceback
+from base64 import standard_b64decode
 from urllib.request import urlopen
 
 from calibre import browser, relpath, unicode_path
@@ -25,16 +26,12 @@ from calibre.ebooks.BeautifulSoup import BeautifulSoup
 from calibre.ebooks.chardet import xml_to_unicode
 from calibre.utils.config import OptionParser
 from calibre.utils.filenames import ascii_filename
-from calibre.utils.img import image_from_data, image_to_data
 from calibre.utils.imghdr import what
+from calibre.utils.localization import _
 from calibre.utils.logging import Log
 from calibre.web.fetch.utils import rescale_image
-from polyglot.builtins import unicode_type
 from polyglot.http_client import responses
-from polyglot.urllib import (
-    URLError, quote, url2pathname, urljoin, urlparse, urlsplit, urlunparse,
-    urlunsplit
-)
+from polyglot.urllib import URLError, quote, url2pathname, urljoin, urlparse, urlsplit, urlunparse, urlunsplit
 
 
 class AbortArticle(Exception):
@@ -46,7 +43,6 @@ class FetchError(Exception):
 
 
 class closing:
-
     'Context to automatically close something at the end of a block.'
 
     def __init__(self, thing):
@@ -83,7 +79,7 @@ def basename(url):
     except:
         global bad_url_counter
         bad_url_counter += 1
-        return 'bad_url_%d.html'%bad_url_counter
+        return f'bad_url_{bad_url_counter}.html'
     if not os.path.splitext(res)[1]:
         return 'index.html'
     return res
@@ -108,7 +104,7 @@ def save_soup(soup, target):
             if path and os.path.isfile(path) and os.path.exists(path) and os.path.isabs(path):
                 tag[key] = unicode_path(relpath(path, selfdir).replace(os.sep, '/'))
 
-    html = unicode_type(soup)
+    html = str(soup)
     with open(target, 'wb') as f:
         f.write(html.encode('utf-8'))
 
@@ -116,7 +112,7 @@ def save_soup(soup, target):
 class response(bytes):
 
     def __new__(cls, *args):
-        obj = super(response, cls).__new__(cls, *args)
+        obj = super().__new__(cls, *args)
         obj.newurl = None
         return obj
 
@@ -127,7 +123,7 @@ def default_is_link_wanted(url, tag):
 
 class RecursiveFetcher:
     LINK_FILTER = tuple(re.compile(i, re.IGNORECASE) for i in
-                ('.exe\\s*$', '.mp3\\s*$', '.ogg\\s*$', '^\\s*mailto:', '^\\s*$'))
+                (r'.exe\s*$', r'.mp3\s*$', r'.ogg\s*$', r'^\s*mailto:', r'^\s*$'))
     # ADBLOCK_FILTER = tuple(re.compile(i, re.IGNORECASE) for it in
     #                       (
     #
@@ -138,7 +134,7 @@ class RecursiveFetcher:
 
     def __init__(self, options, log, image_map={}, css_map={}, job_info=None):
         bd = options.dir
-        if not isinstance(bd, unicode_type):
+        if not isinstance(bd, str):
             bd = bd.decode(filesystem_encoding)
 
         self.base_dir = os.path.abspath(os.path.expanduser(bd))
@@ -181,10 +177,12 @@ class RecursiveFetcher:
         self.compress_news_images = getattr(options, 'compress_news_images', False)
         self.compress_news_images_auto_size = getattr(options, 'compress_news_images_auto_size', 16)
         self.scale_news_images = getattr(options, 'scale_news_images', None)
+        self.get_delay = getattr(options, 'get_delay', lambda url: self.delay)
         self.download_stylesheets = not options.no_stylesheets
         self.show_progress = True
         self.failed_links = []
         self.job_info = job_info
+        self.preloaded_urls = {}
 
     def get_soup(self, src, url=None):
         nmassage = []
@@ -245,13 +243,23 @@ class RecursiveFetcher:
 
     def fetch_url(self, url):
         data = None
-        self.log.debug('Fetching', url)
+        q = self.preloaded_urls.pop(url, None)
+        if q is not None:
+            ans = response(q)
+            ans.newurl = url
+            return ans
         st = time.monotonic()
 
+        is_data_url = url.startswith('data:')
+        if not is_data_url:
+            self.log.debug('Fetching', url)
         # Check for a URL pointing to the local filesystem and special case it
         # for efficiency and robustness. Bypasses delay checking as it does not
         # apply to local fetches. Ensures that unicode paths that are not
         # representable in the filesystem_encoding work.
+        if is_data_url:
+            payload = url.partition(',')[2]
+            return standard_b64decode(payload)
         is_local = 0
         if url.startswith('file://'):
             is_local = 7
@@ -265,12 +273,13 @@ class RecursiveFetcher:
                 data = response(f.read())
                 data.newurl = 'file:'+url  # This is what mechanize does for
                 # local URLs
-            self.log.debug('Fetched %s in %.1f seconds' % (url, time.monotonic() - st))
+            self.log.debug(f'Fetched {url} in {time.monotonic() - st:.1f} seconds')
             return data
 
         delta = time.monotonic() - self.last_fetch_at
-        if delta < self.delay:
-            time.sleep(self.delay - delta)
+        delay = self.get_delay(url)
+        if delta < delay:
+            time.sleep(delay - delta)
         url = canonicalize_url(url)
         open_func = getattr(self.browser, 'open_novisit', self.browser.open)
         try:
@@ -280,7 +289,7 @@ class RecursiveFetcher:
         except URLError as err:
             if hasattr(err, 'code') and err.code in responses:
                 raise FetchError(responses[err.code])
-            is_temp = False
+            is_temp = getattr(err, 'worth_retry', False)
             reason = getattr(err, 'reason', None)
             if isinstance(reason, socket.gaierror):
                 # see man gai_strerror() for details
@@ -296,7 +305,7 @@ class RecursiveFetcher:
                 raise err
         finally:
             self.last_fetch_at = time.monotonic()
-        self.log.debug('Fetched %s in %f seconds' % (url, time.monotonic() - st))
+        self.log.debug(f'Fetched {url} in {time.monotonic() - st:f} seconds')
         return data
 
     def start_fetch(self, url):
@@ -356,7 +365,7 @@ class RecursiveFetcher:
                 except Exception:
                     self.log.exception('Could not fetch stylesheet ', iurl)
                     continue
-                stylepath = os.path.join(diskpath, 'style'+unicode_type(c)+'.css')
+                stylepath = os.path.join(diskpath, 'style'+str(c)+'.css')
                 with self.stylemap_lock:
                     self.stylemap[iurl] = stylepath
                 with open(stylepath, 'wb') as x:
@@ -364,7 +373,7 @@ class RecursiveFetcher:
                 tag['href'] = stylepath
             else:
                 for ns in tag.findAll(text=True):
-                    src = unicode_type(ns)
+                    src = str(ns)
                     m = self.__class__.CSS_IMPORT_PATTERN.search(src)
                     if m:
                         iurl = m.group(1)
@@ -383,7 +392,7 @@ class RecursiveFetcher:
                             self.log.exception('Could not fetch stylesheet ', iurl)
                             continue
                         c += 1
-                        stylepath = os.path.join(diskpath, 'style'+unicode_type(c)+'.css')
+                        stylepath = os.path.join(diskpath, 'style'+str(c)+'.css')
                         with self.stylemap_lock:
                             self.stylemap[iurl] = stylepath
                         with open(stylepath, 'wb') as x:
@@ -409,6 +418,8 @@ class RecursiveFetcher:
             else:
                 if callable(self.image_url_processor):
                     iurl = self.image_url_processor(baseurl, iurl)
+                    if not iurl:
+                        continue
                 if not urlsplit(iurl).scheme:
                     iurl = urljoin(baseurl, iurl, False)
                 found_in_cache = False
@@ -427,7 +438,7 @@ class RecursiveFetcher:
                     self.log.exception('Could not fetch image ', iurl)
                     continue
             c += 1
-            fname = ascii_filename('img'+unicode_type(c))
+            fname = ascii_filename('img'+str(c))
             data = self.preprocess_image_ext(data, iurl) if self.preprocess_image_ext is not None else data
             if data is None:
                 continue
@@ -441,13 +452,14 @@ class RecursiveFetcher:
                     x.write(data)
                 tag['src'] = imgpath
             else:
+                from calibre.utils.img import image_from_data, image_to_data
                 try:
                     # Ensure image is valid
                     img = image_from_data(data)
                     if itype not in {'png', 'jpg', 'jpeg'}:
                         itype = 'png' if itype == 'gif' else 'jpeg'
                         data = image_to_data(img, fmt=itype)
-                    if self.compress_news_images and itype in {'jpg','jpeg'}:
+                    if self.compress_news_images:
                         try:
                             data = self.rescale_image(data)
                         except Exception:
@@ -523,7 +535,7 @@ class RecursiveFetcher:
                     continue
                 if self.files > self.max_files:
                     return res
-                linkdir = 'link'+unicode_type(c) if into_dir else ''
+                linkdir = 'link'+str(c) if into_dir else ''
                 linkdiskpath = os.path.join(diskpath, linkdir)
                 if not os.path.exists(linkdiskpath):
                     os.mkdir(linkdiskpath)
@@ -532,8 +544,8 @@ class RecursiveFetcher:
                     dsrc = self.fetch_url(iurl)
                     newbaseurl = dsrc.newurl
                     if len(dsrc) == 0 or \
-                       len(re.compile(b'<!--.*?-->', re.DOTALL).sub(b'', dsrc).strip()) == 0:
-                        raise ValueError('No content at URL %r'%iurl)
+                       len(re.compile(br'<!--.*?-->', re.DOTALL).sub(b'', dsrc).strip()) == 0:
+                        raise ValueError(f'No content at URL {iurl!r}')
                     if callable(self.encoding):
                         dsrc = self.encoding(dsrc)
                     elif self.encoding is not None:
@@ -543,7 +555,7 @@ class RecursiveFetcher:
 
                     st = time.monotonic()
                     soup = self.get_soup(dsrc, url=iurl)
-                    self.log.debug('Parsed %s in %.1f seconds' % (iurl, time.monotonic() - st))
+                    self.log.debug(f'Parsed {iurl} in {time.monotonic() - st:.1f} seconds')
 
                     base = soup.find('base', href=True)
                     if base is not None:
@@ -554,7 +566,7 @@ class RecursiveFetcher:
                         self.process_stylesheets(soup, newbaseurl)
 
                     _fname = basename(iurl)
-                    if not isinstance(_fname, unicode_type):
+                    if not isinstance(_fname, str):
                         _fname.decode('latin1', 'replace')
                     _fname = _fname.replace('%', '').replace(os.sep, '')
                     _fname = ascii_filename(_fname)

@@ -8,17 +8,17 @@ __copyright__ = '2011-2019, Tomasz Długosz <tomek3d@gmail.com>'
 __docformat__ = 'restructuredtext en'
 
 from base64 import b64encode
+
 try:
-    from urllib.parse import urlencode, quote_plus
+    from urllib.parse import quote_plus, urlencode
 except ImportError:
-    from urllib import urlencode, quote_plus
+    from urllib import quote_plus, urlencode
 
 from lxml import html
 from mechanize import Request
-
 from qt.core import QUrl
 
-from calibre import url_slash_cleaner, browser
+from calibre import browser, url_slash_cleaner
 from calibre.gui2 import open_url
 from calibre.gui2.store import StorePlugin
 from calibre.gui2.store.basic_config import BasicStoreConfig
@@ -103,7 +103,7 @@ class WoblinkStore(BasicStoreConfig, StorePlugin):
             d = WebStoreDialog(self.gui, url, parent, detail_url if detail_url else aff_url)
             d.setWindowTitle(self.name)
             d.set_tags(self.config.get('tags', ''))
-            d.exec_()
+            d.exec()
 
     def search(self, query, max_results=10, timeout=60):
         for s in search(query, max_results, timeout):

@@ -7,6 +7,7 @@ swiatczytnikow.pl
 '''
 
 import re
+
 from calibre.web.feeds.news import BasicNewsRecipe
 
 
@@ -24,4 +25,4 @@ class swiatczytnikow(BasicNewsRecipe):
                    dict(name='div', attrs={'class': 'feedflare'})]
 
     preprocess_regexps = [
-        (re.compile(u'<h3>Czytaj dalej:</h3>'), lambda match: '')]
+        (re.compile(u'<h3>Czytaj dalej:</h3>'), lambda match: '')]  # noqa: RUF039

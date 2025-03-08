@@ -1,15 +1,14 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 
 
 __license__ = 'GPL v3'
 __copyright__ = '2013, Kovid Goyal <kovid at kovidgoyal.net>'
 
 import time
-from threading import Thread
 from functools import partial
+from threading import Thread
 
-from qt.core import (QWidget, QVBoxLayout, QLabel, Qt, QPainter, QBrush, QRect, QApplication, QCursor)
+from qt.core import QApplication, QBrush, QCursor, QLabel, QPainter, QRect, Qt, QVBoxLayout, QWidget
 
 from calibre.gui2 import Dispatcher
 from calibre.gui2.progress_indicator import ProgressIndicator
@@ -64,7 +63,7 @@ class BlockingJob(QWidget):
         self.setVisible(True)
         # Prevent any actions from being triggered by key presses
         self.parent().setEnabled(False)
-        self.raise_()
+        self.raise_and_focus()
         self.setFocus(Qt.FocusReason.OtherFocusReason)
         self.pi.startAnimation()
         QApplication.setOverrideCursor(QCursor(Qt.CursorShape.WaitCursor))

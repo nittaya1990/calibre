@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 # License: GPLv3 Copyright: 2008, Kovid Goyal <kovid at kovidgoyal.net>
 
 import errno
@@ -7,17 +6,16 @@ import os
 import re
 import shutil
 import subprocess
-import sys
 
 from calibre import CurrentDir, prints, xml_replace_entities
-from calibre.constants import isbsd, islinux, ismacos, iswindows
+from calibre.constants import bundled_binaries_dir, isbsd, iswindows
 from calibre.ebooks import ConversionError, DRMError
 from calibre.ebooks.chardet import xml_to_unicode
 from calibre.ptempfile import PersistentTemporaryFile
 from calibre.utils.cleantext import clean_xml_chars
 from calibre.utils.ipc import eintr_retry_call
 
-PDFTOHTML = 'pdftohtml'
+PDFTOHTML = 'pdftohtml' + ('.exe' if iswindows else '')
 
 
 def popen(cmd, **kw):
@@ -26,14 +24,9 @@ def popen(cmd, **kw):
     return subprocess.Popen(cmd, **kw)
 
 
-if ismacos and hasattr(sys, 'frameworks_dir'):
-    base = os.path.join(os.path.dirname(sys.frameworks_dir), 'utils.app', 'Contents', 'MacOS')
-    PDFTOHTML = os.path.join(base, PDFTOHTML)
-if iswindows and hasattr(sys, 'frozen'):
-    base = sys.extensions_location if hasattr(sys, 'new_app_layout') else os.path.dirname(sys.executable)
-    PDFTOHTML = os.path.join(base, 'pdftohtml.exe')
-if (islinux or isbsd) and getattr(sys, 'frozen', False):
-    PDFTOHTML = os.path.join(sys.executables_location, 'bin', 'pdftohtml')
+if bbd := bundled_binaries_dir():
+    PDFTOHTML = os.path.join(bbd, PDFTOHTML)
+PDFTOTEXT = os.path.join(os.path.dirname(PDFTOHTML), 'pdftotext' + ('.exe' if iswindows else ''))
 
 
 def pdftohtml(output_dir, pdf_path, no_images, as_xml=False):
@@ -46,7 +39,7 @@ def pdftohtml(output_dir, pdf_path, no_images, as_xml=False):
     pdfsrc = os.path.join(output_dir, 'src.pdf')
     index = os.path.join(output_dir, 'index.'+('xml' if as_xml else 'html'))
 
-    with lopen(pdf_path, 'rb') as src, lopen(pdfsrc, 'wb') as dest:
+    with open(pdf_path, 'rb') as src, open(pdfsrc, 'wb') as dest:
         shutil.copyfileobj(src, dest)
 
     with CurrentDir(output_dir):
@@ -78,20 +71,20 @@ def pdftohtml(output_dir, pdf_path, no_images, as_xml=False):
         ret = eintr_retry_call(p.wait)
         logf.flush()
         logf.close()
-        out = lopen(logf.name, 'rb').read().decode('utf-8', 'replace').strip()
+        out = open(logf.name, 'rb').read().decode('utf-8', 'replace').strip()
         if ret != 0:
-            raise ConversionError('pdftohtml failed with return code: %d\n%s' % (ret, out))
+            raise ConversionError(f'pdftohtml failed with return code: {ret}\n{out}')
         if out:
-            prints("pdftohtml log:")
+            prints('pdftohtml log:')
             prints(out)
         if not os.path.exists(index) or os.stat(index).st_size < 100:
             raise DRMError()
 
         if not as_xml:
-            with lopen(index, 'r+b') as i:
+            with open(index, 'r+b') as i:
                 raw = i.read().decode('utf-8', 'replace')
                 raw = flip_images(raw)
-                raw = raw.replace('<head', '<!-- created by calibre\'s pdftohtml -->\n  <head', 1)
+                raw = raw.replace('<head', "<!-- created by calibre's pdftohtml -->\n  <head", 1)
                 i.seek(0)
                 i.truncate()
                 # versions of pdftohtml >= 0.20 output self closing <br> tags, this
@@ -101,7 +94,7 @@ def pdftohtml(output_dir, pdf_path, no_images, as_xml=False):
                 raw = re.sub(r'<a id="(\d+)"', r'<a id="p\1"', raw, flags=re.I)
                 raw = re.sub(r'<a href="index.html#(\d+)"', r'<a href="#p\1"', raw, flags=re.I)
                 raw = xml_replace_entities(raw)
-                raw = re.sub('[\u00a0\u2029]', ' ', raw)
+                raw = re.sub(r'[\u00a0\u2029]', ' ', raw)
 
                 i.write(raw.encode('utf-8'))
 
@@ -122,6 +115,7 @@ def pdftohtml(output_dir, pdf_path, no_images, as_xml=False):
 
 def parse_outline(raw, output_dir):
     from lxml import etree
+
     from calibre.utils.xml_parse import safe_xml_fromstring
     raw = clean_xml_chars(xml_to_unicode(raw, strip_encoding_pats=True, assume_utf8=True)[0])
     outline = safe_xml_fromstring(raw).xpath('(//outline)[1]')
@@ -150,7 +144,7 @@ def parse_outline(raw, output_dir):
 
 def flip_image(img, flip):
     from calibre.utils.img import flip_image, image_and_format_from_data, image_to_data
-    with lopen(img, 'r+b') as f:
+    with open(img, 'r+b') as f:
         img, fmt = image_and_format_from_data(f.read())
         img = flip_image(img, horizontal='x' in flip, vertical='y' in flip)
         f.seek(0), f.truncate()
@@ -158,7 +152,7 @@ def flip_image(img, flip):
 
 
 def flip_images(raw):
-    for match in re.finditer('<IMG[^>]+/?>', raw, flags=re.I):
+    for match in re.finditer(r'<IMG[^>]+/?>', raw, flags=re.I):
         img = match.group()
         m = re.search(r'class="(x|y|xy)flip"', img)
         if m is None:
@@ -180,5 +174,5 @@ def flip_images(raw):
         counter += 1
         return m.group(1).rstrip('/') + f' alt="Image {counter}"/>'
 
-    raw = re.sub('(<IMG[^>]+)/?>', add_alt, raw, flags=re.I)
+    raw = re.sub(r'(<IMG[^>]+)/?>', add_alt, raw, flags=re.I)
     return raw

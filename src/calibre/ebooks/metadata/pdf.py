@@ -1,19 +1,19 @@
-
-
 __license__   = 'GPL v3'
 __copyright__ = '2008, Kovid Goyal <kovid at kovidgoyal.net>'
 '''Read meta information from PDF files'''
 
-import os, subprocess, shutil, re
+import os
+import re
+import shutil
+import subprocess
 from functools import partial
 
 from calibre import prints
 from calibre.constants import iswindows
+from calibre.ebooks.metadata import MetaInformation, check_doi, check_isbn, string_to_authors
 from calibre.ptempfile import TemporaryDirectory
-from calibre.ebooks.metadata import (
-    MetaInformation, string_to_authors, check_isbn, check_doi)
-from calibre.utils.ipc.simple_worker import fork_job, WorkerError
-from polyglot.builtins import iteritems, unicode_type
+from calibre.utils.ipc.simple_worker import WorkerError, fork_job
+from polyglot.builtins import iteritems
 
 
 def get_tools():
@@ -39,7 +39,7 @@ def read_info(outputdir, get_cover):
     try:
         raw = subprocess.check_output([pdfinfo, '-enc', 'UTF-8', '-isodates', 'src.pdf'])
     except subprocess.CalledProcessError as e:
-        prints('pdfinfo errored out with return code: %d'%e.returncode)
+        prints(f'pdfinfo errored out with return code: {e.returncode}')
         return None
     try:
         info_raw = raw.decode('utf-8')
@@ -63,7 +63,7 @@ def read_info(outputdir, get_cover):
     try:
         raw = subprocess.check_output([pdfinfo, '-meta', 'src.pdf']).strip()
     except subprocess.CalledProcessError as e:
-        prints('pdfinfo failed to read XML metadata with return code: %d'%e.returncode)
+        prints(f'pdfinfo failed to read XML metadata with return code: {e.returncode}')
     else:
         parts = re.split(br'^Metadata:', raw, 1, flags=re.MULTILINE)
         if len(parts) > 1:
@@ -77,7 +77,7 @@ def read_info(outputdir, get_cover):
             subprocess.check_call([pdftoppm, '-singlefile', '-jpeg', '-cropbox',
                 'src.pdf', 'cover'])
         except subprocess.CalledProcessError as e:
-            prints('pdftoppm errored out with return code: %d'%e.returncode)
+            prints(f'pdftoppm errored out with return code: {e.returncode}')
 
     return ans
 
@@ -90,11 +90,11 @@ def page_images(pdfpath, outputdir='.', first=1, last=1, image_format='jpeg', pr
         args['creationflags'] = subprocess.HIGH_PRIORITY_CLASS | subprocess.CREATE_NO_WINDOW
     try:
         subprocess.check_call([
-            pdftoppm, '-cropbox', '-' + image_format, '-f', unicode_type(first),
-            '-l', unicode_type(last), pdfpath, os.path.join(outputdir, prefix)
+            pdftoppm, '-cropbox', '-' + image_format, '-f', str(first),
+            '-l', str(last), pdfpath, os.path.join(outputdir, prefix)
         ], **args)
     except subprocess.CalledProcessError as e:
-        raise ValueError('Failed to render PDF, pdftoppm errorcode: %s'%e.returncode)
+        raise ValueError(f'Failed to render PDF, pdftoppm errorcode: {e.returncode}')
 
 
 def is_pdf_encrypted(path_to_pdf):
@@ -138,7 +138,7 @@ def get_metadata(stream, cover=True):
         au = string_to_authors(au)
     mi = MetaInformation(title, au)
     # if isbn is not None:
-    #    mi.isbn = isbn
+    #     mi.isbn = isbn
 
     creator = info.get('Creator', None)
     if creator:

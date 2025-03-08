@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 
 
 __license__ = 'GPL v3'
@@ -10,7 +9,6 @@ from uuid import uuid4
 
 from calibre.ebooks.oeb.base import OEB_STYLES
 from calibre.ebooks.oeb.transforms.subset import find_font_face_rules
-from polyglot.builtins import range
 
 
 def obfuscate_font_data(data, key):
@@ -69,10 +67,10 @@ class FontsManager:
             item = ef['item']
             rid = rel_map.get(item)
             if rid is None:
-                rel_map[item] = rid = 'rId%d' % num
-                fname = 'fonts/font%d.odttf' % num
+                rel_map[item] = rid = f'rId{num}'
+                fname = f'fonts/font{num}.odttf'
                 makeelement(embed_relationships, 'Relationship', Id=rid, Type=self.namespace.names['EMBEDDED_FONT'], Target=fname)
                 font_data_map['word/' + fname] = obfuscate_font_data(item.data, key)
             makeelement(font, 'w:embed' + tag, r_id=rid,
-                        w_fontKey='{%s}' % key.urn.rpartition(':')[-1].upper(),
-                        w_subsetted="true" if self.opts.subset_embedded_fonts else "false")
+                        w_fontKey='{{{}}}'.format(key.urn.rpartition(':')[-1].upper()),
+                        w_subsetted='true' if self.opts.subset_embedded_fonts else 'false')

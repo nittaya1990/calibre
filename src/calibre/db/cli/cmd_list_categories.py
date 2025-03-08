@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 # License: GPLv3 Copyright: 2017, Kovid Goyal <kovid at kovidgoyal.net>
 
 
@@ -8,7 +7,7 @@ import sys
 from textwrap import TextWrapper
 
 from calibre import prints
-from polyglot.builtins import as_bytes, map, unicode_type
+from polyglot.builtins import as_bytes
 
 readonly = True
 version = 0  # change this if you change signature of implementation()
@@ -55,8 +54,8 @@ information is the equivalent of what is shown in the Tag browser.
         '--categories',
         default='',
         dest='report',
-        help=_("Comma-separated list of category lookup names. "
-               "Default: all")
+        help=_('Comma-separated list of category lookup names. '
+               'Default: all')
     )
     parser.add_option(
         '-w',
@@ -72,19 +71,19 @@ information is the equivalent of what is shown in the Tag browser.
 
 
 def do_list(fields, data, opts):
-    from calibre.utils.terminal import geometry, ColoredStream
+    from calibre.utils.terminal import ColoredStream, geometry
 
     separator = ' '
-    widths = list(map(lambda x: 0, fields))
+    widths = [0 for x in fields]
     for i in data:
         for j, field in enumerate(fields):
-            widths[j] = max(widths[j], max(len(field), len(unicode_type(i[field]))))
+            widths[j] = max(widths[j], max(len(field), len(str(i[field]))))
 
     screen_width = geometry()[0]
     if not screen_width:
         screen_width = 80
     field_width = screen_width // len(fields)
-    base_widths = list(map(lambda x: min(x + 1, field_width), widths))
+    base_widths = [min(x + 1, field_width) for x in widths]
 
     while sum(base_widths) < screen_width:
         adjusted = False
@@ -100,23 +99,23 @@ def do_list(fields, data, opts):
 
     widths = list(base_widths)
     titles = map(
-        lambda x, y: '%-*s%s' % (x - len(separator), y, separator), widths, fields
+        lambda x, y: '%-*s%s' % (x - len(separator), y, separator), widths, fields  # noqa: UP031
     )
     with ColoredStream(sys.stdout, fg='green'):
         prints(''.join(titles))
 
-    wrappers = list(map(lambda x: TextWrapper(x - 1), widths))
+    wrappers = [TextWrapper(x - 1) for x in widths]
 
     for record in data:
         text = [
-            wrappers[i].wrap(unicode_type(record[field]))
+            wrappers[i].wrap(str(record[field]))
             for i, field in enumerate(fields)
         ]
         lines = max(map(len, text))
         for l in range(lines):
             for i, field in enumerate(text):
                 ft = text[i][l] if l < len(text[i]) else ''
-                filler = '%*s' % (widths[i] - len(ft) - 1, '')
+                filler = ' '*(widths[i] - len(ft) - 1)
                 print(ft.encode('utf-8') + filler.encode('utf-8'), end=separator)
             print()
 
@@ -157,7 +156,7 @@ def main(opts, args, dbctx):
 
     def fmtr(v):
         v = v or 0
-        ans = '%.1f' % v
+        ans = f'{v:.1f}'
         if ans.endswith('.0'):
             ans = ans[:-2]
         return ans
@@ -167,11 +166,11 @@ def main(opts, args, dbctx):
             is_rating = category_metadata(category)['datatype'] == 'rating'
             for tag in category_data[category]:
                 if is_rating:
-                    tag.name = unicode_type(len(tag.name))
+                    tag.name = str(len(tag.name))
                 data.append({
                     'category': category,
                     'tag_name': tag.name,
-                    'count': unicode_type(tag.count),
+                    'count': str(tag.count),
                     'rating': fmtr(tag.avg_rating),
                 })
     else:
@@ -179,7 +178,7 @@ def main(opts, args, dbctx):
             data.append({
                 'category': category,
                 'tag_name': _('CATEGORY ITEMS'),
-                'count': unicode_type(len(category_data[category])),
+                'count': str(len(category_data[category])),
                 'rating': ''
             })
 

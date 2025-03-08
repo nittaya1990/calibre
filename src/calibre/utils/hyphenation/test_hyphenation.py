@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 # License: GPL v3 Copyright: 2019, Kovid Goyal <kovid at kovidgoyal.net>
 
 
@@ -11,14 +10,8 @@ from lxml import etree
 
 from calibre.ebooks.oeb.polish.parsing import parse_html5
 from calibre.ptempfile import PersistentTemporaryDirectory
-from calibre.utils.hyphenation.dictionaries import (
-    dictionary_name_for_locale, get_cache_path, is_cache_up_to_date,
-    path_to_dictionary
-)
-from calibre.utils.hyphenation.hyphenate import (
-    add_soft_hyphens, add_soft_hyphens_to_html, add_soft_hyphens_to_words,
-    dictionary_for_locale
-)
+from calibre.utils.hyphenation.dictionaries import dictionary_name_for_locale, get_cache_path, is_cache_up_to_date, path_to_dictionary
+from calibre.utils.hyphenation.hyphenate import add_soft_hyphens, add_soft_hyphens_to_html, add_soft_hyphens_to_words, dictionary_for_locale
 
 
 class TestHyphenation(unittest.TestCase):
@@ -40,7 +33,7 @@ class TestHyphenation(unittest.TestCase):
         is_cache_up_to_date.updated = False
         try:
             shutil.rmtree(path_to_dictionary.cache_dir)
-        except EnvironmentError:
+        except OSError:
             pass
         path_to_dictionary.cache_dir = None
 
@@ -49,7 +42,7 @@ class TestHyphenation(unittest.TestCase):
         def t(x, expected=None):
             self.ae(
                 dictionary_name_for_locale(x),
-                'hyph_{}.dic'.format(expected) if expected else None
+                f'hyph_{expected}.dic' if expected else None
             )
 
         t('en', 'en_US')
@@ -67,7 +60,7 @@ class TestHyphenation(unittest.TestCase):
 
         dp = path_to_dictionary(dictionary_name_for_locale('en'), cache_callback)
         self.assertTrue(
-            os.path.exists(dp), 'The dictionary {} does not exist'.format(dp)
+            os.path.exists(dp), f'The dictionary {dp} does not exist'
         )
         self.assertTrue(cache[0])
         cache[0] = False

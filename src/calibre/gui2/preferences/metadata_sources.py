@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
 
 
 __license__   = 'GPL v3'
@@ -7,19 +6,30 @@ __copyright__ = '2011, Kovid Goyal <kovid@kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
 
 from operator import attrgetter
+
 from qt.core import (
-    QAbstractListModel, QAbstractTableModel, QDialogButtonBox, QFrame, QIcon, QLabel,
-    QScrollArea, Qt, QVBoxLayout, QWidget, pyqtSignal, QDialog
+    QAbstractListModel,
+    QAbstractTableModel,
+    QCursor,
+    QDialog,
+    QDialogButtonBox,
+    QFrame,
+    QIcon,
+    QLabel,
+    QMenu,
+    QScrollArea,
+    Qt,
+    QVBoxLayout,
+    QWidget,
+    pyqtSignal,
 )
 
-from calibre.customize.ui import (
-    all_metadata_plugins, default_disabled_plugins, disable_plugin, enable_plugin,
-    is_disabled
-)
+from calibre.customize.ui import all_metadata_plugins, default_disabled_plugins, disable_plugin, enable_plugin, is_disabled
 from calibre.ebooks.metadata.sources.prefs import msprefs
 from calibre.gui2 import error_dialog, question_dialog
 from calibre.gui2.preferences import ConfigWidgetBase, test_widget
 from calibre.gui2.preferences.metadata_sources_ui import Ui_Form
+from calibre.utils.localization import ngettext
 from polyglot.builtins import iteritems
 
 
@@ -75,7 +85,7 @@ class SourcesModel(QAbstractTableModel):  # {{{
             return plugin
         elif (role == Qt.ItemDataRole.DecorationRole and col == 0 and not
                     plugin.is_configured()):
-            return QIcon(I('list_remove.png'))
+            return QIcon.ic('list_remove.png')
         elif role == Qt.ItemDataRole.ToolTipRole:
             base = plugin.description + '\n\n'
             if plugin.is_configured():
@@ -91,6 +101,7 @@ class SourcesModel(QAbstractTableModel):  # {{{
         col = index.column()
         ret = False
         if col == 0 and role == Qt.ItemDataRole.CheckStateRole:
+            val = Qt.CheckState(val)
             if val == Qt.CheckState.Checked and 'Douban' in plugin.name:
                 if not question_dialog(self.gui_parent,
                     _('Are you sure?'), '<p>'+
@@ -100,7 +111,7 @@ class SourcesModel(QAbstractTableModel):  # {{{
                         ' sure you want to enable it?'),
                     show_copy_button=False):
                     return ret
-            self.enabled_overrides[plugin] = int(val)
+            self.enabled_overrides[plugin] = val
             ret = True
         if col == 1 and role == Qt.ItemDataRole.EditRole:
             try:
@@ -140,11 +151,11 @@ class SourcesModel(QAbstractTableModel):  # {{{
 
     def restore_defaults(self):
         self.beginResetModel()
-        self.enabled_overrides = dict([(p, (Qt.CheckState.Unchecked if p.name in
-            default_disabled_plugins else Qt.CheckState.Checked)) for p in self.plugins])
-        self.cover_overrides = dict([(p,
-            msprefs.defaults['cover_priorities'].get(p.name, 1))
-                for p in self.plugins])
+        self.enabled_overrides = {p: (Qt.CheckState.Unchecked if p.name in
+            default_disabled_plugins else Qt.CheckState.Checked) for p in self.plugins}
+        self.cover_overrides = {p:
+            msprefs.defaults['cover_priorities'].get(p.name, 1)
+                for p in self.plugins}
         self.endResetModel()
 
 # }}}
@@ -161,8 +172,8 @@ class FieldsModel(QAbstractListModel):  # {{{
                 'comments': _('Comments'),
                 'pubdate': _('Published date'),
                 'publisher': _('Publisher'),
-                'rating' : _('Rating'),
-                'tags' : _('Tags'),
+                'rating': _('Rating'),
+                'tags': _('Tags'),
                 'title': _('Title'),
                 'series': ngettext('Series', 'Series', 1),
                 'languages': _('Languages'),
@@ -184,7 +195,7 @@ class FieldsModel(QAbstractListModel):  # {{{
         for x in fields:
             if not x.startswith('identifier:') and x not in self.exclude:
                 self.fields.append(x)
-        self.fields.sort(key=lambda x:self.descs.get(x, x))
+        self.fields.sort(key=lambda x: self.descs.get(x, x))
         self.endResetModel()
 
     def state(self, field, defaults=False):
@@ -209,17 +220,17 @@ class FieldsModel(QAbstractListModel):  # {{{
 
     def restore_defaults(self):
         self.beginResetModel()
-        self.overrides = dict([(f, self.state(f, Qt.CheckState.Checked)) for f in self.fields])
+        self.overrides = {f: self.state(f, True) for f in self.fields}
         self.endResetModel()
 
     def select_all(self):
         self.beginResetModel()
-        self.overrides = dict([(f, Qt.CheckState.Checked) for f in self.fields])
+        self.overrides = {f: Qt.CheckState.Checked for f in self.fields}
         self.endResetModel()
 
     def clear_all(self):
         self.beginResetModel()
-        self.overrides = dict([(f, Qt.CheckState.Unchecked) for f in self.fields])
+        self.overrides = {f: Qt.CheckState.Unchecked for f in self.fields}
         self.endResetModel()
 
     def setData(self, index, val, role):
@@ -229,7 +240,7 @@ class FieldsModel(QAbstractListModel):  # {{{
             return False
         ret = False
         if role == Qt.ItemDataRole.CheckStateRole:
-            self.overrides[field] = int(val)
+            self.overrides[field] = Qt.CheckState(val)
             ret = True
         if ret:
             self.dataChanged.emit(index, index)
@@ -248,7 +259,7 @@ class FieldsModel(QAbstractListModel):  # {{{
 
     def select_user_defaults(self):
         self.beginResetModel()
-        self.overrides = dict([(f, self.user_default_state(f)) for f in self.fields])
+        self.overrides = {f: self.user_default_state(f) for f in self.fields}
         self.endResetModel()
 
     def commit_user_defaults(self):
@@ -320,6 +331,8 @@ class ConfigWidget(ConfigWidgetBase, Ui_Form):
 
         self.fields_model = FieldsModel(self)
         self.fields_view.setModel(self.fields_model)
+        self.fields_view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.fields_view.customContextMenuRequested.connect(self.context_menu)
         self.fields_model.dataChanged.connect(self.changed_signal)
 
         self.select_all_button.clicked.connect(self.fields_model.select_all)
@@ -329,12 +342,24 @@ class ConfigWidget(ConfigWidgetBase, Ui_Form):
         self.select_default_button.clicked.connect(self.fields_model.select_user_defaults)
         self.select_default_button.clicked.connect(self.changed_signal)
         self.set_as_default_button.clicked.connect(self.fields_model.commit_user_defaults)
-        self.tag_map_rules = self.author_map_rules = None
-        self.tag_map_rules_button.clicked.connect(self.change_tag_map_rules)
-        self.author_map_rules_button.clicked.connect(self.change_author_map_rules)
+        self.tag_map_rules = self.author_map_rules = self.publisher_map_rules = self.series_map_rules = None
+        m = QMenu(self)
+        m.addAction(_('Tags')).triggered.connect(self.change_tag_map_rules)
+        m.addAction(_('Authors')).triggered.connect(self.change_author_map_rules)
+        m.addAction(_('Publisher')).triggered.connect(self.change_publisher_map_rules)
+        m.addAction(_('Series')).triggered.connect(self.change_series_map_rules)
+        self.map_rules_button.setMenu(m)
         l = self.page.layout()
         l.setStretch(0, 1)
         l.setStretch(1, 1)
+
+    def context_menu(self, pos):
+        m = QMenu(self)
+        m.addAction(_('Select all'), self.fields_model.select_all)
+        m.addAction(_('Select none'), self.fields_model.clear_all)
+        m.addAction(_('Set as default'), self.fields_model.commit_user_defaults)
+        m.addAction(_('Select default'), self.fields_model.select_user_defaults)
+        m.exec(QCursor.pos())
 
     def configure_plugin(self):
         for index in self.sources_view.selectionModel().selectedRows():
@@ -352,7 +377,7 @@ class ConfigWidget(ConfigWidgetBase, Ui_Form):
 
     def pc_finished(self):
         try:
-            self.pc.finished.diconnect()
+            self.pc.finished.disconnect()
         except:
             pass
         self.stack.setCurrentIndex(0)
@@ -363,17 +388,35 @@ class ConfigWidget(ConfigWidgetBase, Ui_Form):
         from calibre.gui2.tag_mapper import RulesDialog
         d = RulesDialog(self)
         if msprefs.get('tag_map_rules'):
-            d.rules = msprefs['tag_map_rules']
-        if d.exec_() == QDialog.DialogCode.Accepted:
+            d.rules = list(msprefs['tag_map_rules'])
+        if d.exec() == QDialog.DialogCode.Accepted:
             self.tag_map_rules = d.rules
+            self.changed_signal.emit()
+
+    def change_publisher_map_rules(self):
+        from calibre.gui2.publisher_mapper import RulesDialog
+        d = RulesDialog(self)
+        if msprefs.get('publisher_map_rules'):
+            d.rules = list(msprefs['publisher_map_rules'])
+        if d.exec() == QDialog.DialogCode.Accepted:
+            self.publisher_map_rules = d.rules
+            self.changed_signal.emit()
+
+    def change_series_map_rules(self):
+        from calibre.gui2.series_mapper import RulesDialog
+        d = RulesDialog(self)
+        if msprefs.get('series_map_rules'):
+            d.rules = list(msprefs['series_map_rules'])
+        if d.exec() == QDialog.DialogCode.Accepted:
+            self.series_map_rules = d.rules
             self.changed_signal.emit()
 
     def change_author_map_rules(self):
         from calibre.gui2.author_mapper import RulesDialog
         d = RulesDialog(self)
         if msprefs.get('author_map_rules'):
-            d.rules = msprefs['author_map_rules']
-        if d.exec_() == QDialog.DialogCode.Accepted:
+            d.rules = list(msprefs['author_map_rules'])
+        if d.exec() == QDialog.DialogCode.Accepted:
             self.author_map_rules = d.rules
             self.changed_signal.emit()
 
@@ -382,7 +425,7 @@ class ConfigWidget(ConfigWidgetBase, Ui_Form):
         self.sources_model.initialize()
         self.sources_view.resizeColumnsToContents()
         self.fields_model.initialize()
-        self.tag_map_rules = self.author_map_rules = None
+        self.tag_map_rules = self.author_map_rules = self.publisher_map_rules = None
 
     def restore_defaults(self):
         ConfigWidgetBase.restore_defaults(self)
@@ -397,6 +440,10 @@ class ConfigWidget(ConfigWidgetBase, Ui_Form):
             msprefs['tag_map_rules'] = self.tag_map_rules or []
         if self.author_map_rules is not None:
             msprefs['author_map_rules'] = self.author_map_rules or []
+        if self.publisher_map_rules is not None:
+            msprefs['publisher_map_rules'] = self.publisher_map_rules or []
+        if self.series_map_rules is not None:
+            msprefs['series_map_rules'] = self.series_map_rules or []
         return ConfigWidgetBase.commit(self)
 
 

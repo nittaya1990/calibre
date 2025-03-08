@@ -1,15 +1,14 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
 
 
 __license__   = 'GPL v3'
 __copyright__ = '2011, Grant Drake <grant.drake@gmail.com>'
 __docformat__ = 'restructuredtext en'
 
-from qt.core import QApplication, Qt, QIcon
+from qt.core import QApplication, QIcon, Qt
+
 from calibre.gui2.actions import InterfaceAction
-from calibre.gui2.dialogs.plugin_updater import (PluginUpdaterDialog,
-                                                 FILTER_ALL, FILTER_UPDATE_AVAILABLE)
+from calibre.gui2.dialogs.plugin_updater import FILTER_ALL, FILTER_UPDATE_AVAILABLE, PluginUpdaterDialog
 
 
 class PluginUpdaterAction(InterfaceAction):
@@ -19,7 +18,7 @@ class PluginUpdaterAction(InterfaceAction):
     action_type = 'current'
 
     def genesis(self):
-        self.qaction.setIcon(QIcon(I('plugins/plugin_updater.png')))
+        self.qaction.setIcon(QIcon.ic('plugins/plugin_updater.png'))
         self.qaction.triggered.connect(self.check_for_plugin_updates)
 
     def check_for_plugin_updates(self):
@@ -30,6 +29,6 @@ class PluginUpdaterAction(InterfaceAction):
             initial_filter = FILTER_ALL
 
         d = PluginUpdaterDialog(self.gui, initial_filter=initial_filter)
-        d.exec_()
+        d.exec()
         if d.do_restart:
             self.gui.quit(restart=True)

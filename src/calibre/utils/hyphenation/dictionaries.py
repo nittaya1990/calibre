@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 # License: GPL v3 Copyright: 2019, Kovid Goyal <kovid at kovidgoyal.net>
 
 
@@ -13,6 +12,7 @@ from calibre.constants import cache_dir
 from calibre.ptempfile import TemporaryDirectory
 from calibre.utils.localization import lang_as_iso639_1
 from calibre.utils.lock import ExclusiveFile
+from calibre.utils.resources import get_path as P
 from polyglot.builtins import iteritems
 from polyglot.functools import lru_cache
 
@@ -66,20 +66,23 @@ def extract_dicts(cache_path):
             tf = tarfile.open(dict_tarball)
         else:
             buf = BytesIO()
-            with lopen(dict_tarball, 'rb') as f:
+            with open(dict_tarball, 'rb') as f:
                 data = f.read()
             decompress(data, outfile=buf)
             buf.seek(0)
             tf = tarfile.TarFile(fileobj=buf)
         with tf:
-            tf.extractall(tdir)
+            try:
+                tf.extractall(tdir, filter='data')
+            except TypeError:
+                tf.extractall(tdir)
         with open(os.path.join(tdir, 'sha1sum'), 'wb') as f:
             f.write(expected_hash())
         dest = os.path.join(cache_path, 'f')
         with TemporaryDirectory(dir=cache_path) as trash:
             try:
                 os.rename(dest, os.path.join(trash, 'f'))
-            except EnvironmentError as err:
+            except OSError as err:
                 if err.errno != errno.ENOENT:
                     raise
             os.rename(tdir, dest)
@@ -95,7 +98,7 @@ def is_cache_up_to_date(cache_path):
         if actual_hash == expected_hash():
             is_cache_up_to_date.updated = True
             return True
-    except EnvironmentError:
+    except OSError:
         pass
     return False
 
@@ -105,7 +108,7 @@ def get_cache_path(cd):
     cache_path = os.path.join(cd, 'hyphenation')
     try:
         os.makedirs(cache_path)
-    except EnvironmentError as err:
+    except OSError as err:
         if err.errno != errno.EEXIST:
             raise
     return cache_path

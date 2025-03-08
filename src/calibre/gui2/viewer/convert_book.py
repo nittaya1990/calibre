@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 # License: GPL v3 Copyright: 2018, Kovid Goyal <kovid at kovidgoyal.net>
 
 
@@ -32,7 +31,7 @@ def book_cache_dir():
 
 
 def cache_lock():
-    return ExclusiveFile(os.path.join(book_cache_dir(), 'metadata.json'))
+    return ExclusiveFile(os.path.join(book_cache_dir(), 'metadata.json'), timeout=600)
 
 
 def book_hash(path, size, mtime):
@@ -46,7 +45,7 @@ def book_hash(path, size, mtime):
 def safe_makedirs(path):
     try:
         os.makedirs(path)
-    except EnvironmentError as err:
+    except OSError as err:
         if err.errno != errno.EEXIST:
             raise
     return path
@@ -61,7 +60,7 @@ def robust_rmtree(x):
             except UnicodeDecodeError:
                 rmtree(as_bytes(x))
             return True
-        except EnvironmentError:
+        except OSError:
             time.sleep(0.1)
     return False
 
@@ -72,7 +71,7 @@ def robust_rename(a, b):
         try:
             os.rename(a, b)
             return True
-        except EnvironmentError:
+        except OSError:
             time.sleep(0.1)
     return False
 
@@ -161,7 +160,7 @@ class ConversionFailure(ValueError):
         self.book_path = book_path
         self.worker_output = worker_output
         ValueError.__init__(
-                self, 'Failed to convert book: {} with error:\n{}'.format(book_path, worker_output))
+                self, f'Failed to convert book: {book_path} with error:\n{worker_output}')
 
 
 running_workers = []
@@ -187,7 +186,7 @@ def do_convert(path, temp_path, key, instance):
                     )))
                 p.stdin.close()
             if p.wait() != 0:
-                with lopen(logpath, 'rb') as logf:
+                with open(logpath, 'rb') as logf:
                     worker_output = logf.read().decode('utf-8', 'replace')
                 raise ConversionFailure(path, worker_output)
     finally:
@@ -245,10 +244,10 @@ def prepare_book(path, convert_func=do_convert, max_age=30 * DAY, force=False, p
         instances = entries.setdefault(key, [])
         os.rmdir(ans)
         if not robust_rename(src_path, ans):
-            raise Exception((
-                'Failed to rename: "{}" to "{}" probably some software such as an antivirus or file sync program'
+            raise Exception(
+                f'Failed to rename: "{src_path}" to "{ans}" probably some software such as an antivirus or file sync program'
                 ' running on your computer has locked the files'
-            ).format(src_path, ans))
+            )
 
         instance['status'] = 'finished'
         for q in instances:
@@ -312,7 +311,8 @@ def find_tests():
             def convert_mock(path, temp_path, key, instance):
                 self.ae(instance['status'], 'working')
                 self.ae(instance['key'], key)
-                open(os.path.join(temp_path, instance['path'], 'sentinel'), 'wb').write(b'test')
+                with open(os.path.join(temp_path, instance['path'], 'sentinel'), 'wb') as f:
+                    f.write(b'test')
 
             def set_data(x):
                 if not isinstance(x, bytes):
@@ -323,7 +323,10 @@ def find_tests():
             book_src = os.path.join(self.tdir, 'book.epub')
             set_data('a')
             path = prepare_book(book_src, convert_func=convert_mock)
-            self.ae(open(os.path.join(path, 'sentinel'), 'rb').read(), b'test')
+            def read(x, mode='r'):
+                with open(x, mode) as f:
+                    return f.read()
+            self.ae(read(os.path.join(path, 'sentinel'), 'rb'), b'test')
 
             # Test that opening the same book uses the cache
             second_path = prepare_book(book_src, convert_func=convert_mock)
@@ -366,11 +369,11 @@ def find_tests():
             book_src = os.path.join(self.tdir, 'book2.epub')
             set_data('bb')
             path = prepare_book(book_src, convert_func=convert_mock)
-            self.ae(open(os.path.join(path, 'sentinel'), 'rb').read(), b'test')
+            self.ae(read(os.path.join(path, 'sentinel'), 'rb'), b'test')
             bs = os.stat(book_src)
             set_data('cde')
             update_book(book_src, bs, name_data_map={'sentinel': b'updated'})
-            self.ae(open(os.path.join(path, 'sentinel'), 'rb').read(), b'updated')
+            self.ae(read(os.path.join(path, 'sentinel'), 'rb'), b'updated')
             self.ae(1, len(os.listdir(os.path.join(book_cache_dir(), 'f'))))
             with cache_lock() as f:
                 metadata = json.loads(f.read())

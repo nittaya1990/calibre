@@ -57,7 +57,9 @@ Add books
 
     6. **Add files to selected book records**: Allows you to add or update the files associated with an existing book in your library.
 
-    7. **Add an empty file to selected book records**: Allows you to add an empty file of the specified format to the selected book records.
+    7. **Add data files to selected book records**: Allows you to add any number of extra files that will be stored in a :file:`data` sub-directory in the book directory. See :ref:`data_files` for details.
+
+    8. **Add an empty file to selected book records**: Allows you to add an empty file of the specified format to the selected book records.
 
 The :guilabel:`Add books` action can read metadata from a wide variety of e-book formats. In addition, it tries to guess metadata from the filename.
 See the :ref:`config_filename_metadata` section, to learn how to configure this.
@@ -83,8 +85,9 @@ Edit metadata
     2. **Edit metadata in bulk**: Allows you to edit common metadata fields for large numbers of books simultaneously. It operates on all the books you have selected in the :ref:`Library view <search_sort>`.
     3. **Download metadata and covers**: Downloads metadata and covers (if available) for the books that are selected in the book list.
     4. **Merge book records**: Gives you the capability of merging the metadata and formats of two or more book records. You can choose to either delete or keep the records that were not clicked first.
+    5. **Manage data files**: Manage the extra data files associated with the selected books.
 
-For more details see :ref:`metadata`.
+For more details, see :ref:`metadata`.
 
 .. _convert_ebooks:
 
@@ -163,7 +166,7 @@ The :guilabel:`Fetch news` action uses simple recipes (10-15 lines of code) for 
 The :guilabel:`Fetch news` action has three variations, accessed by doing a right-click on the button.
 
     1. **Schedule news download**: Allows you to schedule the download of your selected news sources from a list of hundreds available.  Scheduling can be set individually for each news source you select and the scheduling is flexible allowing you to select specific days of the week or a frequency of days between downloads.
-    2. **Add a custom news source**: Allows you to create a simple recipe for downloading news from a custom news site that you wish to access.  Creating the recipe can be as simple as specifying an RSS news feed URL, or you can be more prescriptive by creating Python-based code for the task. For more information see :ref:`news`.
+    2. **Add a custom news source**: Allows you to create a simple recipe for downloading news from a custom news site that you wish to access.  Creating the recipe can be as simple as specifying an RSS news feed URL, or you can be more prescriptive by creating Python-based code for the task. For more information, see :ref:`news`.
     3. **Download all scheduled news sources**: Causes calibre to immediately begin downloading all news sources that you have scheduled.
 
 
@@ -270,8 +273,10 @@ Remove books
 
     6. **Remove matching books from device**: Allows you to remove e-book files from a connected device that match the books that are selected in the book list.
 
+    7. **Restore recently deleted**: Allows you to undo the removal of books or formats.
+
 .. note::
-    Note that when you use :guilabel:`Remove books` to delete books from your calibre library, the book record is permanently deleted, but on Windows and macOS the files are placed into the recycle bin. This allows you to recover them if you change your mind.
+    Note that when you use :guilabel:`Remove books` to delete books from your calibre library, the book record is deleted, but the books are temporarily stored, for a few days, in a trash folder. You can undo the delete by right clicking the :guilabel:`Remove books` button and choosing to :guilabel:`Restore recently deleted` books.
 
 .. _configuration:
 
@@ -311,7 +316,10 @@ Search & sort
 
 The Search & Sort section allows you to perform several powerful actions on your book collections.
 
-    * You can sort them by title, author, date, rating, etc. by clicking on the column titles. You can also sub-sort, i.e. sort on multiple columns. For example, if you click on the title column and then the author column, the book will be sorted by author and then all the entries for the same author will be sorted by title.
+    * You can sort them by title, author, date, rating, etc. by clicking on the column titles.
+      You can also sub-sort, i.e. sort on multiple columns.
+      For example, if you click on the title column and then the author column, the book will be sorted by
+      author and then all the entries for the same author will be sorted by title.
 
     * You can search for a particular book or set of books using the Search bar. More on that below.
 
@@ -325,11 +333,14 @@ The Search & Sort section allows you to perform several powerful actions on your
 
     * You can configure which fields you want displayed by using the :ref:`configuration` dialog.
 
+    * To perform complex multiple column based sub-sorting add the :guilabel:`Sort by`
+      tool to a toolbar via :guilabel:`Preferences->Toolbars & menus`.
+
 .. _search_interface:
 
 The search interface
 ---------------------
-You can search all the metadata by entering search terms in the Search bar. Searches are case insensitive. For example::
+You can search all book metadata by entering search terms in the Search bar. For example::
 
     Asimov Foundation format:lrf
 
@@ -340,26 +351,107 @@ are available in the LRF format. Some more examples::
     title:"The Ring" or "This book is about a ring"
     format:epub publisher:feedbooks.com
 
-Searches are by default 'contains'. An item matches if the search string appears anywhere in the indicated metadata.
-Two other kinds of searches are available: equality search and search using `regular expressions <https://en.wikipedia.org/wiki/Regular_expression>`_.
+.. _search_kinds:
+
+*Search kinds*
+
+There are four search kinds: `contains`, `equality`, `regular expression` (see `regular expressions <https://en.wikipedia.org/wiki/Regular_expression>`_), and `character variant`. You choose the search kind with a prefix character.
+
+*'Contains' searches*
+
+Searches with no prefix character are `contains` and are by default case insensitive. An item matches if the search string appears anywhere in the indicated metadata. You can make `contains` searches case sensitive by checking the option `Case sensitive searching` in :guilabel:`Preferences / Searching`. If the search option `Unaccented characters match accented characters and punctuation is ignored` is checked then a character will match all its variants (e.g., `e` matches `é`, `è`, `ê`, and `ë`) and all punctuation and whitespace are ignored. For example, if the `Unaccented characters match ...` option is checked then given the two book titles:
+
+  1. Big, Bothéred, and Bad
+  2. Big Bummer
+
+then these searches find:
+
+  * ``title:"er"`` matches both ('e' matches both 'é' and 'e').
+  * ``title:"g "`` matches both because spaces are ignored.
+  * ``title:"g,"`` matches both because the comma is ignored.
+  * ``title:"gb"`` matches both because ', ' is ignored in book 1 and spaces are ignored in book 2.
+  * ``title:"g b"`` matches both because comma and space are ignored.
+  * ``title:"db"`` matches #1 because the space in 'and Bad' is ignored.
+  * ``title:","`` matches both (it actually matches all books) because commas are ignored.
+
+If the `Unaccented characters match ...` option is not checked then character variants, punctuation, and spacing are all significant.
+
+You can set only one of the search options `Case sensitive searching` and `Unaccented characters match accented characters and punctuation is ignored`.
+
+*'Equality' searches*
 
 Equality searches are indicated by prefixing the search string with an equals sign (=). For example, the query
-``tag:"=science"`` will match "science", but not "science fiction" or "hard science". Regular expression searches are
-indicated by prefixing the search string with a tilde (~). Any `Python-compatible regular expression <https://docs.python.org/library/re.html>`_ can
-be used. Note that backslashes used to escape special characters in regular expressions must be doubled because single backslashes will be removed during query parsing. For example, to match a literal parenthesis you must enter ``\\(``. Regular expression searches are 'contains' searches unless the expression contains anchors.
+``tag:"=science"`` will match `science`, but not `science fiction` or `hard science`. Character variants are significant: `é` doesn't match `e`.
 
-Should you need to search for a string with a leading equals or tilde, prefix the string with a backslash.
+Two variants of equality searches are used for hierarchical items (e.g., A.B.C): hierarchical prefix searches and hierarchical component searches. The first, indicated by a single period after the equals (``=.``) matches the initial parts of a hierarchical item. The second, indicated by two periods after the equals (``=..``) matches an internal name in the hierarchical item. Examples, using the tag ``History.Military.WWII`` as the value:
 
-Enclose search strings with quotes (") if the string contains parenthesis or spaces. For example, to search
-for the tag ``Science Fiction`` you would need to search for ``tag:"=science fiction"``. If you search for
-``tag:=science fiction`` you will find all books with the tag 'science' and containing the word 'fiction' in any
-metadata.
+  * ``tags:"=.History"`` : True. ``History`` is a prefix of the tag.
+  * ``tags:"=.History.Military"`` : True. ``History.Military`` is a prefix of the tag.
+  * ``tags:"=.History.Military.WWII"`` : True. ``History.Military.WWII`` is a prefix of the tag, albeit an improper one.
+  * ``tags:"=.Military"`` : False. ``Military`` is not a prefix of the tag.
+  * ``tags:"=.WWII"`` : False. ``WWII`` is not a prefix of the tag.
+  * ``tags:"=..History"`` : True. The hierarchy contains the value ``History``.
+  * ``tags:"=..Military"`` : True. The hierarchy contains the value ``Military``.
+  * ``tags:"=..WWII"`` : True. The hierarchy contains the value ``WWII``.
+  * ``tags:"=..Military.WWII"`` : False. The ``..`` search looks for single values.
+
+*'Regular expression' searches*
+
+Regular expression searches are indicated by prefixing the search string with a tilde (~). Any `Python-compatible regular expression <https://docs.python.org/library/re.html>`__ can be used. Backslashes used to escape special characters in regular expressions must be doubled because single backslashes will be removed during query parsing. For example, to match a literal parenthesis you must enter ``\\(`` or alternatively use `super-quotes` (see below). Regular expression searches are 'contains' searches unless the expression is anchored. Character variants are significant: ``~e`` doesn't match ``é``.
+
+*'Character variant' searches*
+
+Character variant searches are indicated by prefixing the search string with a caret (^). This search is similar to the `contains` search (above) except that:
+
+  * letter case is always ignored.
+  * character variants always match each other.
+  * punctuation and whitespace are always significant.
+
+The search options :guilabel:`Unaccented characters match accented characters and punctuation is ignored` and :guilabel:`Case sensitive searching` are ignored. They have no effect on this search's behavior.
+
+The following compares this search to a contains search assuming the :guilabel:`Unaccented characters match...` option is checked (see above) given the same two book titles:
+
+  1. Big, Bothéred, and Bad
+  2. Big Bummer
+
+then these character variant searches find:
+
+  * ``title:"^er"`` matches both ('e' matches both 'é' and 'e')
+  * ``title:"^g"`` matches both
+  * ``title:"^g "`` matches #2 because the space is significant
+  * ``title:"^g,"`` matches #1 because the comma is significant
+  * ``title:"^gb"`` matches nothing because space and comma are significant
+  * ``title:"^g b"`` matches #2 because the comma is significant
+  * ``title:"^db"`` matches nothing
+  * ``title:"^,"`` matches #1 (instead of all books) because the comma is significant
+
+*Search Expression Syntax*
+
+A `search expression` is a sequence of `search terms` optionally separated by the operators ``and`` and ``or``. If two search terms occur without a separating operator, ``and`` is assumed. The ``and`` operator has priority over the ``or`` operator; for example the expression ``a or b and c`` is the same as ``a or (b and c)``. You can use parenthesis to change the priority; for example ``(a or b) and c`` to make the ``or`` evaluate before the ``and``. You can use the operator ``not`` to negate (invert) the result of evaluating a search expression. Examples:
+
+  * ``not tag:foo`` finds all books that don't contain the tag ``foo``
+  * ``not (author:Asimov or author:Weber)`` finds all books not written by either Asimov or Weber.
+
+The above examples show examples of `search terms`. A basic `search term` is a sequence of characters not including spaces, quotes (``"``), backslashes (``\``), or parentheses (``( )``). It can be optionally preceded by a column name specifier: the `lookup name` of a column followed by a colon (``:``), for example ``author:Asimov``. If a search term must contain a space then the entire term must be enclosed in quotes, as in ``title:"The Ring"``. If the search term must contain quotes then they must be `escaped` with backslashes. For example, to search for a series named `The "Ball" and The "Chain"`, use::
+
+  series:"The \"Ball\" and The \"Chain\"
+
+If you need an actual backslash, something that happens frequently in `regular expression` searches, use two of them (``\\``).
+
+It is sometimes hard to get all the escapes right so the result is what you want, especially in `regular expression` and `template` searches. In these cases use the `super-quote`: ``"""sequence of characters"""``. Super-quoted characters are used unchanged: no escape processing is done.
+
+*More information*
+
+To search for a string that begins with an equals, tilde, or caret; prefix the string with a backslash.
+
+Enclose search strings with quotes (") if the string contains parenthesis or spaces. For example, to find books with the tag ``Science Fiction`` you must search for ``tag:"=science fiction"``. If you search for ``tag:=science fiction`` you will find all books with the tag ``science`` and the word ``fiction`` in any metadata.
 
 You can build advanced search queries easily using the :guilabel:`Advanced search dialog` accessed by
-clicking the button |sbi|.
+clicking the button |sbi| on the left of the search box.
 
-Available fields for searching are: ``tag, title, author, publisher, series, series_index, rating, cover,
-comments, format, identifiers, date, pubdate, search, size, vl`` and custom columns. If a device is plugged in, the ``ondevice`` field becomes available, when searching the calibre library view. To find the search name (actually called the `lookup name`) for a custom column, hover your mouse over the column header in the library view.
+Available fields for searching are: ``tag, title, author, publisher, series, series_index, rating, cover, comments, format, identifiers, date, pubdate, search, size, vl`` and custom columns. If a device is plugged in, the ``ondevice`` field becomes available, when searching the calibre library view. To find the search name (actually called the `lookup name`) for a custom column, hover your mouse over the column header in the library view.
+
+*Dates*
 
 The syntax for searching for dates is::
 
@@ -367,7 +459,7 @@ The syntax for searching for dates is::
     date:<=2000-1-3 Will find all books added to calibre before 3 Jan, 2000
     pubdate:=2009 Will find all books published in 2009
 
-If the date is ambiguous, the current locale is used for date comparison. For example, in an mm/dd/yyyy
+If the date is ambiguous then the current locale is used for date comparison. For example, in an mm/dd/yyyy
 locale 2/1/2009 is interpreted as 1 Feb 2009. In a dd/mm/yyyy locale it is interpreted as 2 Jan 2009.  Some
 special date strings are available. The string ``today`` translates to today's date, whatever it is. The
 strings ``yesterday`` and ``thismonth`` (or the translated equivalent in the current language) also work.
@@ -379,48 +471,61 @@ For example::
 
 To avoid potential problems with translated strings when using a non-English version of calibre, the strings ``_today``, ``_yesterday``, ``_thismonth``, and ``_daysago`` are always available. They are not translated.
 
-You can search for books that have a format of a certain size like this::
-
-    size:>1.1M Will find books with a format larger than 1.1MB
-    size:<=1K  Will find books with a format smaller than 1KB
+*Searching dates and numeric values with relational comparisons*
 
 Dates and numeric fields support the relational operators ``=`` (equals), ``>`` (greater than), ``>=``
 (greater than or equal to), ``<`` (less than), ``<=`` (less than or equal to), and ``!=`` (not equal to).
 Rating fields are considered to be numeric. For example, the search ``rating:>=3`` will find all books rated 3
 or higher.
 
-You can search for the number of items in multiple-valued fields such as tags. These searches begin with the character ``#``, then use the same syntax as numeric fields. For example, to find all books with more than 4 tags use ``tags:#>4``. To find all books with exactly 10 tags use ``tags:#=10``.
+You can search for books that have a format of a certain size like this:
 
-Series indices are searchable. For the standard series, the search name is 'series_index'. For
+    * ``size:>1.1M`` will find books with a format larger than 1.1MB
+    * ``size:<=1K``  will find books with a format smaller than or equal to 1KB
+
+You can search for the number of items in multiple-valued fields such as tags using the character ``#`` then using the same syntax as numeric fields. For example, to find all books with more than 4 tags use ``tags:#>4``. To find all books with exactly 10 tags use ``tags:#=10``.
+
+*Series indices*
+
+Series indices are searchable. For the standard series, the search name is ``series_index``. For
 custom series columns, use the column search name followed by _index. For example, to search the indices for a
 custom series column named ``#my_series``, you would use the search name ``#my_series_index``.
 Series indices are numbers, so you can use the relational operators described above.
 
-The special field ``search`` is used for saved searches. So if you save a search with the name
+*Saved searches*
+
+The special field ``search`` is used for :ref:`saved searches <saved_searches>`. If you save a search with the name
 "My spouse's books" you can enter ``search:"My spouse's books"`` in the Search bar to reuse the saved
 search. More about saving searches below.
+
+*Virtual libraries*
 
 The special field ``vl`` is used to search for books in a Virtual library. For
 example, ``vl:Read`` will find all the books in the *Read* Virtual library. The search
 ``vl:Read and vl:"Science Fiction"`` will find all the books that are in both the *Read* and
-*Science Fiction* Virtual libraries. The value following ``vl:`` must be the name of a
+*Science Fiction* virtual libraries. The value following ``vl:`` must be the name of a
 Virtual library. If the Virtual library name contains spaces then surround it with quotes.
 
-You can search for the absence or presence of a field using the special "true" and "false" values. For example::
+*Whether a field has a value*
 
-    cover:false will give you all books without a cover
-    series:true will give you all books that belong to a series
-    comments:false will give you all books with an empty comment
-    format:false will give you all books with no actual files (empty records)
+You can search for the absence or presence of a value for a field using "true" and "false". For example:
 
-Yes/no custom columns are searchable. Searching for ``false``, ``empty``, or ``blank`` will find all books
+    * ``cover:false`` finds all books without a cover
+    * ``series:true`` finds all books that are in a series
+    * ``series:false`` finds all books that are not in a series
+    * ``comments:false`` finds all books with an empty comment
+    * ``formats:false`` finds all books with no book files (empty records)
+
+*Yes/no custom columns*
+
+Searching Yes/no custom columns for ``false``, ``empty``, or ``blank`` will find all books
 with undefined values in the column. Searching for ``true`` will find all books that do not have undefined
 values in the column. Searching for ``yes`` or ``checked`` will find all books with ``Yes`` in the column.
 Searching for ``no`` or ``unchecked`` will find all books with ``No`` in the column. Note that the words ``yes``, ``no``, ``blank``, ``empty``, ``checked`` and ``unchecked`` are translated; you can use either the current language's equivalent word or the English word. The words ``true`` and ``false`` and the special values ``_yes``, ``_no``, and ``_empty`` are not translated.
 
-Hierarchical items (e.g. A.B.C) use an extended syntax to match initial parts of the hierarchy. This is done by adding a period between the exact match indicator (=) and the text. For example, the query ``tags:=.A`` will find the tags `A` and `A.B`, but will not find the tags `AA` or `AA.B`. The query ``tags:=.A.B`` will find the tags `A.B` and `A.B.C`, but not the tag `A`.
+*Identifiers*
 
-Identifiers (e.g., ISBN, DOI, LCCN, etc.) also use an extended syntax. First, note that an identifier has the form ``type:value``, as in ``isbn:123456789``. The extended syntax permits you to specify independently which type and value to search for. Both the type and the value parts of the query can use `equality`, `contains`, or `regular expression` matches. Examples:
+Identifiers (e.g., ISBN, DOI, LCCN, etc.) use an extended syntax. An identifier has the form ``type:value``, as in ``isbn:123456789``. The extended syntax permits you to specify independently the type and value to search for. Both the type and the value parts of the query can use any of the :ref:`search kinds <search_kinds>`. Examples:
 
     * ``identifiers:true`` will find books with any identifier.
     * ``identifiers:false`` will find books with no identifier.
@@ -432,6 +537,38 @@ Identifiers (e.g., ISBN, DOI, LCCN, etc.) also use an extended syntax. First, no
     * ``identifiers:=isbn:=123456789`` will find books with a type equal to ISBN having a value equal to `123456789`.
     * ``identifiers:i:1`` will find books with a type containing an `i` having a value containing a `1`.
 
+*Categories visible in the Tag browser*
+
+The search ``in_tag_browser:true`` finds all books that are in categories
+(tags, authors, etc.) currently shown in the :guilabel:`Tag browser`. This is
+useful if you set the two preferences :guilabel:`Preferences->Look & feel->Tag
+browser->Hide empty categories` and :guilabel:`Find shows all items that
+match`. With those two preferences set, doing a :guilabel:`Find` in the
+:guilabel:`Tag browser` shows only categories containing items matched by the
+:guilabel:`Find`. Then, the search ``in_tag_browser:true`` additionally finds books
+with these categories / items. You can easily run this search by pressing the
+key :kbd:`Ctrl+Alt+Shift+F` or clicking the configure button in the
+:guilabel:`Tag browser` and choosing the :guilabel:`Show only books that have
+visible categories` entry.
+
+*Search using templates*
+
+You can search using a template in :ref:`templatelangcalibre` instead of a metadata field. To do so you enter a template, a search type, and the value to search for. The syntax is::
+
+    template: (the template) #@#: (search type) : (the value)
+
+The ``template`` is any valid calibre template language template. The ``search type`` must be one of ``t`` (text search), ``d`` (date search), ``n`` (numeric search), or ``b`` (set/not set (boolean)). The ``value`` is whatever you want, and can use the :ref:`search kinds <search_kinds>` described above for the various search types. You must quote the entire search string if there are spaces anywhere in it.
+
+Examples:
+
+  * ``template:"program: connected_device_name('main')#@#:t:kindle"`` -- is true when the ``kindle`` device is connected.
+  * ``template:"program: select(formats_sizes(), 'EPUB')#@#:n:>1000000"`` -- finds books with EPUB files larger than 1 MB.
+  * ``template:"program: select(formats_modtimes('iso'), 'EPUB')#@#:d:>10daysago"`` -- finds books with EPUB files newer than 10 days ago.
+  * ``template:"""program: book_count('tags:^"' & $series & '"', 0) != 0#@#:n:1"""`` -- finds all books containing the series name in the tags. This example uses super-quoting because the template uses both single quotes (``'``) and double quotes (``"``) when constructing the search expression.
+
+You can build template search queries easily using the :guilabel:`Advanced search dialog` accessed by clicking the button |sbi|. You can test templates on specific books using the calibre :guilabel:`Template tester`, which can be added to the toolbars or menus via :guilabel:`Preferences->Toolbars & menus`. It can also be assigned a keyboard shortcut via :guilabel:`Preferences->Shortcuts`.
+
+*Advanced search dialog*
 
 .. |sbi| image:: images/search_button.png
     :align: middle
@@ -441,30 +578,6 @@ Identifiers (e.g., ISBN, DOI, LCCN, etc.) also use an extended syntax. First, no
 
     :guilabel:`Advanced search dialog`
 
-You can search using a template in the :ref:`templatelangcalibre` instead of a
-metadata field. To do so you enter a template, a search type, and the value to
-search for. The syntax is::
-
-    template: (the template) #@#: (search type) : (the value)
-
-The ``template`` is any valid calibre template language template. The ``search
-type`` must be one of ``t`` (text search), ``d`` (date search), ``n`` (numeric
-search), or ``b`` (set/not set (boolean)). The ``value`` is whatever you want.
-It can use the special operators described above for the various search types.
-You must quote the entire search string if there are spaces anywhere in it.
-
-Examples:
-
-    * ``template:"program: connected_device_name('main')#@#:t:kindle"`` -- is true when the ``kindle`` device is connected
-	* ``template:"program: select(formats_sizes(), 'EPUB')#@#:n:>1000000"`` -- finds books with EPUB files larger than 1 MB
-    * ``template:"program: select(formats_modtimes('iso'), 'EPUB')#@#:d:>10daysago"`` -- finds books with EPUB files newer than 10 days ago
-
-You can build template search queries easily using the :guilabel:`Advanced
-search dialog` accessed by clicking the button |sbi|. You can test templates on
-specific books using the calibre :guilabel:`Template tester`. This can be added
-to the toolbars or menus via :guilabel:`Preferences->Toolbars & menus`. It can
-also be assigned a keyboard shortcut via :guilabel:`Preferences->Shortcuts`.
-
 .. _saved_searches:
 
 Saving searches
@@ -472,9 +585,30 @@ Saving searches
 
 calibre allows you to save a frequently used search under a special name and then reuse that search with a single click. To do this, create your search either by typing it in the Search bar or using the Tag browser. Then type the name you would like to give to the search in the Saved Searches box next to the Search bar. Click the plus icon next to the saved searches box to save the search.
 
-Now you can access your saved search in the Tag browser under :guilabel:`Saved
-searches`. A single click will allow you to reuse any arbitrarily complex
-search easily, without needing to re-create it.
+Now you can access your saved search in the Tag browser under :guilabel:`Saved searches`. A single click will allow you to reuse any arbitrarily complex search easily, without needing to re-create it.
+
+Searching the full text of all books
+---------------------------------------
+
+.. |ftsb| image:: images/fts-button.png
+    :class: float-right-img
+
+|ftsb| calibre can *optionally* index the full text of books in the library to allow
+for instant searching of words inside any book. To use this functionality
+click the :guilabel:`FT` button at the left edge of the search bar.
+
+Then, enable indexing for the current library. Once indexing is complete you can
+search all the text in the full library. When you add new books to the library,
+they will be automatically indexed in the background. This search
+allows you to quickly find all books that contain a word or combination of
+words. You can even search for words that occur near other words, as shown in
+the examples in the search popup window. Note that this search tool will find only one
+occurrence of the search query in a particular book, not list every occurrence,
+for that it is best to search inside the book using the calibre :guilabel:`E-book viewer`.
+
+You can re-index an individual book by right clicking on the :guilabel:`Book
+details panel` in calibre and choosing :guilabel:`Re-index this book for full
+text searching`.
 
 Virtual libraries
 -------------------
@@ -484,6 +618,13 @@ only a few books instead of its full collection. This is an excellent way to
 partition your large collection of books into smaller, manageable chunks. To
 learn how to create and use Virtual libraries, see the tutorial:
 :ref:`virtual_libraries`.
+
+Temporarily marking books
+----------------------------
+
+You can temporarily mark arbitrary sets of books. Marked books will have a pin on them and can be found with the search ``marked:true``. To mark a book press :kbd:`Ctrl+M` or go to :guilabel:`Preferences->Toolbars & menus` and add the :guilabel:`Mark books` button to the main toolbar.
+
+You can mark books with a specific text label by right clicking the :guilabel:`Mark books` button and choosing :guilabel:`Mark books with text label`. Books marked with text labels can later be found using the search ``marked:"=the-text-you-entered"``.
 
 .. _config_filename_metadata:
 
@@ -495,7 +636,7 @@ be configured to read metadata from the file name instead, via
 :guilabel:`Preferences->Import/export->Adding books->Read metadata from file contents`.
 
 You can also control how metadata is read from the filename using regular
-expressions (see :doc:`regexp`).  In the :guilabel:`Adding books` section of
+expressions (see :doc:`regexp`). In the :guilabel:`Adding books` section of
 the configuration dialog, you can specify a regular expression that calibre
 will use to try and guess metadata from the names of e-book files that you add
 to the library. The default regular expression is::
@@ -566,7 +707,7 @@ The first click on an item will restrict the list of books to those that contain
 
 Items in the Tag browser have their icons partially colored. The amount of color depends on the average rating of the books in that category. So for example if the books by Isaac Asimov have an average of four stars, the icon for Isaac Asimov in the Tag browser will be 4/5th colored. You can hover your mouse over the icon to see the average rating.
 
-The outer-level items in the :guilabel:`Tag browser`, such as Authors and Series, are called categories. You can create your own categories, called :guilabel:`User categories`, which are useful for organizing items. For example, you can use the :guilabel:`User categories editor` (click the :guilabel:`Configure` button at the lower-left of the :guilabel:`Tag browser` and choose :guilabel:`Manage authors, series, etc->User categories`) to create a User category called ``Favorite Authors``, then put the items for your favorites into the category. User categories can have sub-categories. For example, the User category ``Favorites.Authors`` is a sub-category of ``Favorites``. You might also have ``Favorites.Series``, in which case there will be two sub-categories under ``Favorites``. Sub-categories can be created by right-clicking on a User category, choosing :guilabel:`Add sub-category to...`, and entering the sub-category name; or by using the :guilabel:`User categories editor` by entering names like the Favorites example above.
+The outer-level items in the :guilabel:`Tag browser`, such as Authors and Series, are called categories. You can create your own categories, called :guilabel:`User categories`, which are useful for organizing items. For example, you can use the :guilabel:`User categories editor` (click the :guilabel:`Configure` button at the lower-left of the :guilabel:`Tag browser` and choose :guilabel:`Manage authors, tags, etc->User categories`) to create a User category called ``Favorite Authors``, then put the items for your favorites into the category. User categories can have sub-categories. For example, the User category ``Favorites.Authors`` is a sub-category of ``Favorites``. You might also have ``Favorites.Series``, in which case there will be two sub-categories under ``Favorites``. Sub-categories can be created by right-clicking on a User category, choosing :guilabel:`Add sub-category to...`, and entering the sub-category name; or by using the :guilabel:`User categories editor` by entering names like the Favorites example above.
 
 You can search User categories in the same way as built-in categories, by clicking on them. There are four different searches cycled through by clicking:
     1. "everything matching an item in the category" indicated by a single green plus sign.
@@ -580,9 +721,52 @@ Hierarchical items (items with children) use the same four 'click-on' searches a
 
 You can drag and drop items in the Tag browser onto User categories to add them to that category. If the source is a User category, holding the :kbd:`Shift` key while dragging will move the item to the new category. You can also drag and drop books from the book list onto items in the Tag browser; dropping a book on an item causes that item to be automatically applied to the dropped books. For example, dragging a book onto Isaac Asimov will set the author of that book to Isaac Asimov. Dropping it onto the tag History will add the tag History to the book's tags.
 
-You can easily find any item in the Tag browser by clicking the search button at the lower-right corner. In addition, you can right click on any item and choose one of several operations. Some examples are to hide it, rename it, or open a "Manage x" dialog that allows you to manage items of that kind. For example, the "Manage Authors" dialog allows you to rename authors and control how their names are sorted.
+You can easily find any item in the Tag browser by clicking the search button at the lower-right corner. In addition, you can right click on any item and choose one of several operations. Some examples are to hide it, rename it, or open a "Manage x" dialog that allows you to manage items of that kind. For example, the :guilabel:`Manage authors` dialog allows you to rename authors and control how their names are sorted.
 
 You can control how items are sorted in the Tag browser via the :guilabel:`Configure` button at the lower-left of the Tag browser. You can choose to sort by name, average rating or popularity (popularity is the number of books with an item in your library; for example, the popularity of Isaac Asimov is the number of books in your library by Isaac Asimov).
+
+You can use your own icons for categories and values in categories. To change the icon for a category,
+right-click on the category (the outer-level item) and choose `Change (category name) category icon`. A dialog will open where you can pick an image to be used as the icon. To restore the icon to its default choose `Restore (category name) default icon`.
+
+To choose icons for values in categories, right-click on a value then choose `Manage icon for (value name)`. You will see a list of choices:
+
+* `Choose an icon for this value but not its children`. A dialog will open where you choose an icon for the value. Children of that value will not inherit that icon.
+* `Choose an icon for this value and its children`. A dialog will open where you choose an icon for the value. Any children that don't have their own specified icon will inherit this icon.
+* `Use the existing icon for this value but not its children`. This option is offered if the value already has an icon that is inherited by the value's children. Selecting it will make the icon apply to the value but not its children.
+* `Use the existing icon for this value and its children`. This option is offered if the value already has an icon that is not inherited by the value's children. Selecting it will make the icon apply to the value and its children.
+* `Use the default icon for this value`. This option is offered if the item has an icon. It removes the icon from the value and any children inheriting the icon. The default icon is what is specified below.
+* `Reset all value icons to the default icon`. This option removes all item value icons for the category. It does not remove a template if one exists. There is no undo.
+* `Use/edit a template to choose the default value icon`. This option permits you to provide a calibre template that returns the name of an icon file to be used as a default icon. The template can use two variables:
+
+  * ``category``: the lookup name of the category, for example ``authors``, ``series``, ``#mycolumn``.
+  * ``value``: the value of the item within the category.
+  * ``count``: the number of books with this value. If the value is part of a hierarchy then the count includes the children.
+  * ``avg_rating``: the average rating for books with this value. If the value is part of a hierarchy then the average includes the children.
+
+  Book metadata such as title is not available. Template database functions such as :ref:`ff_book_count` and :ref:`ff_book_values` will work, but the performance might not be acceptable. The following template functions will work in the GUI but won't work in the content server: :ref:`ff_connected_device_name`, :ref:`ff_connected_device_uuid`, :ref:`ff_current_virtual_library_name`, :ref:`ff_is_marked`, and :ref:`ff_virtual_libraries`.
+
+  In the GUI, Python templates have full access to the calibre database. In the content server, Python templates have access to new API (see `API documentation for the database interface <https://manual.calibre-ebook.com/db_api.html>`_) but not the old API (LibraryDatabase).
+
+  For example, this template specifies that any value in the clicked-on category beginning with `History` will have an icon named ``flower.png``::
+
+    program:
+      if substr($value, 0, 7) == 'History' then 'flower.png' fi
+
+  If a template returns the empty string (``''``) then the category icon will be used. If the template
+  returns a file name that doesn't exist then no icon is displayed.
+
+* `Use the category icon as the default`. This option specifies that the icon used for the category should be used for any value that doesn't otherwise have an icon. Selecting this option removes any template icon specification.
+
+
+The icon is chosen using the following hierarchy:
+
+#. The icon specified for the value, if it exists.
+#. The icon specified for a parent node found by walking up the tree, if one exists.
+#. The icon from a template, if a template exists and it returns a non-empty string.
+#. The default category icon, which always exists.
+
+Icons are per-user, not per-library, stored in the calibre configuration folder. Icons for item values are stored in the :file:`tb_icons` subfolder. Icons used by templates are in the :file:`template_icons` subfolder of :file:`tb_icons`.
+
 
 .. raw:: html epub
 
@@ -614,6 +798,31 @@ covers in the single row. This is activated via the :guilabel:`Layout` button in
 corner of the main window. In :guilabel:`Preferences->Interface->Look & feel->Cover
 browser` you can change the number of covers displayed, and even have the
 :guilabel:`Cover browser` display itself in a separate popup window.
+
+Adding notes for authors, series, etc.
+------------------------------------------
+
+.. image:: images/notes.png
+   :class: float-left-img
+
+You can add notes for an author/series/tag/publisher/etc. to your calibre
+library. To do so right click on the author name in the :guilabel:`Tag browser` on the left
+or the :guilabel:`Book details` panel on the right and choose :guilabel:`Create note`
+or :guilabel:`Edit note`.
+
+A simple popup window will allow you to enter your notes using basic
+formatting and supporting links and images. Once a note for an author is
+created, it can be viewed easily from the :guilabel:`Book details` panel by
+clicking the little pencil icon next to the author name.
+
+You can search through all the notes in your library using the
+:guilabel:`Browse notes` tool by pressing :kbd:`Ctrl+Shift+N` or adding
+it to the toolbar via :guilabel:`Preferences->Toolbars & menus`.
+
+.. raw:: html epub
+
+    <div style="clear:both"></div>
+
 
 Quickview
 ----------
@@ -670,7 +879,7 @@ The Jobs panel shows the number of currently running jobs. Jobs are tasks that r
 Keyboard shortcuts
 ---------------------
 
-calibre has several keyboard shortcuts to save you time and mouse movement. These shortcuts are active in the book list view (when you're not editing the details of a particular book), and most of them affect the title you have selected. The calibre E-book viewer has its own shortcuts which can be customised by clicking the :guilabel:`Preferences` button in the viewer.
+calibre has several keyboard shortcuts to save you time and mouse movement. These shortcuts are active in the book list view (when you're not editing the details of a particular book), and most of them affect the title you have selected. The calibre E-book viewer :ref:`has its own shortcuts <viewer_shortcuts>` which can be customised in the viewer :guilabel:`Preferences`.
 
 .. note::
 
@@ -682,7 +891,7 @@ calibre has several keyboard shortcuts to save you time and mouse movement. Thes
 
     * - Keyboard shortcut
       - Action
-    * - :kbd:`F2 (Enter in macOS)`
+    * - :kbd:`F2 (Enter for macOS)`
       - Edit the metadata of the currently selected field in the book list.
     * - :kbd:`A`
       - Add books
@@ -718,7 +927,7 @@ calibre has several keyboard shortcuts to save you time and mouse movement. Thes
       - View
     * - :kbd:`Shift+V`
       - View last read book
-    * - :kbd:`Alt+V/Cmd+V in macOS`
+    * - :kbd:`Alt+V/Cmd+V for macOS`
       - View specific format
     * - :kbd:`Alt+Shift+J`
       - Toggle jobs list
@@ -772,6 +981,8 @@ calibre has several keyboard shortcuts to save you time and mouse movement. Thes
       - Add empty books to calibre
     * - :kbd:`Ctrl+M`
       - Toggle mark/unmarked status on selected books
+    * - :kbd:`Ctrl+/` or :kbd:`Ctrl+Alt+F`
+      - Open the popup to search the full text of all books in the library
     * - :kbd:`Q`
       - Open the Quick View popup for viewing books in related series/tags/etc.
     * - :kbd:`Shift+Q`
@@ -784,3 +995,12 @@ calibre has several keyboard shortcuts to save you time and mouse movement. Thes
       - Quit calibre
     * - :kbd:`X`
       - Toggle auto scroll of the book list
+    * - :kbd:`Ctrl+Alt+Shift+F`
+      - Restrict the displayed books to only those books that are in a category
+        currently displayed in the :guilabel:`Tag browser`
+    * - :kbd:`B`
+      - Browse annotations (highlights and bookmarks) made in the calibre E-book viewer for all books in the library
+    * - :kbd:`Ctrl+Shift+N`
+      - Browse notes associated with authors/series/tags/etc.
+    * - :kbd:`Alt+Shift+L`
+      - Toggle the layout between wide and narrow views

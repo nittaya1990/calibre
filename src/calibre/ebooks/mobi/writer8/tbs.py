@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
 
 
 __license__   = 'GPL v3'
@@ -17,11 +16,10 @@ For the exact algorithm, see separate_strands(). The strands are then encoded
 into 'sequences', see encode_strands_as_sequences() and finally the sequences
 are turned into bytes.
 '''
-from collections import namedtuple, OrderedDict
+from collections import OrderedDict, namedtuple
 from operator import attrgetter
 
-from calibre.ebooks.mobi.utils import (encode_trailing_data,
-        encode_tbs)
+from calibre.ebooks.mobi.utils import encode_tbs, encode_trailing_data
 from polyglot.builtins import iteritems, itervalues
 
 Entry = namedtuple('IndexEntry', 'index start length depth parent '

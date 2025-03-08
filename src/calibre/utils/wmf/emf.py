@@ -1,13 +1,12 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 
 
 __license__ = 'GPL v3'
 __copyright__ = '2013, Kovid Goyal <kovid at kovidgoyal.net>'
 
 import sys
-from struct import unpack_from
 from collections import namedtuple
+from struct import unpack_from
 
 from calibre.utils.wmf import create_bmp_from_dib, to_png
 from polyglot.builtins import iteritems
@@ -15,16 +14,16 @@ from polyglot.builtins import iteritems
 # Record types {{{
 # See: http://msdn.microsoft.com/en-us/library/cc231166.aspx
 RECORD_TYPES = {
-    'EMR_BITBLT' : 0x4C,
-    'EMR_STRETCHBLT' : 0x4D,
-    'EMR_MASKBLT' : 0x4E,
-    'EMR_PLGBLT' : 0x4F,
-    'EMR_SETDIBITSTODEVICE' : 0x50,
-    'EMR_STRETCHDIBITS' : 0x51,
-    'EMR_ALPHABLEND' : 0x72,
-    'EMR_TRANSPARENTBLT' : 0x74,
-    'EOF' : 0xe,
-    'HEADER' : 0x1,
+    'EMR_BITBLT': 0x4C,
+    'EMR_STRETCHBLT': 0x4D,
+    'EMR_MASKBLT': 0x4E,
+    'EMR_PLGBLT': 0x4F,
+    'EMR_SETDIBITSTODEVICE': 0x50,
+    'EMR_STRETCHDIBITS': 0x51,
+    'EMR_ALPHABLEND': 0x72,
+    'EMR_TRANSPARENTBLT': 0x74,
+    'EOF': 0xe,
+    'HEADER': 0x1,
 }
 RECORD_RMAP = {v:k for k, v in iteritems(RECORD_TYPES)}
 
@@ -42,7 +41,7 @@ class EMF:
         self.pos = 0
         self.found_eof = False
         self.verbose = verbose
-        self.func_map = {v:getattr(self, 'handle_%s' % (k.replace('EMR_', '').lower()), self.handle_unknown) for k, v in iteritems(RECORD_TYPES)}
+        self.func_map = {v:getattr(self, 'handle_{}'.format(k.replace('EMR_', '').lower()), self.handle_unknown) for k, v in iteritems(RECORD_TYPES)}
         self.bitmaps = []
         while self.pos < len(raw) and not self.found_eof:
             self.read_record(raw)

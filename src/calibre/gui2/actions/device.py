@@ -1,19 +1,35 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
 
 
 __license__   = 'GPL v3'
 __copyright__ = '2010, Kovid Goyal <kovid@kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
 
-from qt.core import QIcon, QMenu, QTimer, QToolButton, pyqtSignal
+from qt.core import QIcon, QMenu, QTimer, QToolButton, QUrl, pyqtSignal
 
-from calibre.gui2 import info_dialog, question_dialog
+from calibre.gui2 import info_dialog, open_url, question_dialog
 from calibre.gui2.actions import InterfaceAction
 from calibre.gui2.dialogs.smartdevice import SmartdeviceDialog
+from calibre.startup import connect_lambda
 from calibre.utils.icu import primary_sort_key
 from calibre.utils.smtp import config as email_config
-from polyglot.builtins import unicode_type
+
+
+def local_url_for_content_server():
+    from calibre.srv.opts import server_config
+    from calibre.utils.network import format_addr_for_url, get_fallback_server_addr
+
+    opts = server_config()
+    addr = opts.listen_on or get_fallback_server_addr()
+    addr = {'0.0.0.0': '127.0.0.1', '::': '::1'}.get(addr, addr)
+    protocol = 'https' if opts.ssl_certfile and opts.ssl_keyfile else 'http'
+    prefix = opts.url_prefix or ''
+    port = opts.port
+    return f'{protocol}://{format_addr_for_url(addr)}:{port}{prefix}'
+
+
+def open_in_browser():
+    open_url(QUrl(local_url_for_content_server()))
 
 
 class ShareConnMenu(QMenu):  # {{{
@@ -32,18 +48,22 @@ class ShareConnMenu(QMenu):  # {{{
     def __init__(self, parent=None):
         QMenu.__init__(self, parent)
         self.ip_text = ''
-        mitem = self.addAction(QIcon(I('devices/folder.png')), _('Connect to folder'))
+        mitem = self.addAction(QIcon.ic('devices/folder.png'), _('Connect to folder'))
         mitem.setEnabled(True)
         connect_lambda(mitem.triggered, self, lambda self: self.connect_to_folder.emit())
         self.connect_to_folder_action = mitem
 
         self.addSeparator()
         self.toggle_server_action = \
-            self.addAction(QIcon(I('network-server.png')),
+            self.addAction(QIcon.ic('network-server.png'),
             _('Start Content server'))
         connect_lambda(self.toggle_server_action.triggered, self, lambda self: self.toggle_server.emit())
+        self.open_server_in_browser_action = self.addAction(
+            QIcon.ic('forward.png'), _('Visit Content server in browser'))
+        connect_lambda(self.open_server_in_browser_action.triggered, self, lambda self: open_in_browser())
+        self.open_server_in_browser_action.setVisible(False)
         self.control_smartdevice_action = \
-            self.addAction(QIcon(I('dot_red.png')),
+            self.addAction(QIcon.ic('dot_red.png'),
             self.DEVICE_MSGS[0])
         connect_lambda(self.control_smartdevice_action.triggered, self, lambda self: self.control_smartdevice.emit())
         self.addSeparator()
@@ -55,31 +75,33 @@ class ShareConnMenu(QMenu):  # {{{
             prefix = 'Share/Connect Menu '
             gr = ConnectShareAction.action_spec[0]
             for attr in ('folder', ):
-                ac = getattr(self, 'connect_to_%s_action'%attr)
-                r(prefix + attr, unicode_type(ac.text()), action=ac,
+                ac = getattr(self, f'connect_to_{attr}_action')
+                r(prefix + attr, str(ac.text()), action=ac,
                         group=gr)
             r(prefix+' content server', _('Start/stop Content server'),
                     action=self.toggle_server_action, group=gr)
+            r(prefix + ' open server in browser', self.open_server_in_browser_action.text(), action=self.open_server_in_browser_action, group=gr)
 
     def server_state_changed(self, running):
-        from calibre.utils.mdns import get_external_ip, verify_ipV4_address
+        from calibre.utils.mdns import get_external_ip, verify_ip_address
         text = _('Start Content server')
         if running:
             from calibre.srv.opts import server_config
             opts = server_config()
-            listen_on = verify_ipV4_address(opts.listen_on) or get_external_ip()
+            listen_on = verify_ip_address(opts.listen_on) or get_external_ip()
             protocol = 'HTTPS' if opts.ssl_certfile and opts.ssl_keyfile else 'HTTP'
             try:
                 ip_text = ' ' + _('[{ip}, port {port}, {protocol}]').format(
                         ip=listen_on, port=opts.port, protocol=protocol)
             except Exception:
-                ip_text = ' [{} {}]'.format(listen_on, protocol)
+                ip_text = f' [{listen_on} {protocol}]'
             self.ip_text = ip_text
             self.server_state_changed_signal.emit(running, ip_text)
             text = _('Stop Content server') + ip_text
         else:
             self.ip_text = ''
         self.toggle_server_action.setText(text)
+        self.open_server_in_browser_action.setVisible(running)
 
     def hide_smartdevice_menus(self):
         self.control_smartdevice_action.setVisible(False)
@@ -107,9 +129,9 @@ class ShareConnMenu(QMenu):  # {{{
                 subject = opts.subjects.get(account, '')
                 alias = opts.aliases.get(account, '')
                 dest = 'mail:'+account+';'+formats+';'+subject
-                action1 = DeviceAction(dest, False, False, I('mail.png'),
+                action1 = DeviceAction(dest, False, False, 'mail.png',
                         alias or account)
-                action2 = DeviceAction(dest, True, False, I('mail.png'),
+                action2 = DeviceAction(dest, True, False, 'mail.png',
                         (alias or account) + ' ' + _('(delete from library)'))
                 self.email_to_menu.addAction(action1)
                 self.email_to_and_delete_menu.addAction(action2)
@@ -117,22 +139,22 @@ class ShareConnMenu(QMenu):  # {{{
                 self.memory.append(action2)
                 if default:
                     ac = DeviceAction(dest, False, False,
-                            I('mail.png'), _('Email to') + ' ' +(alias or
+                            'mail.png', _('Email to') + ' ' +(alias or
                                 account))
                     self.addAction(ac)
                     self.email_actions.append(ac)
                     ac.a_s.connect(sync_menu.action_triggered)
                 action1.a_s.connect(sync_menu.action_triggered)
                 action2.a_s.connect(sync_menu.action_triggered)
-            action1 = DeviceAction('choosemail:', False, False, I('mail.png'),
+            action1 = DeviceAction('choosemail:', False, False, 'mail.png',
                     _('Select recipients'))
-            action2 = DeviceAction('choosemail:', True, False, I('mail.png'),
+            action2 = DeviceAction('choosemail:', True, False, 'mail.png',
                     _('Select recipients') + ' ' + _('(delete from library)'))
             self.email_to_menu.addAction(action1)
             self.email_to_and_delete_menu.addAction(action2)
             self.memory.append(action1)
             self.memory.append(action2)
-            tac1 = DeviceAction('choosemail:', False, False, I('mail.png'),
+            tac1 = DeviceAction('choosemail:', False, False, 'mail.png',
                     _('Email to selected recipients...'))
             self.addAction(tac1)
             tac1.a_s.connect(sync_menu.action_triggered)
@@ -143,7 +165,7 @@ class ShareConnMenu(QMenu):  # {{{
             action1.a_s.connect(sync_menu.action_triggered)
             action2.a_s.connect(sync_menu.action_triggered)
         else:
-            ac = self.addAction(_('Setup email based sharing of books'))
+            ac = self.addAction(QIcon.ic('mail.png'), _('Setup email based sharing of books'))
             self.email_actions.append(ac)
             ac.triggered.connect(self.setup_email)
 
@@ -153,8 +175,8 @@ class ShareConnMenu(QMenu):  # {{{
     def set_state(self, device_connected, device):
         self.connect_to_folder_action.setEnabled(not device_connected)
 
-
 # }}}
+
 
 class SendToDeviceAction(InterfaceAction):
 
@@ -209,10 +231,10 @@ class ConnectShareAction(InterfaceAction):
         self.share_conn_menu.server_state_changed(running)
         if running:
             self.content_server_is_running = True
-            self.qaction.setIcon(QIcon(I('connect_share_on.png')))
+            self.qaction.setIcon(QIcon.ic('connect_share_on.png'))
         else:
             self.content_server_is_running = False
-            self.qaction.setIcon(QIcon(I('connect_share.png')))
+            self.qaction.setIcon(QIcon.ic('connect_share.png'))
 
     def toggle_content_server(self):
         if self.gui.content_server is None:
@@ -223,7 +245,7 @@ class ConnectShareAction(InterfaceAction):
                     _('Stopping server, this could take up to a minute, please wait...'),
                     show_copy_button=False)
             QTimer.singleShot(1000, self.check_exited)
-            self.stopping_msg.exec_()
+            self.stopping_msg.exec()
 
     def check_exited(self):
         if getattr(self.gui.content_server, 'is_running', False):
@@ -244,7 +266,7 @@ class ConnectShareAction(InterfaceAction):
                     dm.set_option('smartdevice', 'autostart', False)
         else:
             sd_dialog = SmartdeviceDialog(self.gui)
-            sd_dialog.exec_()
+            sd_dialog.exec()
         self.set_smartdevice_action_state()
 
     def check_smartdevice_menus(self):
@@ -278,12 +300,11 @@ class ConnectShareAction(InterfaceAction):
             use_fixed_port = dm.get_option('smartdevice', 'use_fixed_port')
             port_number = dm.get_option('smartdevice', 'port_number')
             if show_port and use_fixed_port:
-                text = self.share_conn_menu.DEVICE_MSGS[1]  + ' [%s, port %s]'%(
-                                            formatted_addresses, port_number)
+                text = self.share_conn_menu.DEVICE_MSGS[1]  + f' [{formatted_addresses}, port {port_number}]'
             else:
                 text = self.share_conn_menu.DEVICE_MSGS[1] + ' [' + formatted_addresses + ']'
 
         icon = 'green' if running else 'red'
         ac = self.share_conn_menu.control_smartdevice_action
-        ac.setIcon(QIcon(I('dot_%s.png'%icon)))
+        ac.setIcon(QIcon.ic(f'dot_{icon}.png'))
         ac.setText(text)

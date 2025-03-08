@@ -1,13 +1,17 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
 
 
 __license__   = 'GPL v3'
 __copyright__ = '2009, Kovid Goyal <kovid@kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
 
-import os, json, subprocess, errno, hashlib
-from setup import Command, build_cache_dir, edit_file, dump_json
+import errno
+import hashlib
+import json
+import os
+import subprocess
+
+from setup import Command, build_cache_dir, dump_json, edit_file
 
 
 class Message:
@@ -16,7 +20,22 @@ class Message:
         self.filename, self.lineno, self.msg = filename, lineno, msg
 
     def __str__(self):
-        return '%s:%s: %s' % (self.filename, self.lineno, self.msg)
+        return f'{self.filename}:{self.lineno}: {self.msg}'
+
+
+def files_walker(root_path, ext):
+    for x in os.walk(root_path):
+        for f in x[-1]:
+            y = os.path.join(x[0], f)
+            if f.endswith(ext):
+                yield y
+
+
+def checkable_python_files(SRC):
+    for dname in ('odf', 'calibre'):
+        for f in files_walker(os.path.join(SRC, dname), '.py'):
+            if not f.endswith('_ui.py'):
+                yield f
 
 
 class Check(Command):
@@ -25,28 +44,17 @@ class Check(Command):
 
     CACHE = 'check.json'
 
+    def add_options(self, parser):
+        parser.add_option('--fix', '--auto-fix', default=False, action='store_true',
+                help='Try to automatically fix some of the smallest errors instead of opening an editor for bad files.')
+
     def get_files(self):
-        for dname in ('odf', 'calibre'):
-            for x in os.walk(self.j(self.SRC, dname)):
-                for f in x[-1]:
-                    y = self.j(x[0], f)
-                    if (f.endswith('.py') and f not in (
-                            'dict_data.py', 'unicodepoints.py', 'krcodepoints.py',
-                            'jacodepoints.py', 'vncodepoints.py', 'zhcodepoints.py') and
-                            'prs500/driver.py' not in y) and not f.endswith('_ui.py'):
-                        yield y
+        yield from checkable_python_files(self.SRC)
 
-        for x in os.walk(self.j(self.d(self.SRC), 'recipes')):
-            for f in x[-1]:
-                f = self.j(x[0], f)
-                if f.endswith('.recipe'):
-                    yield f
+        yield from files_walker(self.j(self.d(self.SRC), 'recipes'), '.recipe')
 
-        for x in os.walk(self.j(self.SRC, 'pyj')):
-            for f in x[-1]:
-                f = self.j(x[0], f)
-                if f.endswith('.pyj'):
-                    yield f
+        yield from files_walker(self.j(self.SRC, 'pyj'), '.pyj')
+
         if self.has_changelog_check:
             yield self.j(self.d(self.SRC), 'Changelog.txt')
 
@@ -74,8 +82,11 @@ class Check(Command):
     def file_has_errors(self, f):
         ext = os.path.splitext(f)[1]
         if ext in {'.py', '.recipe'}:
-            p2 = subprocess.Popen(['flake8', '--filename', '*.py,*.recipe', f])
-            return p2.wait() != 0
+            if self.auto_fix:
+                p = subprocess.Popen(['ruff', 'check', '--fix', f])
+            else:
+                p = subprocess.Popen(['ruff', 'check', f])
+            return p.wait() != 0
         if ext == '.pyj':
             p = subprocess.Popen(['rapydscript', 'lint', f])
             return p.wait() != 0
@@ -85,13 +96,17 @@ class Check(Command):
 
     def run(self, opts):
         self.fhash_cache = {}
-        cache = {}
         self.wn_path = os.path.expanduser('~/work/srv/main/static')
         self.has_changelog_check = os.path.exists(self.wn_path)
+        self.auto_fix = opts.fix
+        self.run_check_files()
+
+    def run_check_files(self):
+        cache = {}
         try:
             with open(self.cache_file, 'rb') as f:
                 cache = json.load(f)
-        except EnvironmentError as err:
+        except OSError as err:
             if err.errno != errno.ENOENT:
                 raise
         dirty_files = tuple(f for f in self.get_files() if not self.is_cache_valid(f, cache))
@@ -99,8 +114,11 @@ class Check(Command):
             for i, f in enumerate(dirty_files):
                 self.info('\tChecking', f)
                 if self.file_has_errors(f):
-                    self.info('%d files left to check' % (len(dirty_files) - i - 1))
-                    edit_file(f)
+                    self.info(f'{len(dirty_files) - i - 1} files left to check')
+                    try:
+                        edit_file(f)
+                    except FileNotFoundError:
+                        pass  # continue if the configured editor fail to be open
                     if self.file_has_errors(f):
                         raise SystemExit(1)
                 cache[f] = self.file_hash(f)
@@ -114,6 +132,24 @@ class Check(Command):
     def clean(self):
         try:
             os.remove(self.cache_file)
-        except EnvironmentError as err:
+        except OSError as err:
             if err.errno != errno.ENOENT:
                 raise
+
+
+class UpgradeSourceCode(Command):
+
+    description = 'Upgrade python source code'
+
+    def run(self, opts):
+        files = []
+        for f in os.listdir(os.path.dirname(os.path.abspath(__file__))):
+            q = os.path.join('setup', f)
+            if f.endswith('.py') and f not in ('linux-installer.py',) and not os.path.isdir(q):
+                files.append(q)
+        for path in checkable_python_files(self.SRC):
+            q = path.replace(os.sep, '/')
+            if '/metadata/sources/' in q or '/store/stores/' in q:
+                continue
+            files.append(q)
+        subprocess.call(['pyupgrade', '--py310-plus'] + files)

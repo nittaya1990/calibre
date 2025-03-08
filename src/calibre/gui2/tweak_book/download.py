@@ -1,20 +1,33 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 # License: GPLv3 Copyright: 2016, Kovid Goyal <kovid at kovidgoyal.net>
 
 
 from threading import Thread
 
 from qt.core import (
-    pyqtSignal, QWidget, QListWidget, QListWidgetItem, QLabel, Qt,
-    QVBoxLayout, QScrollArea, QProgressBar, QGridLayout, QSize, QIcon, QDialogButtonBox)
+    QDialogButtonBox,
+    QGridLayout,
+    QIcon,
+    QLabel,
+    QListWidget,
+    QListWidgetItem,
+    QProgressBar,
+    QScrollArea,
+    QSize,
+    Qt,
+    QVBoxLayout,
+    QWidget,
+    pyqtSignal,
+)
 
+from calibre.ebooks.oeb.polish.download import download_external_resources, get_external_resources, replace_resources
 from calibre.gui2 import error_dialog, info_dialog, warning_dialog
+from calibre.gui2.progress_indicator import WaitStack
 from calibre.gui2.tweak_book import current_container
 from calibre.gui2.tweak_book.widgets import Dialog
-from calibre.gui2.progress_indicator import WaitStack
-from calibre.ebooks.oeb.polish.download import get_external_resources, download_external_resources, replace_resources
-from polyglot.builtins import iteritems, range
+from calibre.startup import connect_lambda
+from calibre.utils.localization import ngettext
+from polyglot.builtins import iteritems
 
 
 class ChooseResources(QWidget):
@@ -113,7 +126,7 @@ class DownloadResources(Dialog):
         self.progress.connect(self.download_status.progress, type=Qt.ConnectionType.QueuedConnection)
 
     def setup_ui(self):
-        self.setWindowIcon(QIcon(I('download-metadata.png')))
+        self.setWindowIcon(QIcon.ic('download-metadata.png'))
         self.choose_resources = cr = ChooseResources(self)
         self.download_status = ds = DownloadStatus(self)
         self.success = s = QLabel('')
@@ -180,7 +193,7 @@ class DownloadResources(Dialog):
         else:
             replacements, failures = ret
             if failures:
-                tb = ['{}\n\t{}\n'.format(url, err) for url, err in iteritems(failures)]
+                tb = [f'{url}\n\t{err}\n' for url, err in iteritems(failures)]
                 if not replacements:
                     error_dialog(self, _('Download failed'), _(
                         'Failed to download external resources, click "Show details" for more information.'),
@@ -227,7 +240,7 @@ class DownloadResources(Dialog):
             self.bb.setStandardButtons(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Close)
             b = self.bb.button(QDialogButtonBox.StandardButton.Ok)
             b.setText(_('See what &changed'))
-            b.setIcon(QIcon(I('diff.png')))
+            b.setIcon(QIcon.ic('diff.png'))
             connect_lambda(b.clicked, self, lambda self: setattr(self, 'show_diff', True))
             self.bb.setVisible(True)
 
@@ -259,13 +272,14 @@ class DownloadResources(Dialog):
 
 
 if __name__ == '__main__':
-    from calibre.gui2 import Application
     import sys
+
+    from calibre.gui2 import Application
     app = Application([])
     from calibre.gui2.tweak_book import set_current_container
     from calibre.gui2.tweak_book.boss import get_container
     set_current_container(get_container(sys.argv[-1]))
     d = DownloadResources()
-    d.exec_()
+    d.exec()
     print(d.show_diff)
     del d, app

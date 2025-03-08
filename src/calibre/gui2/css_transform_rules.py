@@ -1,23 +1,30 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 # License: GPLv3 Copyright: 2016, Kovid Goyal <kovid at kovidgoyal.net>
 
 
-from qt.core import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QComboBox, QLineEdit,
-    QPushButton, QSize, pyqtSignal, QMenu, QDialogButtonBox, QTextCursor
-)
+from qt.core import QComboBox, QDialogButtonBox, QHBoxLayout, QLabel, QLineEdit, QMenu, QPushButton, QSize, QTextCursor, QVBoxLayout, QWidget, pyqtSignal
 
 from calibre.ebooks.css_transform_rules import (
-    validate_rule, safe_parser, compile_rules, transform_sheet, ACTION_MAP, MATCH_TYPE_MAP, export_rules, import_rules)
-from calibre.gui2 import error_dialog, elided_text, choose_save_file, choose_files
-from calibre.gui2.tag_mapper import (
-    RuleEdit as RE, RuleEditDialog as RuleEditDialogBase, Rules as RulesBase,
-    RulesDialog as RulesDialogBase, RuleItem as RuleItemBase, SaveLoadMixin)
+    ACTION_MAP,
+    MATCH_TYPE_MAP,
+    compile_rules,
+    export_rules,
+    import_rules,
+    safe_parser,
+    transform_sheet,
+    validate_rule,
+)
+from calibre.gui2 import choose_files, choose_save_file, elided_text, error_dialog
+from calibre.gui2.tag_mapper import RuleEdit as RE
+from calibre.gui2.tag_mapper import RuleEditDialog as RuleEditDialogBase
+from calibre.gui2.tag_mapper import RuleItem as RuleItemBase
+from calibre.gui2.tag_mapper import Rules as RulesBase
+from calibre.gui2.tag_mapper import RulesDialog as RulesDialogBase
+from calibre.gui2.tag_mapper import SaveLoadMixin
 from calibre.gui2.widgets2 import Dialog
 from calibre.utils.config import JSONConfig
 from calibre.utils.localization import localize_user_manual_link
-from polyglot.builtins import iteritems, unicode_type
+from polyglot.builtins import iteritems
 
 
 class RuleEdit(QWidget):  # {{{
@@ -132,14 +139,14 @@ class RuleEdit(QWidget):  # {{{
     def rule(self, rule):
         def sc(name):
             c = getattr(self, name)
-            idx = c.findData(unicode_type(rule.get(name, '')))
+            idx = c.findData(str(rule.get(name, '')))
             if idx < 0:
                 idx = 0
             c.setCurrentIndex(idx)
         sc('action'), sc('match_type')
-        self.property.setText(unicode_type(rule.get('property', '')).strip())
-        self.query.setText(unicode_type(rule.get('query', '')).strip())
-        self.action_data.setText(unicode_type(rule.get('action_data', '')).strip())
+        self.property.setText(str(rule.get('property', '')).strip())
+        self.query.setText(str(rule.get('query', '')).strip())
+        self.action_data.setText(str(rule.get('action_data', '')).strip())
         self.update_state()
 
     def validate(self):
@@ -172,7 +179,7 @@ class RuleItem(RuleItemBase):  # {{{
                     match_type=MATCH_TYPE_MAP[rule['match_type']], query=query)
             if rule['action_data']:
                 ad = elided_text(rule['action_data'], font=parent.font(), width=200, pos='right')
-                text += ' <code>%s</code>' % ad
+                text += f' <code>{ad}</code>'
         except Exception:
             import traceback
             traceback.print_exc()
@@ -195,11 +202,16 @@ class Tester(Dialog):  # {{{
 
     DIALOG_TITLE = _('Test style transform rules')
     PREFS_NAME = 'test-style-transform-rules'
-    LABEL = _('Enter a CSS stylesheet below to test')
+    LABEL = _('Enter a CSS stylesheet below and click the "Test" button')
+    SYNTAX = 'css'
+    RESULTS = '/* {} */\n\n'.format(_('Resulting stylesheet'))
 
     def __init__(self, rules, parent=None):
-        self.rules = compile_rules(rules)
+        self.rules = self.compile_rules(rules)
         Dialog.__init__(self, self.DIALOG_TITLE, self.PREFS_NAME, parent=parent)
+
+    def compile_rules(self, rules):
+        return compile_rules(rules)
 
     def setup_ui(self):
         from calibre.gui2.tweak_book.editor.text import TextEdit
@@ -208,7 +220,7 @@ class Tester(Dialog):  # {{{
         self.la = la = QLabel(self.LABEL)
         l.addWidget(la)
         self.css = t = TextEdit(self)
-        t.load_text('/* %s */\n' % _('Enter CSS rules below and click the "Test" button'), 'css')
+        t.load_text('', self.SYNTAX)
         la.setBuddy(t)
         c = t.textCursor()
         c.movePosition(QTextCursor.MoveOperation.End)
@@ -234,7 +246,10 @@ class Tester(Dialog):  # {{{
         css = decl.cssText
         if isinstance(css, bytes):
             css = css.decode('utf-8')
-        self.result.load_text('/* %s */\n\n%s' % (_('Resulting stylesheet'), css), 'css')
+        self.set_result(css)
+
+    def set_result(self, css):
+        self.result.load_text(self.RESULTS + css, self.SYNTAX)
 
     def sizeHint(self):
         return QSize(800, 600)
@@ -245,13 +260,14 @@ class RulesDialog(RulesDialogBase):  # {{{
 
     DIALOG_TITLE = _('Edit style transform rules')
     PREFS_NAME = 'edit-style-transform-rules'
+    PREFS_OBJECT_NAME = 'style-transform-rules'
     RulesClass = Rules
     TesterClass = Tester
 
     def __init__(self, *args, **kw):
         # This has to be loaded on instantiation as it can be shared by
         # multiple processes
-        self.PREFS_OBJECT = JSONConfig('style-transform-rules')
+        self.PREFS_OBJECT = JSONConfig(self.PREFS_OBJECT_NAME)
         RulesDialogBase.__init__(self, *args, **kw)
 # }}}
 
@@ -259,13 +275,20 @@ class RulesDialog(RulesDialogBase):  # {{{
 class RulesWidget(QWidget, SaveLoadMixin):  # {{{
 
     changed = pyqtSignal()
+    PREFS_NAME = 'style-transform-rules'
+    INITIAL_FILE_NAME = 'css-rules.txt'
+    DIR_SAVE_NAME = 'export-style-transform-rules'
+    export_func = export_rules
+    import_func = import_rules
+    TesterClass = Tester
+    RulesClass = Rules
 
     def __init__(self, parent=None):
         self.loaded_ruleset = None
         QWidget.__init__(self, parent)
-        self.PREFS_OBJECT = JSONConfig('style-transform-rules')
+        self.PREFS_OBJECT = JSONConfig(self.PREFS_NAME)
         l = QVBoxLayout(self)
-        self.rules_widget = w = Rules(self)
+        self.rules_widget = w = self.RulesClass(self)
         w.changed.connect(self.changed.emit)
         l.addWidget(w)
         self.h = h = QHBoxLayout()
@@ -286,7 +309,7 @@ class RulesWidget(QWidget, SaveLoadMixin):  # {{{
         b.setToolTip(_('Save this ruleset for later re-use'))
         b.clicked.connect(self.save_ruleset)
         h.addWidget(b)
-        self.export_button = b = QPushButton(_('&Load'), self)
+        self.load_button = b = QPushButton(_('&Load'), self)
         self.load_menu = QMenu(self)
         b.setMenu(self.load_menu)
         b.setToolTip(_('Load a previously saved ruleset'))
@@ -299,17 +322,19 @@ class RulesWidget(QWidget, SaveLoadMixin):  # {{{
         if not rules:
             return error_dialog(self, _('No rules'), _(
                 'There are no rules to export'), show=True)
-        path = choose_save_file(self, 'export-style-transform-rules', _('Choose file for exported rules'), initial_filename='rules.txt')
+        path = choose_save_file(self, self.DIR_SAVE_NAME, _('Choose file for exported rules'), initial_filename=self.INITIAL_FILE_NAME)
         if path:
-            raw = export_rules(rules)
+            f = self.__class__.export_func
+            raw = f(rules)
             with open(path, 'wb') as f:
                 f.write(raw)
 
     def import_rules(self):
-        paths = choose_files(self, 'export-style-transform-rules', _('Choose file to import rules from'), select_only_single_file=True)
+        paths = choose_files(self, self.DIR_SAVE_NAME, _('Choose file to import rules from'), select_only_single_file=True)
         if paths:
+            func = self.__class__.import_func
             with open(paths[0], 'rb') as f:
-                rules = import_rules(f.read())
+                rules = func(f.read())
             self.rules_widget.rules = list(rules) + list(self.rules_widget.rules)
             self.changed.emit()
 
@@ -318,7 +343,7 @@ class RulesWidget(QWidget, SaveLoadMixin):  # {{{
         self.changed.emit()
 
     def test_rules(self):
-        Tester(self.rules_widget.rules, self).exec_()
+        self.TesterClass(self.rules_widget.rules, self).exec()
 
     @property
     def rules(self):
@@ -342,7 +367,7 @@ if __name__ == '__main__':
     d.rules = [
         {'property':'color', 'match_type':'*', 'query':'', 'action':'change', 'action_data':'green'},
     ]
-    d.exec_()
+    d.exec()
     from pprint import pprint
     pprint(d.rules)
     del d, app

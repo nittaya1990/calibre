@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 
 
 __license__ = 'GPL v3'
@@ -10,16 +9,15 @@ from collections import defaultdict
 from threading import Thread
 
 from calibre import browser
-from calibre.ebooks.oeb.base import OEB_DOCS, OEB_STYLES, urlunquote, XHTML_MIME
-from calibre.ebooks.oeb.polish.container import OEB_FONTS
+from calibre.ebooks.oeb.base import OEB_DOCS, OEB_STYLES, XHTML_MIME, urlunquote
+from calibre.ebooks.oeb.polish.check.base import ERROR, INFO, WARN, BaseError
+from calibre.ebooks.oeb.polish.cover import get_raster_cover_name
 from calibre.ebooks.oeb.polish.parsing import parse_html5
 from calibre.ebooks.oeb.polish.replace import remove_links_to
-from calibre.ebooks.oeb.polish.cover import get_raster_cover_name
-from calibre.ebooks.oeb.polish.utils import guess_type, actual_case_for_name, corrected_case_for_name
-from calibre.ebooks.oeb.polish.check.base import BaseError, WARN, INFO
-from polyglot.builtins import iteritems, map, range, itervalues
+from calibre.ebooks.oeb.polish.utils import OEB_FONTS, actual_case_for_name, corrected_case_for_name, guess_type
+from polyglot.builtins import iteritems, itervalues
+from polyglot.queue import Empty, Queue
 from polyglot.urllib import urlparse
-from polyglot.queue import Queue, Empty
 
 
 class BadLink(BaseError):
@@ -33,6 +31,12 @@ class InvalidCharInLink(BadLink):
 
     HELP = _('Windows computers do not allow the : character in filenames. For maximum'
              ' compatibility it is best to not use these in filenames/links to files.')
+
+
+class MalformedURL(BadLink):
+
+    HELP = _('This URL could not be parsed.')
+    level = ERROR
 
 
 class CaseMismatch(BadLink):
@@ -185,7 +189,7 @@ class Bookmarks(BadLink):
     HELP = _(
         'This file stores the bookmarks and last opened information from'
         ' the calibre E-book viewer. You can remove it if you do not'
-        ' need that information, or don\'t want to share it with'
+        " need that information, or don't want to share it with"
         ' other people you send this book to.')
     INDIVIDUAL_FIX = _('Remove this file')
     level = INFO
@@ -227,11 +231,11 @@ class MimetypeMismatch(BaseError):
             c = 0
             while container.has_name(new_name):
                 c += 1
-                new_name = self.file_name.rpartition('.')[0] + ('%d.' % c) + self.change_ext_to
+                new_name = self.file_name.rpartition('.')[0] + f'{c}.' + self.change_ext_to
             rename_files(container, {self.file_name:new_name})
             changed = True
         else:
-            for item in container.opf_xpath('//opf:manifest/opf:item[@href and @media-type="%s"]' % self.opf_mt):
+            for item in container.opf_xpath(f'//opf:manifest/opf:item[@href and @media-type="{self.opf_mt}"]'):
                 name = container.href_to_name(item.get('href'), container.opf_name)
                 if name == self.file_name:
                     changed = True
@@ -343,13 +347,18 @@ def check_links(container):
                         else:
                             a(DanglingLink(_('The linked resource %s does not exist') % fl(href), tname, name, lnum, col))
                 else:
-                    purl = urlparse(href)
-                    if purl.scheme == 'file':
-                        a(FileLink(_('The link %s is a file:// URL') % fl(href), name, lnum, col))
-                    elif purl.path and purl.path.startswith('/') and purl.scheme in {'', 'file'}:
-                        a(LocalLink(_('The link %s points to a file outside the book') % fl(href), name, lnum, col))
-                    elif purl.path and purl.scheme in {'', 'file'} and ':' in urlunquote(purl.path):
-                        a(InvalidCharInLink(_('The link %s contains a : character, this will cause errors on Windows computers') % fl(href), name, lnum, col))
+                    try:
+                        purl = urlparse(href)
+                    except ValueError:
+                        a(MalformedURL(_('The URL {} could not be parsed').format(href), name, lnum, col))
+                    else:
+                        if purl.scheme == 'file':
+                            a(FileLink(_('The link %s is a file:// URL') % fl(href), name, lnum, col))
+                        elif purl.path and purl.path.startswith('/') and purl.scheme in {'', 'file'}:
+                            a(LocalLink(_('The link %s points to a file outside the book') % fl(href), name, lnum, col))
+                        elif purl.path and purl.scheme in {'', 'file'} and ':' in urlunquote(purl.path):
+                            a(InvalidCharInLink(
+                                _('The link %s contains a : character, this will cause errors on Windows computers') % fl(href), name, lnum, col))
 
     spine_docs = {name for name, linear in container.spine_names}
     spine_styles = {tname for name in spine_docs for tname in links_map[name] if container.mime_map.get(tname, None) in OEB_STYLES}
@@ -410,7 +419,8 @@ def check_external_links(container, progress_callback=(lambda num, total:None), 
         return []
     items = Queue()
     ans = []
-    tuple(map(items.put, iteritems(external_links)))
+    for el in iteritems(external_links):
+        items.put(el)
     progress_callback(0, len(external_links))
     done = []
     downloaded_html_ids = {}
@@ -438,13 +448,13 @@ def check_external_links(container, progress_callback=(lambda num, total:None), 
                             except Exception:
                                 ids = downloaded_html_ids[href] = frozenset()
                         if frag not in ids:
-                            ans.append((locations, ValueError('HTML anchor {} not found on the page'.format(frag)), full_href))
+                            ans.append((locations, ValueError(f'HTML anchor {frag} not found on the page'), full_href))
                 res.close()
             finally:
                 done.append(None)
                 progress_callback(len(done), len(external_links))
 
-    workers = [Thread(name="CheckLinks", target=check_links) for i in range(min(10, len(external_links)))]
+    workers = [Thread(name='CheckLinks', target=check_links) for i in range(min(10, len(external_links)))]
     for w in workers:
         w.daemon = True
         w.start()

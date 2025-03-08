@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
 
 
 __license__   = 'GPL v3'
@@ -9,20 +8,17 @@ __docformat__ = 'restructuredtext en'
 import os
 import posixpath
 import re
-from qt.core import (
-    QDialog, QDialogButtonBox, QImageReader, QLabel, QPixmap, QProgressBar, Qt,
-    QTimer, QUrl, QVBoxLayout
-)
-from threading import Thread
 from contextlib import suppress
+from threading import Thread
+
+from qt.core import QDialog, QDialogButtonBox, QImageReader, QLabel, QMimeData, QPixmap, QProgressBar, Qt, QTimer, QUrl, QVBoxLayout
 
 from calibre import as_unicode, browser, prints
-from calibre.constants import DEBUG, iswindows
+from calibre.constants import DEBUG, ismacos, iswindows
 from calibre.gui2 import error_dialog
 from calibre.ptempfile import PersistentTemporaryFile
 from calibre.utils.filenames import make_long_path_useable
 from calibre.utils.imghdr import what
-from polyglot.builtins import unicode_type
 from polyglot.queue import Empty, Queue
 from polyglot.urllib import unquote, urlparse
 
@@ -95,7 +91,7 @@ class DownloadDialog(QDialog):  # {{{
     def start_download(self):
         self.worker.start()
         QTimer.singleShot(50, self.update)
-        self.exec_()
+        self.exec()
         if self.worker.err is not None:
             error_dialog(self.parent(), _('Download failed'),
                 _('Failed to download from %(url)r with error: %(err)s')%dict(
@@ -137,7 +133,7 @@ class DownloadDialog(QDialog):  # {{{
 
 def dnd_has_image(md):
     # Chromium puts image data into application/octet-stream
-    return md.hasImage() or md.hasFormat('application/octet-stream') and what(None, bytes(md.data('application/octet-stream'))) in image_extensions()
+    return md.hasImage() or (md.hasFormat('application/octet-stream') and what(None, bytes(md.data('application/octet-stream'))) in image_extensions())
 
 
 def data_as_string(f, md):
@@ -198,7 +194,7 @@ def dnd_has_extension(md, extensions, allow_all_extensions=False, allow_remote=F
     if DEBUG:
         prints('\nDebugging DND event')
         for f in md.formats():
-            f = unicode_type(f)
+            f = str(f)
             raw = data_as_string(f, md)
             prints(f, len(raw), repr(raw[:300]), '\n')
         print()
@@ -221,7 +217,7 @@ def dnd_has_extension(md, extensions, allow_all_extensions=False, allow_remote=F
 def dnd_get_local_image_and_pixmap(md, image_exts=None):
     if md.hasImage():
         for x in md.formats():
-            x = unicode_type(x)
+            x = str(x)
             if x.startswith('image/'):
                 cdata = bytes(md.data(x))
                 pmap = QPixmap()
@@ -347,7 +343,7 @@ def _get_firefox_pair(md, exts, url, fname):
 
 
 def get_firefox_rurl(md, exts):
-    formats = frozenset([unicode_type(x) for x in md.formats()])
+    formats = frozenset(str(x) for x in md.formats())
     url = fname = None
     if 'application/x-moz-file-promise-url' in formats and \
             'application/x-moz-file-promise-dest-filename' in formats:
@@ -390,3 +386,13 @@ def get_firefox_rurl(md, exts):
 
 def has_firefox_ext(md, exts):
     return bool(get_firefox_rurl(md, exts)[0])
+
+
+def set_urls_from_local_file_paths(md: QMimeData, *paths: str) -> QMimeData:
+    md.setUrls(list(map(QUrl.fromLocalFile, paths)))
+    if ismacos:
+        # see https://bugreports.qt.io/browse/QTBUG-134073
+        raw = bytes(md.data('text/uri-list'))
+        raw = raw.replace(b'[', b'%5B').replace(b']', b'%5D')
+        md.setData('text/uri-list', raw)
+    return md

@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:fdm=marker:ai
 
 
 __license__   = 'GPL v3'
@@ -8,18 +7,38 @@ __docformat__ = 'restructuredtext en'
 
 import weakref
 
-from qt.core import (QWidget, QListWidgetItem, Qt, QToolButton, QLabel,
-        QTabWidget, QGridLayout, QListWidget, QIcon, QLineEdit, QVBoxLayout,
-        QPushButton, QGroupBox, QScrollArea, QHBoxLayout, QComboBox,
-        pyqtSignal, QSizePolicy, QDialog, QDialogButtonBox, QPlainTextEdit,
-        QApplication, QSize)
+from qt.core import (
+    QApplication,
+    QComboBox,
+    QDialog,
+    QDialogButtonBox,
+    QGridLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QIcon,
+    QLabel,
+    QLineEdit,
+    QListWidget,
+    QListWidgetItem,
+    QPlainTextEdit,
+    QPushButton,
+    QScrollArea,
+    QSize,
+    QSizePolicy,
+    Qt,
+    QTabWidget,
+    QToolButton,
+    QVBoxLayout,
+    QWidget,
+    pyqtSignal,
+)
 
 from calibre.ebooks import BOOK_EXTENSIONS
 from calibre.gui2 import error_dialog
+from calibre.gui2.device_drivers.mtp_folder_browser import Browser, IgnoredFolders
 from calibre.gui2.dialogs.template_dialog import TemplateDialog
 from calibre.utils.date import parse_date
-from calibre.gui2.device_drivers.mtp_folder_browser import Browser, IgnoredFolders
-from polyglot.builtins import iteritems, unicode_type, range
+from polyglot.builtins import iteritems
 
 
 class FormatsConfig(QWidget):  # {{{
@@ -39,18 +58,18 @@ class FormatsConfig(QWidget):  # {{{
             item.setCheckState(Qt.CheckState.Checked if fmt in format_map else Qt.CheckState.Unchecked)
 
         self.button_up = b = QToolButton(self)
-        b.setIcon(QIcon(I('arrow-up.png')))
+        b.setIcon(QIcon.ic('arrow-up.png'))
         l.addWidget(b, 0, 1)
         b.clicked.connect(self.up)
 
         self.button_down = b = QToolButton(self)
-        b.setIcon(QIcon(I('arrow-down.png')))
+        b.setIcon(QIcon.ic('arrow-down.png'))
         l.addWidget(b, 2, 1)
         b.clicked.connect(self.down)
 
     @property
     def format_map(self):
-        return [unicode_type(self.f.item(i).data(Qt.ItemDataRole.UserRole) or '') for i in
+        return [str(self.f.item(i).data(Qt.ItemDataRole.UserRole) or '') for i in
                 range(self.f.count()) if self.f.item(i).checkState()==Qt.CheckState.Checked]
 
     def validate(self):
@@ -97,12 +116,12 @@ class TemplateConfig(QWidget):  # {{{
 
     @property
     def template(self):
-        return unicode_type(self.t.text()).strip()
+        return str(self.t.text()).strip()
 
     def edit_template(self):
         t = TemplateDialog(self, self.template)
         t.setWindowTitle(_('Edit template'))
-        if t.exec_():
+        if t.exec():
             self.t.setText(t.rule[1])
 
     def validate(self):
@@ -114,7 +133,7 @@ class TemplateConfig(QWidget):  # {{{
         except Exception as err:
             error_dialog(self, _('Invalid template'),
                     '<p>'+_('The template %s is invalid:')%tmpl +
-                    '<br>'+unicode_type(err), show=True)
+                    '<br>'+str(err), show=True)
 
             return False
 # }}}
@@ -137,7 +156,7 @@ class SendToConfig(QWidget):  # {{{
         l.addWidget(t, 1, 0)
         self.b = b = QToolButton()
         l.addWidget(b, 1, 1)
-        b.setIcon(QIcon(I('document_open.png')))
+        b.setIcon(QIcon.ic('document_open.png'))
         b.clicked.connect(self.browse)
         b.setToolTip(_('Browse for a folder on the device'))
         self._device = weakref.ref(device)
@@ -149,13 +168,13 @@ class SendToConfig(QWidget):  # {{{
     def browse(self):
         b = Browser(self.device.filesystem_cache, show_files=False,
                 parent=self)
-        if b.exec_() == QDialog.DialogCode.Accepted and b.current_item is not None:
+        if b.exec() == QDialog.DialogCode.Accepted and b.current_item is not None:
             sid, path = b.current_item
             self.t.setText('/'.join(path[1:]))
 
     @property
     def value(self):
-        ans = [x.strip() for x in unicode_type(self.t.text()).strip().split(',')]
+        ans = [x.strip() for x in str(self.t.text()).strip().split(',')]
         return [x for x in ans if x]
 
 # }}}
@@ -179,7 +198,7 @@ class IgnoredDevices(QWidget):  # {{{
                 iteritems(devs)]
         for dev, x in sorted(devs, key=lambda x:x[1][1], reverse=True):
             name = x[0]
-            name = '%s [%s]'%(name, dev)
+            name = f'{name} [{dev}]'
             item = QListWidgetItem(name, f)
             item.setData(Qt.ItemDataRole.UserRole, dev)
             item.setFlags(Qt.ItemFlag.ItemIsEnabled|Qt.ItemFlag.ItemIsUserCheckable|Qt.ItemFlag.ItemIsSelectable)
@@ -187,21 +206,21 @@ class IgnoredDevices(QWidget):  # {{{
 
     @property
     def blacklist(self):
-        return [unicode_type(self.f.item(i).data(Qt.ItemDataRole.UserRole) or '') for i in
+        return [str(self.f.item(i).data(Qt.ItemDataRole.UserRole) or '') for i in
                 range(self.f.count()) if self.f.item(i).checkState()==Qt.CheckState.Checked]
 
     def ignore_device(self, snum):
         for i in range(self.f.count()):
             i = self.f.item(i)
-            c = unicode_type(i.data(Qt.ItemDataRole.UserRole) or '')
+            c = str(i.data(Qt.ItemDataRole.UserRole) or '')
             if c == snum:
                 i.setCheckState(Qt.CheckState.Checked)
                 break
 
 # }}}
 
-# Rules {{{
 
+# Rules {{{
 
 class Rule(QWidget):
 
@@ -226,10 +245,10 @@ class Rule(QWidget):
         l.addWidget(f)
         self.b = b = QToolButton()
         l.addWidget(b)
-        b.setIcon(QIcon(I('document_open.png')))
+        b.setIcon(QIcon.ic('document_open.png'))
         b.clicked.connect(self.browse)
         b.setToolTip(_('Browse for a folder on the device'))
-        self.rb = rb = QPushButton(QIcon(I('list_remove.png')),
+        self.rb = rb = QPushButton(QIcon.ic('list_remove.png'),
                 _('&Remove rule'), self)
         l.addWidget(rb)
         rb.clicked.connect(self.removed)
@@ -255,7 +274,7 @@ class Rule(QWidget):
     def browse(self):
         b = Browser(self.device.filesystem_cache, show_files=False,
                 parent=self)
-        if b.exec_() == QDialog.DialogCode.Accepted and b.current_item is not None:
+        if b.exec() == QDialog.DialogCode.Accepted and b.current_item is not None:
             sid, path = b.current_item
             self.folder.setText('/'.join(path[1:]))
 
@@ -264,10 +283,10 @@ class Rule(QWidget):
 
     @property
     def rule(self):
-        folder = unicode_type(self.folder.text()).strip()
+        folder = str(self.folder.text()).strip()
         if folder:
             return (
-                unicode_type(self.fmt.itemData(self.fmt.currentIndex()) or ''),
+                str(self.fmt.itemData(self.fmt.currentIndex()) or ''),
                 folder
                 )
         return None
@@ -303,7 +322,7 @@ class FormatRules(QGroupBox):
         if not self.widgets:
             self.add_rule()
 
-        self.b = b = QPushButton(QIcon(I('plus.png')), _('Add a &new rule'))
+        self.b = b = QPushButton(QIcon.ic('plus.png'), _('Add a &new rule'))
         l.addWidget(b)
         b.clicked.connect(self.add_rule)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Ignored)
@@ -376,17 +395,17 @@ class MTPConfig(QTabWidget):
             self.base.la = la = QLabel(_(
                 'Choose the formats to send to the %s')%self.device.current_friendly_name)
             la.setWordWrap(True)
-            self.base.b = b = QPushButton(QIcon(I('list_remove.png')),
+            self.base.b = b = QPushButton(QIcon.ic('list_remove.png'),
                 _('&Ignore the %s in calibre')%device.current_friendly_name,
                 self.base)
             b.clicked.connect(self.ignore_device)
             self.config_ign_folders_button = cif = QPushButton(
-                QIcon(I('tb_folder.png')), _('Change scanned &folders'))
+                QIcon.ic('tb_folder.png'), _('Change scanned &folders'))
             cif.setStyleSheet(
                     'QPushButton { font-weight: bold; }')
             if highlight_ignored_folders:
                 cif.setIconSize(QSize(64, 64))
-            self.show_debug_button = bd = QPushButton(QIcon(I('debug.png')),
+            self.show_debug_button = bd = QPushButton(QIcon.ic('debug.png'),
                     _('Show device information'))
             bd.clicked.connect(self.show_debug_info)
             cif.clicked.connect(self.change_ignored_folders)
@@ -426,14 +445,14 @@ class MTPConfig(QTabWidget):
         bb.rejected.connect(d.reject)
         l.addWidget(bb)
         bb.addButton(_('Copy to clipboard'), QDialogButtonBox.ButtonRole.ActionRole)
-        bb.clicked.connect(lambda :
+        bb.clicked.connect(lambda:
                 QApplication.clipboard().setText(v.toPlainText()))
-        d.exec_()
+        d.exec()
 
     def change_ignored_folders(self):
         d = IgnoredFolders(self.device,
                      self.current_ignored_folders, parent=self)
-        if d.exec_() == QDialog.DialogCode.Accepted:
+        if d.exec() == QDialog.DialogCode.Accepted:
             self.current_ignored_folders = d.ignored_folders
 
     def ignore_device(self):
@@ -515,7 +534,7 @@ class SendError(QDialog):
         bb.rejected.connect(self.reject)
         l.addWidget(bb)
         self.setWindowTitle(_('Cannot send to %s')%error.folder)
-        self.setWindowIcon(QIcon(I('dialog_error.png')))
+        self.setWindowIcon(QIcon.ic('dialog_error.png'))
 
         self.resize(self.sizeHint())
 
@@ -528,9 +547,9 @@ class SendError(QDialog):
 
 
 if __name__ == '__main__':
-    from calibre.gui2 import Application
     from calibre.devices.mtp.driver import MTP_DEVICE
     from calibre.devices.scanner import DeviceScanner
+    from calibre.gui2 import Application
     s = DeviceScanner()
     s.scan()
     app = Application([])
@@ -547,6 +566,6 @@ if __name__ == '__main__':
     d.l.addWidget(bb)
     bb.accepted.connect(d.accept)
     bb.rejected.connect(d.reject)
-    if d.exec_() == QDialog.DialogCode.Accepted:
+    if d.exec() == QDialog.DialogCode.Accepted:
         cw.commit()
     dev.shutdown()

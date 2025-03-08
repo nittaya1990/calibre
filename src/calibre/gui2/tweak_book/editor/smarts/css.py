@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 
 
 __license__ = 'GPL v3'
@@ -12,8 +11,14 @@ from qt.core import Qt, QTextCursor
 from calibre.gui2.tweak_book import current_container
 from calibre.gui2.tweak_book.editor.smarts import NullSmarts
 from calibre.gui2.tweak_book.editor.smarts.utils import (
-    no_modifiers, get_leading_whitespace_on_block, get_text_before_cursor,
-    smart_home, smart_backspace, smart_tab, expand_tabs)
+    expand_tabs,
+    get_leading_whitespace_on_block,
+    get_text_before_cursor,
+    no_modifiers,
+    smart_backspace,
+    smart_home,
+    smart_tab,
+)
 
 
 def find_rule(raw, rule_address):
@@ -67,7 +72,7 @@ class Smarts(NullSmarts):
         if key == Qt.Key.Key_Home and smart_home(editor, ev):
             return True
 
-        if key == Qt.Key.Key_Tab:
+        if key in (Qt.Key.Key_Tab, Qt.Key.Key_Backtab):
             mods = ev.modifiers()
             if not mods & Qt.KeyboardModifier.ControlModifier and smart_tab(editor, ev):
                 return True

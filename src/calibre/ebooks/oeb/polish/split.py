@@ -1,18 +1,18 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 
 
 __license__ = 'GPL v3'
 __copyright__ = '2013, Kovid Goyal <kovid at kovidgoyal.net>'
 
-import copy, os, re
-from polyglot.builtins import map, string_or_bytes, range
+import copy
+import os
+import re
 
-from calibre.ebooks.oeb.base import barename, XPNSMAP, XPath, OPF, XHTML, OEB_DOCS
+from calibre.ebooks.oeb.base import OEB_DOCS, OPF, XHTML, XPNSMAP, XPath, barename
 from calibre.ebooks.oeb.polish.errors import MalformedMarkup
-from calibre.ebooks.oeb.polish.toc import node_from_loc
 from calibre.ebooks.oeb.polish.replace import LinkRebaser
-from polyglot.builtins import iteritems, unicode_type
+from calibre.ebooks.oeb.polish.toc import node_from_loc
+from polyglot.builtins import iteritems, string_or_bytes
 from polyglot.urllib import urlparse
 
 
@@ -184,7 +184,7 @@ def split(container, name, loc_or_xpath, before=True, totals=None):
     '''
 
     root = container.parsed(name)
-    if isinstance(loc_or_xpath, unicode_type):
+    if isinstance(loc_or_xpath, str):
         split_point = root.xpath(loc_or_xpath)[0]
     else:
         try:
@@ -215,7 +215,7 @@ def split(container, name, loc_or_xpath, before=True, totals=None):
     nname, s = None, 0
     while not nname or container.exists(nname):
         s += 1
-        nname = '%s_split%d.%s' % (base, s, ext)
+        nname = f'{base}_split{s}.{ext}'
     manifest_item = container.generate_item(nname, media_type=container.mime_map[name])
     bottom_name = container.href_to_name(manifest_item.get('href'), container.opf_name)
 
@@ -231,12 +231,12 @@ def split(container, name, loc_or_xpath, before=True, totals=None):
                 purl = urlparse(url)
                 if purl.fragment in anchors_in_top:
                     if r is root2:
-                        a.set('href', '%s#%s' % (container.name_to_href(name, bottom_name), purl.fragment))
+                        a.set('href', f'{container.name_to_href(name, bottom_name)}#{purl.fragment}')
                     else:
                         a.set('href', '#' + purl.fragment)
                 elif purl.fragment in anchors_in_bottom:
                     if r is root1:
-                        a.set('href', '%s#%s' % (container.name_to_href(bottom_name, name), purl.fragment))
+                        a.set('href', f'{container.name_to_href(bottom_name, name)}#{purl.fragment}')
                     else:
                         a.set('href', '#' + purl.fragment)
 
@@ -282,12 +282,12 @@ def multisplit(container, name, xpath, before=True):
             raise AbortError('Cannot split on the <body> tag')
 
     for i, tag in enumerate(nodes):
-        tag.set('calibre-split-point', unicode_type(i))
+        tag.set('calibre-split-point', str(i))
 
     current = name
     all_names = [name]
     for i in range(len(nodes)):
-        current = split(container, current, '//*[@calibre-split-point="%d"]' % i, before=before)
+        current = split(container, current, f'//*[@calibre-split-point="{i}"]', before=before)
         all_names.append(current)
 
     for x in all_names:
@@ -345,7 +345,7 @@ def unique_anchor(seen_anchors, current):
     ans = current
     while ans in seen_anchors:
         c += 1
-        ans = '%s_%d' % (current, c)
+        ans = f'{current}_{c}'
     return ans
 
 
@@ -503,11 +503,11 @@ def merge(container, category, names, master):
     :param master: Which of the merged files is the *master* file, that is, the file that will remain after merging.
     '''
     if category not in {'text', 'styles'}:
-        raise AbortError('Cannot merge files of type: %s' % category)
+        raise AbortError(f'Cannot merge files of type: {category}')
     if len(names) < 2:
         raise AbortError('Must specify at least two files to be merged')
     if master not in names:
-        raise AbortError('The master file (%s) must be one of the files being merged' % master)
+        raise AbortError(f'The master file ({master}) must be one of the files being merged')
 
     if category == 'text':
         merge_html(container, names, master)

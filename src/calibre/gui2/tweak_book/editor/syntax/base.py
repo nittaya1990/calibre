@@ -1,17 +1,16 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 
 __license__ = 'GPL v3'
 __copyright__ = '2013, Kovid Goyal <kovid at kovidgoyal.net>'
 
 from collections import defaultdict, deque
 
-from qt.core import QTextCursor, QTextBlockUserData, QTextLayout, QTimer
+from qt.core import QTextBlock, QTextBlockUserData, QTextCursor, QTextFormat, QTextLayout, QTimer
 
-from ..themes import highlight_to_char_format
-from calibre.gui2.tweak_book.widgets import BusyCursor
+from calibre.gui2.tweak_book.editor.themes import highlight_to_char_format
+from calibre.gui2.widgets import BusyCursor
 from calibre.utils.icu import utf16_length
-from polyglot.builtins import iteritems, unicode_type
+from polyglot.builtins import iteritems
 
 
 def run_loop(user_data, state_map, formats, text):
@@ -65,9 +64,11 @@ class SimpleUserData(QTextBlockUserData):
 
 class SyntaxHighlighter:
 
-    create_formats_func = lambda highlighter: {}
+    def create_formats_func(highlighter):
+        return {}
     spell_attributes = ()
-    tag_ok_for_spell = lambda x: False
+    def tag_ok_for_spell(x):
+        return False
     user_data_factory = SimpleUserData
 
     def __init__(self):
@@ -96,7 +97,7 @@ class SyntaxHighlighter:
             c.beginEditBlock()
             blk = old_doc.begin()
             while blk.isValid():
-                blk.layout().clearAdditionalFormats()
+                blk.layout().clearFormats()
                 blk = blk.next()
             c.endEditBlock()
         self.doc = self.doc_name = None
@@ -215,7 +216,7 @@ class SyntaxHighlighter:
             start_state = self.user_data_factory().state
         ud.clear(state=start_state, doc_name=self.doc_name)  # Ensure no stale user data lingers
         formats = []
-        for i, num, fmt in run_loop(ud, self.state_map, self.formats, unicode_type(block.text())):
+        for i, num, fmt in run_loop(ud, self.state_map, self.formats, str(block.text())):
             if fmt is not None:
                 r = QTextLayout.FormatRange()
                 r.start, r.length, r.format = i, num, fmt
@@ -238,4 +239,12 @@ class SyntaxHighlighter:
                     r.start += preedit_length
                 elif r.start + r.length >= preedit_start:
                     r.length += preedit_length
-        layout.setAdditionalFormats(formats)
+        layout.setFormats(formats)
+
+    def formats_for_line(self, block: QTextBlock, start, length):
+        layout = block.layout()
+        start_in_block = start - block.position()
+        limit = start_in_block + length
+        for f in layout.formats():
+            if f.start >= start_in_block and f.start < limit and f.format.hasProperty(QTextFormat.Property.BackgroundBrush):
+                yield f

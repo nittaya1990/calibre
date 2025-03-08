@@ -1,19 +1,20 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:fdm=marker:ai
 
 
 __license__   = 'GPL v3'
 __copyright__ = '2012, Kovid Goyal <kovid at kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
 
-import os, sys, atexit
+import atexit
+import os
+import sys
 from itertools import product
 
-from calibre import prints, isbytestring
+from calibre import isbytestring, prints
 from calibre.constants import filesystem_encoding
-from calibre.utils.fonts.utils import (is_truetype_font, get_font_names,
-        get_font_characteristics)
-from polyglot.builtins import iteritems, unicode_type
+from calibre.utils.fonts.utils import get_font_characteristics, get_font_names, is_truetype_font
+from calibre.utils.resources import get_path as P
+from polyglot.builtins import iteritems
 
 
 class WinFonts:
@@ -26,7 +27,7 @@ class WinFonts:
 
         for f in ('Serif', 'Sans', 'Mono'):
             base = 'fonts/liberation/Liberation%s-%s.ttf'
-            self.app_font_families['Liberation %s'%f] = m = {}
+            self.app_font_families[f'Liberation {f}'] = m = {}
             for weight, is_italic in product((self.w.FW_NORMAL, self.w.FW_BOLD), (False, True)):
                 name = {(self.w.FW_NORMAL, False):'Regular',
                         (self.w.FW_NORMAL, True):'Italic',
@@ -58,7 +59,7 @@ class WinFonts:
         return ft
 
     def fonts_for_family(self, family, normalize=True):
-        family = unicode_type(family)
+        family = str(family)
         ans = {}
         for weight, is_italic in product((self.w.FW_NORMAL, self.w.FW_BOLD), (False, True)):
             if family in self.app_font_families:
@@ -71,22 +72,20 @@ class WinFonts:
                 try:
                     data = self.w.font_data(family, is_italic, weight)
                 except Exception as e:
-                    prints('Failed to get font data for font: %s [%s] with error: %s'%
-                            (family, self.get_normalized_name(is_italic, weight), e))
+                    prints(f'Failed to get font data for font: {family} [{self.get_normalized_name(is_italic, weight)}] with error: {e}')
                     continue
 
             ok, sig = is_truetype_font(data)
             if not ok:
-                prints('Not a supported font, sfnt_version: %r'%sig)
+                prints(f'Not a supported font, sfnt_version: {sig!r}')
                 continue
             ext = 'otf' if sig == b'OTTO' else 'ttf'
 
             try:
                 weight, is_italic, is_bold, is_regular = get_font_characteristics(data)[:4]
             except Exception as e:
-                prints('Failed to get font characteristic for font: %s [%s]'
-                        ' with error: %s'%(family,
-                            self.get_normalized_name(is_italic, weight), e))
+                prints(f'Failed to get font characteristic for font: {family} [{self.get_normalized_name(is_italic, weight)}]'
+                        f' with error: {e}')
                 continue
 
             try:

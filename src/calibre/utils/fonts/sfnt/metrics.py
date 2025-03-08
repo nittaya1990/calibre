@@ -1,18 +1,15 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:fdm=marker:ai
 
 
 __license__   = 'GPL v3'
 __copyright__ = '2012, Kovid Goyal <kovid at kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
 
-from polyglot.builtins import map, unicode_type
-from calibre.utils.fonts.utils import get_all_font_names
 from calibre.utils.fonts.sfnt.container import UnsupportedFont
+from calibre.utils.fonts.utils import get_all_font_names
 
 
 class FontMetrics:
-
     '''
     Get various metrics for the specified sfnt. All the metrics are returned in
     units of pixels. To calculate a metric you have to specify the font size
@@ -23,7 +20,7 @@ class FontMetrics:
         for table in (b'head', b'hhea', b'hmtx', b'cmap', b'OS/2', b'post',
                       b'name', b'maxp'):
             if table not in sfnt:
-                raise UnsupportedFont('This font has no %s table'%table)
+                raise UnsupportedFont(f'This font has no {table} table')
         self.sfnt = sfnt
 
         self.head = self.sfnt[b'head']
@@ -45,7 +42,7 @@ class FontMetrics:
         self._sig = hash(self.sfnt[b'name'].raw)
 
         # Metrics for embedding in PDF
-        pdf_scale = self.pdf_scale = lambda x:int(round(x*1000./self.units_per_em))
+        pdf_scale = self.pdf_scale = lambda x: int(round(x*1000./self.units_per_em))
         self.pdf_ascent, self.pdf_descent = map(pdf_scale,
                         (self.os2.typo_ascender, self.os2.typo_descender))
         self.pdf_bbox = tuple(map(pdf_scale, self.bbox))
@@ -94,7 +91,7 @@ class FontMetrics:
         Return the advance widths (in pixels) for all glyphs corresponding to
         the characters in string at the specified pixel_size and stretch factor.
         '''
-        if not isinstance(string, unicode_type):
+        if not isinstance(string, str):
             raise ValueError('Must supply a unicode object')
         chars = tuple(map(ord, string))
         cmap = self.cmap.get_character_map(chars)
@@ -115,6 +112,7 @@ class FontMetrics:
 
 if __name__ == '__main__':
     import sys
+
     from calibre.utils.fonts.sfnt.container import Sfnt
     with open(sys.argv[-1], 'rb') as f:
         raw = f.read()

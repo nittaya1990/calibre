@@ -1,6 +1,3 @@
-# -*- coding: utf-8 -*-
-
-
 __license__ = 'GPL 3'
 __copyright__ = '2011, John Schember <john@nachtimwald.com>'
 __docformat__ = 'restructuredtext en'
@@ -9,14 +6,14 @@ from contextlib import closing
 
 from qt.core import QUrl
 
-from calibre import (browser, guess_extension)
+from calibre import browser, guess_extension
 from calibre.gui2 import open_url
-from calibre.utils.xml_parse import safe_xml_fromstring
 from calibre.gui2.store import StorePlugin
 from calibre.gui2.store.search_result import SearchResult
 from calibre.gui2.store.web_store_dialog import WebStoreDialog
 from calibre.utils.opensearch.description import Description
 from calibre.utils.opensearch.query import Query
+from calibre.utils.xml_parse import safe_xml_fromstring
 
 
 def open_search(url, query, max_results=10, timeout=60):
@@ -96,10 +93,9 @@ class OpenSearchOPDSStore(StorePlugin):
             d = WebStoreDialog(self.gui, self.web_url, parent, detail_item, create_browser=self.create_browser)
             d.setWindowTitle(self.name)
             d.set_tags(self.config.get('tags', ''))
-            d.exec_()
+            d.exec()
 
     def search(self, query, max_results=10, timeout=60):
         if not getattr(self, 'open_search_url', None):
             return
-        for result in open_search(self.open_search_url, query, max_results=max_results, timeout=timeout):
-            yield result
+        yield from open_search(self.open_search_url, query, max_results=max_results, timeout=timeout)

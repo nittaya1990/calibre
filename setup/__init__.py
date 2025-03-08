@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
 
 
 __license__   = 'GPL v3'
@@ -7,20 +6,18 @@ __copyright__ = '2009, Kovid Goyal <kovid@kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
 
 import errno
+import hashlib
 import os
-import platform
 import re
 import shutil
 import subprocess
 import sys
 import tempfile
 import time
-import hashlib
 from contextlib import contextmanager
 from functools import lru_cache
 
-is64bit = platform.architecture()[0] == '64bit'
-iswindows = re.search('win(32|64)', sys.platform)
+iswindows = re.search(r'win(32|64)', sys.platform)
 ismacos = 'darwin' in sys.platform
 isfreebsd = 'freebsd' in sys.platform
 isnetbsd = 'netbsd' in sys.platform
@@ -28,6 +25,7 @@ isdragonflybsd = 'dragonfly' in sys.platform
 isbsd = isnetbsd or isfreebsd or isdragonflybsd
 ishaiku = 'haiku1' in sys.platform
 islinux = not ismacos and not iswindows and not isbsd and not ishaiku
+is_ci = os.environ.get('CI', '').lower() == 'true'
 sys.setup_dir = os.path.dirname(os.path.abspath(__file__))
 SRC = os.path.abspath(os.path.join(os.path.dirname(sys.setup_dir), 'src'))
 sys.path.insert(0, SRC)
@@ -48,9 +46,13 @@ def newer(targets, sources):
     for f in targets:
         if not os.path.exists(f):
             return True
-    ttimes = map(lambda x: os.stat(x).st_mtime, targets)
-    stimes = map(lambda x: os.stat(x).st_mtime, sources)
-    newest_source, oldest_target = max(stimes), min(ttimes)
+    ttimes = (os.stat(x).st_mtime for x in targets)
+    oldest_target = min(ttimes)
+    try:
+        stimes = (os.stat(x).st_mtime for x in sources)
+        newest_source = max(stimes)
+    except FileNotFoundError:
+        newest_source = oldest_target +1
     return newest_source > oldest_target
 
 
@@ -72,6 +74,10 @@ def download_securely(url):
     # We use curl here as on some OSes (OS X) when bootstrapping calibre,
     # python will be unable to validate certificates until after cacerts is
     # installed
+    if is_ci and iswindows:
+        # curl is failing for wikipedia urls on CI (used for browser_data)
+        from urllib.request import urlopen
+        return urlopen(url).read()
     if not curl_supports_etags():
         return subprocess.check_output(['curl', '-fsSL', url])
     url_hash = hashlib.sha1(url.encode('utf-8')).hexdigest()
@@ -92,7 +98,7 @@ def build_cache_dir():
         _cache_dir_built = True
         try:
             os.mkdir(ans)
-        except EnvironmentError as err:
+        except OSError as err:
             if err.errno != errno.EEXIST:
                 raise
     return ans
@@ -100,7 +106,7 @@ def build_cache_dir():
 
 def require_git_master(branch='master'):
     if subprocess.check_output(['git', 'symbolic-ref', '--short', 'HEAD']).decode('utf-8').strip() != branch:
-        raise SystemExit('You must be in the {} git branch'.format(branch))
+        raise SystemExit(f'You must be in the {branch} git branch')
 
 
 def require_clean_git():
@@ -120,7 +126,7 @@ def initialize_constants():
     with open(os.path.join(SRC, 'calibre/constants.py'), 'rb') as f:
         src = f.read().decode('utf-8')
     nv = re.search(r'numeric_version\s+=\s+\((\d+), (\d+), (\d+)\)', src)
-    __version__ = '%s.%s.%s'%(nv.group(1), nv.group(2), nv.group(3))
+    __version__ = '.'.join((nv.group(1), nv.group(2), nv.group(3)))
     __appname__ = re.search(r'__appname__\s+=\s+(u{0,1})[\'"]([^\'"]+)[\'"]',
             src).group(2)
     with open(os.path.join(SRC, 'calibre/linux.py'), 'rb') as sf:
@@ -161,7 +167,7 @@ def get_warnings():
 
 def edit_file(path):
     return subprocess.Popen([
-        'vim', '-c', 'ALELint', '-c', 'ALEFirst', '-S', os.path.join(SRC, '../session.vim'), '-f', path
+        os.environ.get('EDITOR', 'vim'), '-S', os.path.join(SRC, '../session.vim'), '-f', path
     ]).wait() == 0
 
 
@@ -210,7 +216,7 @@ class Command:
 
     def running(self, cmd):
         from setup.commands import command_names
-        if os.environ.get('CI'):
+        if is_ci:
             self.info('::group::' + command_names[cmd])
         self.info('\n*')
         self.info('* Running', command_names[cmd])
@@ -225,8 +231,8 @@ class Command:
         st = time.time()
         self.running(cmd)
         cmd.run(opts)
-        self.info('* %s took %.1f seconds' % (command_names[cmd], time.time() - st))
-        if os.environ.get('CI'):
+        self.info(f'* {command_names[cmd]} took {time.time() - st:.1f} seconds')
+        if is_ci:
             self.info('::endgroup::')
 
     def run_all(self, opts):
@@ -281,17 +287,12 @@ class Command:
             shutil.rmtree(ans)
 
 
-def installer_name(ext, is64bit=False):
-    if is64bit and ext == 'msi':
-        return 'dist/%s-64bit-%s.msi'%(__appname__, __version__)
-    if ext in ('exe', 'msi'):
-        return 'dist/%s-%s.%s'%(__appname__, __version__, ext)
-    if ext == 'dmg':
-        if is64bit:
-            return 'dist/%s-%s-x86_64.%s'%(__appname__, __version__, ext)
-        return 'dist/%s-%s.%s'%(__appname__, __version__, ext)
-
-    ans = 'dist/%s-%s-i686.%s'%(__appname__, __version__, ext)
-    if is64bit:
-        ans = ans.replace('i686', 'x86_64')
-    return ans
+def installer_names(include_source=True):
+    base = f'dist/{__appname__}'
+    yield f'{base}-64bit-{__version__}.msi'
+    yield f'{base}-{__version__}.dmg'
+    yield f'{base}-portable-installer-{__version__}.exe'
+    for arch in ('x86_64', 'arm64'):
+        yield f'{base}-{__version__}-{arch}.txz'
+    if include_source:
+        yield f'{base}-{__version__}.tar.xz'

@@ -18,9 +18,16 @@ First create some empty top level directory and run the following commands::
     git clone https://github.com/kovidgoyal/bypy.git
     git clone https://github.com/kovidgoyal/calibre.git
     cd calibre
+
+Now we need to bootstrap calibre, for which all its Linux build dependencies
+must have already been installed (see the `Dependencies
+<https://calibre-ebook.com/download_linux>`_ section of the Linux installation
+page for details). Once the dependencies are installed, run::
+
     ./setup.py bootstrap
 
-To make the Windows and macOS builds it uses QEMU VMs. Instructions on
+All building is done inside QEMU VMs. Linux VMs are auto-created as needed,
+Windows and macOS VMs must be created manually. Instructions on
 creating the VMs are in the bypy repo under :file:`virtual_machine/README.rst`.
 Required software for the VMs are listed in :file:`bypy/windows.conf` and
 :file:`bypy/macos.conf`.
@@ -28,10 +35,10 @@ Required software for the VMs are listed in :file:`bypy/windows.conf` and
 Linux
 -------
 
-To build the 64bit and 32bit dependencies for calibre, run::
+To build the Intel and ARM dependencies for calibre, run::
 
     ./setup.py build_dep linux
-    ./setup.py build_dep linux 32
+    ./setup.py build_dep linux-arm64
 
 The output (after a very long time) will be in :literal:`bypy/b/linux/[32|64]`
 
@@ -39,7 +46,7 @@ Now you can build the calibre Linux tarballs with::
 
     ./setup.py linux
 
-The output will be in :literal:`dist`
+The output will be in :file:`dist`
 
 
 macOS
@@ -56,7 +63,7 @@ Now you can build the calibre ``.dmg`` with::
 
     ./setup.py osx --dont-sign --dont-notarize
 
-The output will be in :literal:`dist`
+The output will be in :file:`dist`
 
 
 Windows
@@ -68,11 +75,10 @@ Make sure all software mentioned in :file:`bypy/windows.conf` is installed.
 To build the dependencies for calibre, run::
 
     ./setup.py build_dep windows
-    ./setup.py build_dep windows 32
 
-The output (after a very long time) will be in :literal:`bypy/b/windows/[32|64]`.
+The output (after a very long time) will be in :literal:`bypy/b/windows/64`.
 Now you can build the calibre windows installers with::
 
-    ./setup.py win --dont-sign
+    ./setup.py win64 --dont-sign
 
-The output will be in :literal:`dist`
+The output will be in :file:`dist`

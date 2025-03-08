@@ -1,14 +1,16 @@
 #!/usr/bin/env python
 # vim:fileencoding=utf-8
-from __future__ import unicode_literals, division, absolute_import, print_function
+from __future__ import absolute_import, division, print_function, unicode_literals
+
 from calibre.web.feeds.news import BasicNewsRecipe
+
 # author:  <lionel.plais@ilp-web.net>
 
 
 class LePeupleBreton(BasicNewsRecipe):
     title = 'Le Peuple Breton'
     __author__ = 'Lionel Plais'
-    description = u'Aujourd\'hui, être libre c\'est être informé'
+    description = u"Aujourd'hui, être libre c'est être informé"
     oldest_article = 90
     language = 'fr'
     cover_img_url = 'http://lepeuplebreton.bzh/wp-content/uploads/2017/11/le-peuple-breton-logo.jpg'

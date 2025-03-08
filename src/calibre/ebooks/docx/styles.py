@@ -1,12 +1,11 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 
 
 __license__ = 'GPL v3'
 __copyright__ = '2013, Kovid Goyal <kovid at kovidgoyal.net>'
 
 import textwrap
-from collections import OrderedDict, Counter
+from collections import Counter, OrderedDict
 
 from calibre.ebooks.docx.block_styles import ParagraphStyle, inherit, twips
 from calibre.ebooks.docx.char_styles import RunStyle
@@ -15,7 +14,6 @@ from polyglot.builtins import iteritems, itervalues
 
 
 class PageProperties:
-
     '''
     Class representing page level properties (page size/margins) read from
     sectPr elements.
@@ -105,7 +103,6 @@ class Style:
 
 
 class Styles:
-
     '''
     Collection of all styles defined in the document. Used to get the final styles applicable to elements in the document markup.
     '''
@@ -124,8 +121,7 @@ class Styles:
         self.default_paragraph_style = self.default_character_style = None
 
     def __iter__(self):
-        for s in itervalues(self.id_map):
-            yield s
+        yield from itervalues(self.id_map)
 
     def __getitem__(self, key):
         return self.id_map[key]
@@ -257,7 +253,7 @@ class Styles:
 
             if is_numbering and not is_section_break:
                 num_id, lvl = direct_formatting.numbering_id, direct_formatting.numbering_level
-                p.set('calibre_num_id', '%s:%s' % (lvl, num_id))
+                p.set('calibre_num_id', f'{lvl}:{num_id}')
                 ps = self.numbering.get_para_style(num_id, lvl)
                 if ps is not None:
                     parent_styles.append(ps)
@@ -265,7 +261,7 @@ class Styles:
                 not is_numbering and not is_section_break and linked_style is not None and has_numbering(linked_style.paragraph_style)
             ):
                 num_id, lvl = linked_style.paragraph_style.numbering_id, linked_style.paragraph_style.numbering_level
-                p.set('calibre_num_id', '%s:%s' % (lvl, num_id))
+                p.set('calibre_num_id', f'{lvl}:{num_id}')
                 is_numbering = True
                 ps = self.numbering.get_para_style(num_id, lvl)
                 if ps is not None:
@@ -389,7 +385,7 @@ class Styles:
 
         fs = promote_most_common(block_styles, 'font_size', int(self.body_font_size[:2]))
         if fs is not None:
-            self.body_font_size = '%.3gpt' % fs
+            self.body_font_size = f'{fs:.3g}pt'
 
         color = promote_most_common(block_styles, 'color', self.body_color, inherit_means='currentColor')
         if color is not None:
@@ -431,7 +427,7 @@ class Styles:
         ans, _ = self.classes.get(h, (None, None))
         if ans is None:
             self.counter[prefix] += 1
-            ans = '%s_%d' % (prefix, self.counter[prefix])
+            ans = f'{prefix}_{self.counter[prefix]}'
             self.classes[h] = (ans, css)
         return ans
 
@@ -460,8 +456,7 @@ class Styles:
             /* In word headings only have bold font if explicitly specified,
                 similarly the font size is the body font size, unless explicitly set. */
             h1, h2, h3, h4, h5, h6 { font-weight: normal; font-size: 1rem }
-            /* Setting padding-left to zero breaks rendering of lists, so we only set the other values to zero and leave padding-left for the user-agent */
-            ul, ol { margin: 0; padding-top: 0; padding-bottom: 0; padding-right: 0 }
+            ul, ol { margin: 0; padding: 0; padding-inline-start: 0; padding-inline-end: 0; margin-block-start: 0; margin-block-end: 0 }
 
             /* The word hyperlink styling will set text-decoration to underline if needed */
             a { text-decoration: none }
@@ -498,14 +493,14 @@ class Styles:
 
         body_color = ''
         if self.body_color.lower() not in ('currentcolor', 'inherit'):
-            body_color = 'color: {};'.format(self.body_color)
+            body_color = f'color: {self.body_color};'
         prefix = textwrap.dedent(s) % (self.body_font_family, self.body_font_size, body_color)
         if ef:
             prefix = ef + '\n' + prefix
 
         ans = []
-        for (cls, css) in sorted(itervalues(self.classes), key=lambda x:x[0]):
-            b = ('\t%s: %s;' % (k, v) for k, v in iteritems(css))
+        for cls, css in sorted(itervalues(self.classes), key=lambda x:x[0]):
+            b = (f'\t{k}: {v};' for k, v in iteritems(css))
             b = '\n'.join(b)
-            ans.append('.%s {\n%s\n}\n' % (cls, b.rstrip(';')))
+            ans.append('.{} {{\n{}\n}}\n'.format(cls, b.rstrip(';')))
         return prefix + '\n' + '\n'.join(ans)

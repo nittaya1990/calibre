@@ -1,14 +1,13 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
 
 
 __license__   = 'GPL v3'
 __copyright__ = '2012, Kovid Goyal <kovid@kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
 
+from calibre.ebooks.oeb.base import XHTML, XHTML_MIME, XHTML_NS, XPath, css_text, urlnormalize
+from calibre.utils.localization import __
 from calibre.utils.xml_parse import safe_xml_fromstring
-from calibre.ebooks.oeb.base import (urlnormalize, XPath, XHTML_NS, XHTML,
-        XHTML_MIME, css_text)
 
 DEFAULT_TITLE = __('Table of Contents')
 
@@ -84,7 +83,7 @@ class TOCAdder:
         s = getattr(oeb, 'store_embed_font_rules', None)
         if getattr(s, 'body_font_family', None):
             css = [css_text(x) for x in s.rules] + [
-                    'body { font-family: %s }'%s.body_font_family]
+                    f'body {{ font-family: {s.body_font_family} }}']
             embed_css = '\n\n'.join(css)
 
         root = safe_xml_fromstring(TEMPLATE.format(xhtmlns=XHTML_NS,

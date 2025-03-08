@@ -1,24 +1,24 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
 
 
 __license__   = 'GPL v3'
 __copyright__ = '2011, Kovid Goyal <kovid@kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
 
-import io, random, time
+import io
+import random
+import time
 from struct import pack
 
 from calibre.ebooks import normalize
-from calibre.ebooks.mobi.writer2.serializer import Serializer
 from calibre.ebooks.compression.palmdoc import compress_doc
 from calibre.ebooks.mobi.langcodes import iana2mobi
-from calibre.utils.filenames import ascii_filename
-from calibre.ebooks.mobi.writer2 import (PALMDOC, UNCOMPRESSED)
-from calibre.ebooks.mobi.utils import (encint, encode_trailing_data,
-        align_block, detect_periodical, RECORD_SIZE, create_text_record)
+from calibre.ebooks.mobi.utils import RECORD_SIZE, align_block, create_text_record, detect_periodical, encint, encode_trailing_data
+from calibre.ebooks.mobi.writer2 import PALMDOC, UNCOMPRESSED
 from calibre.ebooks.mobi.writer2.indexer import Indexer
-from polyglot.builtins import iteritems, unicode_type, range
+from calibre.ebooks.mobi.writer2.serializer import Serializer
+from calibre.utils.filenames import ascii_filename
+from polyglot.builtins import iteritems
 
 # Disabled as I dont care about uncrossable breaks
 WRITE_UNCROSSABLE_BREAKS = False
@@ -51,7 +51,7 @@ class MobiWriter:
         self.log = oeb.log
         pt = None
         if oeb.metadata.publication_type:
-            x = unicode_type(oeb.metadata.publication_type[0]).split(':')
+            x = str(oeb.metadata.publication_type[0]).split(':')
             if len(x) > 1:
                 pt = x[1].lower()
         self.publication_type = pt
@@ -238,7 +238,7 @@ class MobiWriter:
             0  # Unused
         ))  # 0 - 15 (0x0 - 0xf)
         uid = random.randint(0, 0xffffffff)
-        title = normalize(unicode_type(metadata.title[0])).encode('utf-8')
+        title = normalize(str(metadata.title[0])).encode('utf-8')
 
         # 0x0 - 0x3
         record0.write(b'MOBI')
@@ -281,7 +281,7 @@ class MobiWriter:
 
         # 0x4c - 0x4f : Language specifier
         record0.write(iana2mobi(
-            unicode_type(metadata.language[0])))
+            str(metadata.language[0])))
 
         # 0x50 - 0x57 : Input language and Output language
         record0.write(b'\0' * 8)
@@ -374,9 +374,8 @@ class MobiWriter:
     # }}}
 
     def generate_joint_record0(self):  # {{{
-        from calibre.ebooks.mobi.writer8.mobi import (MOBIHeader,
-                HEADER_FIELDS)
         from calibre.ebooks.mobi.writer8.exth import build_exth
+        from calibre.ebooks.mobi.writer8.mobi import HEADER_FIELDS, MOBIHeader
 
         # Insert resource records
         first_image_record = None
@@ -458,7 +457,7 @@ class MobiWriter:
         '''
         Write the PalmDB header
         '''
-        title = ascii_filename(unicode_type(self.oeb.metadata.title[0])).replace(
+        title = ascii_filename(str(self.oeb.metadata.title[0])).replace(
                 ' ', '_')
         if not isinstance(title, bytes):
             title = title.encode('ascii')

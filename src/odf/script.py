@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # Copyright (C) 2006-2007 Søren Roug, European Environment Agency
 #
 # This library is free software; you can redistribute it and/or
@@ -19,8 +18,8 @@
 #
 
 
-from .namespaces import SCRIPTNS
 from .element import Element
+from .namespaces import SCRIPTNS
 
 # ODF 1.0 section 12.4.1
 # The <script:event-listener> element binds an event to a macro.

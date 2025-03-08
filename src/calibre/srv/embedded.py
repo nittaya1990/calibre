@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 # License: GPLv3 Copyright: 2017, Kovid Goyal <kovid at kovidgoyal.net>
 
 
@@ -27,9 +26,9 @@ def log_paths():
 
 def read_json(path):
     try:
-        with lopen(path, 'rb') as f:
+        with open(path, 'rb') as f:
             raw = f.read()
-    except EnvironmentError as err:
+    except OSError as err:
         if err.errno != errno.ENOENT:
             raise
         return
@@ -59,7 +58,7 @@ class Server:
         lp, lap = log_paths()
         try:
             os.makedirs(cache_dir())
-        except EnvironmentError as err:
+        except OSError as err:
             if err.errno != errno.EEXIST:
                 raise
         log_size = opts.max_log_size * 1024 * 1024

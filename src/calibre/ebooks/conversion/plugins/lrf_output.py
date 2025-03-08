@@ -1,16 +1,14 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
 
 
 __license__   = 'GPL v3'
 __copyright__ = '2009, Kovid Goyal <kovid@kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
 
-import sys, os
+import os
+import sys
 
-from calibre.customize.conversion import OutputFormatPlugin
-from calibre.customize.conversion import OptionRecommendation
-from polyglot.builtins import unicode_type
+from calibre.customize.conversion import OptionRecommendation, OutputFormatPlugin
 
 
 class LRFOptions:
@@ -18,7 +16,7 @@ class LRFOptions:
     def __init__(self, output, opts, oeb):
         def f2s(f):
             try:
-                return unicode_type(f[0])
+                return str(f[0])
             except:
                 return ''
         m = oeb.metadata
@@ -32,13 +30,13 @@ class LRFOptions:
         self.title_sort = self.author_sort = ''
         for x in m.creator:
             if x.role == 'aut':
-                self.author = unicode_type(x)
-                fa = unicode_type(getattr(x, 'file_as', ''))
+                self.author = str(x)
+                fa = str(getattr(x, 'file_as', ''))
                 if fa:
                     self.author_sort = fa
         for x in m.title:
-            if unicode_type(x.file_as):
-                self.title_sort = unicode_type(x.file_as)
+            if str(x.file_as):
+                self.title_sort = str(x.file_as)
         self.freetext = f2s(m.description)
         self.category = f2s(m.subject)
         self.cover = None
@@ -104,7 +102,7 @@ class LRFOutput(OutputFormatPlugin):
         OptionRecommendation(name='header', recommended_value=False,
             help=_('Add a header to all the pages with title and author.')
         ),
-        OptionRecommendation(name='header_format', recommended_value="%t by %a",
+        OptionRecommendation(name='header_format', recommended_value='%t by %a',
             help=_('Set the format of the header. %a is replaced by the author '
             'and %t by the title. Default is %default')
         ),
@@ -140,9 +138,10 @@ class LRFOutput(OutputFormatPlugin):
         ('change_justification', 'original', OptionRecommendation.HIGH)}
 
     def convert_images(self, pages, opts, wide):
-        from calibre.ebooks.lrf.pylrs.pylrs import Book, BookSetting, ImageStream, ImageBlock
         from uuid import uuid4
+
         from calibre.constants import __appname__, __version__
+        from calibre.ebooks.lrf.pylrs.pylrs import Book, BookSetting, ImageBlock, ImageStream
 
         width, height = (784, 1012) if wide else (584, 754)
 
@@ -154,7 +153,7 @@ class LRFOutput(OutputFormatPlugin):
         ps['textheight']     = height
         book = Book(title=opts.title, author=opts.author,
                 bookid=uuid4().hex,
-                publisher='%s %s'%(__appname__, __version__),
+                publisher=f'{__appname__} {__version__}',
                 category=_('Comic'), pagestyledefault=ps,
                 booksetting=BookSetting(screenwidth=width, screenheight=height))
         for page in pages:

@@ -1,14 +1,13 @@
-
-
 __license__   = 'GPL v3'
 __copyright__ = '2008, Kovid Goyal <kovid at kovidgoyal.net>'
-import math, sys, re, numbers
+import math
+import numbers
+import re
+import sys
 
 from calibre.ebooks.lrf.fonts import get_font
-from calibre.ebooks.lrf.pylrs.pylrs import TextBlock, Text, CR, Span, \
-                                             CharButton, Plot, Paragraph, \
-                                             LrsTextTag
-from polyglot.builtins import string_or_bytes, range, native_string_type
+from calibre.ebooks.lrf.pylrs.pylrs import CR, CharButton, LrsTextTag, Paragraph, Plot, Span, Text, TextBlock
+from polyglot.builtins import native_string_type, string_or_bytes
 
 
 def ceil(num):
@@ -47,15 +46,13 @@ def tokens(tb):
                 if hasattr(x.contents[0], 'text'):
                     yield x.contents[0].text, cattrs(attrs, {})
                 elif hasattr(x.contents[0], 'attrs'):
-                    for z in process_element(x.contents[0], x.contents[0].attrs):
-                        yield z
+                    yield from process_element(x.contents[0], x.contents[0].attrs)
         elif isinstance(x, Plot):
             yield x, None
         elif isinstance(x, Span):
             attrs = cattrs(attrs, x.attrs)
             for y in x.contents:
-                for z in process_element(y, attrs):
-                    yield z
+                yield from process_element(y, attrs)
 
     for i in tb.contents:
         if isinstance(i, CR):
@@ -65,8 +62,7 @@ def tokens(tb):
                 attrs = {}
                 if hasattr(j, 'attrs'):
                     attrs = j.attrs
-                for k in process_element(j, attrs):
-                    yield k
+                yield from process_element(j, attrs)
 
 
 class Cell:
@@ -129,7 +125,7 @@ class Cell:
         return ceil((float(self.conv.profile.dpi)/72)*(pts/10))
 
     def minimum_width(self):
-        return max([self.minimum_tb_width(tb) for tb in self.text_blocks])
+        return max(self.minimum_tb_width(tb) for tb in self.text_blocks)
 
     def minimum_tb_width(self, tb):
         ts = tb.textStyle.attrs
@@ -149,8 +145,9 @@ class Cell:
             if not token.strip():
                 continue
             word = token.split()
-            word = word[0] if word else ""
-            width = font.getsize(word)[0]
+            word = word[0] if word else ''
+            fl, ft, fr, fb = font.getbbox(word)
+            width = fr - fl
             if width > mwidth:
                 mwidth = width
         return parindent + mwidth + 2
@@ -185,7 +182,7 @@ class Cell:
                 else:
                     top += ls
                     bottom += ls
-                left = parindent if int == 1 else 0
+                left = 0
                 continue
             if isinstance(token, Plot):
                 width, height = self.pts_to_pixels(token.xsize), self.pts_to_pixels(token.ysize)
@@ -196,7 +193,8 @@ class Cell:
             if (ff, fs) != (ts['fontfacename'], ts['fontsize']):
                 font = get_font(ff, self.pts_to_pixels(fs))
             for word in token.split():
-                width, height = font.getsize(word)
+                fl, ft, fr, fb = font.getbbox(word)
+                width, height = fr - fl, abs(fb - ft)
                 left, right, top, bottom = add_word(width, height, left, right, top, bottom, ls, ws)
         return right+3+max(parindent, 10), bottom
 
@@ -204,10 +202,10 @@ class Cell:
         return self.text_block_size(tb, sys.maxsize, debug=debug)[0]
 
     def preferred_width(self, debug=False):
-        return ceil(max([self.text_block_preferred_width(i, debug=debug) for i in self.text_blocks]))
+        return ceil(max(self.text_block_preferred_width(i, debug=debug) for i in self.text_blocks))
 
     def height(self, width):
-        return sum([self.text_block_size(i, width)[1] for i in self.text_blocks])
+        return sum(self.text_block_size(i, width)[1] for i in self.text_blocks)
 
 
 class Row:
@@ -215,7 +213,7 @@ class Row:
     def __init__(self, conv, row, css, colpad):
         self.cells = []
         self.colpad = colpad
-        cells = row.findAll(re.compile('td|th', re.IGNORECASE))
+        cells = row.findAll(re.compile(r'td|th', re.IGNORECASE))
         self.targets = []
         for cell in cells:
             ccss = conv.tag_css(cell, css)[0]
@@ -246,7 +244,7 @@ class Row:
         i = -1
         cell = None
         for cell in self.cells:
-            for k in range(0, cell.colspan):
+            for k in range(cell.colspan):
                 if i == col:
                     break
                 i += 1
@@ -273,8 +271,7 @@ class Row:
         return -1 if cell.colspan > 1 else cell.pwidth
 
     def cell_iterator(self):
-        for c in self.cells:
-            yield c
+        yield from self.cells
 
 
 class Table:
@@ -303,13 +300,13 @@ class Table:
     def height(self, maxwidth):
         ''' Return row heights + self.rowpad'''
         widths = self.get_widths(maxwidth)
-        return sum([row.height(widths) + self.rowpad for row in self.rows]) - self.rowpad
+        return sum(row.height(widths) + self.rowpad for row in self.rows) - self.rowpad
 
     def minimum_width(self, col):
-        return max([row.minimum_width(col) for row in self.rows])
+        return max(row.minimum_width(col) for row in self.rows)
 
     def width_percent(self, col):
-        return max([row.width_percent(col) for row in self.rows])
+        return max(row.width_percent(col) for row in self.rows)
 
     def get_widths(self, maxwidth):
         '''

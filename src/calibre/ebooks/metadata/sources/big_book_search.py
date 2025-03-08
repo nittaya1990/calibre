@@ -6,25 +6,18 @@ __license__   = 'GPL v3'
 __copyright__ = '2013, Kovid Goyal <kovid@kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
 
-from calibre.ebooks.metadata.sources.base import Source, Option
+from calibre.ebooks.metadata.sources.base import Option, Source
 
 
 def get_urls(br, tokens):
-    try:
-        from urllib.parse import quote_plus
-    except ImportError:
-        from urllib import quote_plus
-    from mechanize import Request
-    from lxml import html
-    escaped = [quote_plus(x.encode('utf-8')) for x in tokens if x and x.strip()]
-    q = b'+'.join(escaped)
-    url = 'http://bigbooksearch.com/books/'+q
-    br.open(url).read()
-    req = Request('http://bigbooksearch.com/query.php?SearchIndex=books&Keywords=%s&ItemPage=1'%q)
-    req.add_header('X-Requested-With', 'XMLHttpRequest')
-    req.add_header('Referer', url)
-    raw = br.open(req).read()
-    root = html.fromstring(raw.decode('utf-8'))
+    from urllib.parse import quote_plus
+
+    from html5_parser import parse
+    escaped = (quote_plus(x) for x in tokens if x and x.strip())
+    q = '+'.join(escaped)
+    url = 'https://bigbooksearch.com/please-dont-scrape-my-site-you-will-put-my-api-key-over-the-usage-limit-and-the-site-will-break/books/'+q
+    raw = br.open(url).read()
+    root = parse(raw.decode('utf-8'))
     urls = [i.get('src') for i in root.xpath('//img[@src]')]
     return urls
 
@@ -32,7 +25,7 @@ def get_urls(br, tokens):
 class BigBookSearch(Source):
 
     name = 'Big Book Search'
-    version = (1, 0, 0)
+    version = (1, 0, 1)
     minimum_calibre_version = (2, 80, 0)
     description = _('Downloads multiple book covers from Amazon. Useful to find alternate covers.')
     capabilities = frozenset(['cover'])
@@ -53,8 +46,9 @@ class BigBookSearch(Source):
 
 
 def test():
-    from calibre import browser
     import pprint
+
+    from calibre import browser
     br = browser()
     urls = get_urls(br, ['consider', 'phlebas', 'banks'])
     pprint.pprint(urls)

@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
 
 
 __license__   = 'GPL v3'
@@ -7,27 +6,46 @@ __copyright__ = '2010, Kovid Goyal <kovid@kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
 
 import os
+from collections import defaultdict
+from contextlib import closing
 from functools import partial
 from threading import Thread
-from contextlib import closing
-from collections import defaultdict
 
 from qt.core import (
-    QToolButton, QDialog, QGridLayout, QIcon, QLabel, QDialogButtonBox,
-    QApplication, QLineEdit, QHBoxLayout, QFormLayout, QCheckBox, QWidget,
-    QScrollArea, QVBoxLayout, Qt, QListWidgetItem, QListWidget, QSize, QAbstractItemView)
+    QAbstractItemView,
+    QApplication,
+    QCheckBox,
+    QDialog,
+    QDialogButtonBox,
+    QFormLayout,
+    QGridLayout,
+    QHBoxLayout,
+    QIcon,
+    QLabel,
+    QLineEdit,
+    QListWidget,
+    QListWidgetItem,
+    QScrollArea,
+    QSize,
+    Qt,
+    QToolButton,
+    QVBoxLayout,
+    QWidget,
+)
 
 from calibre import as_unicode
 from calibre.constants import ismacos
+from calibre.db.copy_to_library import copy_one_book
+from calibre.gui2 import Dispatcher, choose_dir, error_dialog, gprefs, info_dialog, warning_dialog
 from calibre.gui2.actions import InterfaceAction
-from calibre.gui2 import (error_dialog, Dispatcher, warning_dialog, gprefs,
-        info_dialog, choose_dir)
+from calibre.gui2.actions.choose_library import library_qicon
 from calibre.gui2.dialogs.progress import ProgressDialog
 from calibre.gui2.widgets2 import Dialog
+from calibre.startup import connect_lambda
 from calibre.utils.config import prefs
-from calibre.utils.icu import sort_key, numeric_sort_key
-from calibre.db.copy_to_library import copy_one_book
-from polyglot.builtins import iteritems, itervalues, unicode_type
+from calibre.utils.icu import numeric_sort_key, sort_key
+from calibre.utils.localization import ngettext
+from polyglot.builtins import iteritems, itervalues
 
 
 def ask_about_cc_mismatch(gui, db, newdb, missing_cols, incompatible_cols):  # {{{
@@ -84,7 +102,7 @@ def ask_about_cc_mismatch(gui, db, newdb, missing_cols, incompatible_cols):  # {
     d.bb.accepted.connect(d.accept)
     d.bb.rejected.connect(d.reject)
     d.resize(d.sizeHint())
-    if d.exec_() == QDialog.DialogCode.Accepted:
+    if d.exec() == QDialog.DialogCode.Accepted:
         changes_made = False
         for k, cb in missing_widgets:
             if cb.isChecked():
@@ -134,7 +152,7 @@ class Worker(Thread):  # {{{
         except Exception as err:
             import traceback
             try:
-                err = unicode_type(err)
+                err = str(err)
             except:
                 err = repr(err)
             self.error = (err, traceback.format_exc())
@@ -225,7 +243,7 @@ class ChooseLibrary(Dialog):  # {{{
         le = self.le = QLineEdit(self)
         la.setBuddy(le)
         b = self.b = QToolButton(self)
-        b.setIcon(QIcon(I('document_open.png')))
+        b.setIcon(QIcon.ic('document_open.png'))
         b.setToolTip(_('Browse for library'))
         b.clicked.connect(self.browse)
         h = QHBoxLayout()
@@ -236,11 +254,11 @@ class ChooseLibrary(Dialog):  # {{{
         bb.setStandardButtons(QDialogButtonBox.StandardButton.Cancel)
         self.delete_after_copy = False
         b = bb.addButton(_('&Copy'), QDialogButtonBox.ButtonRole.AcceptRole)
-        b.setIcon(QIcon(I('edit-copy.png')))
+        b.setIcon(QIcon.ic('edit-copy.png'))
         b.setToolTip(_('Copy to the specified library'))
         b2 = bb.addButton(_('&Move'), QDialogButtonBox.ButtonRole.AcceptRole)
         connect_lambda(b2.clicked, self, lambda self: setattr(self, 'delete_after_copy', True))
-        b2.setIcon(QIcon(I('edit-cut.png')))
+        b2.setIcon(QIcon.ic('edit-cut.png'))
         b2.setToolTip(_('Copy to the specified library and delete from the current library'))
         b.setDefault(True)
         l.addWidget(bb, 1, 0, 1, 2)
@@ -263,7 +281,7 @@ class ChooseLibrary(Dialog):  # {{{
 
     @property
     def args(self):
-        return (unicode_type(self.le.text()), self.delete_after_copy)
+        return (str(self.le.text()), self.delete_after_copy)
 # }}}
 
 
@@ -292,16 +310,16 @@ class DuplicatesQuestion(QDialog):  # {{{
         bb.accepted.connect(self.accept)
         bb.rejected.connect(self.reject)
         self.a = b = bb.addButton(_('Select &all'), QDialogButtonBox.ButtonRole.ActionRole)
-        b.clicked.connect(self.select_all), b.setIcon(QIcon(I('plus.png')))
+        b.clicked.connect(self.select_all), b.setIcon(QIcon.ic('plus.png'))
         self.n = b = bb.addButton(_('Select &none'), QDialogButtonBox.ButtonRole.ActionRole)
-        b.clicked.connect(self.select_none), b.setIcon(QIcon(I('minus.png')))
+        b.clicked.connect(self.select_none), b.setIcon(QIcon.ic('minus.png'))
         self.ctc = b = bb.addButton(_('&Copy to clipboard'), QDialogButtonBox.ButtonRole.ActionRole)
-        b.clicked.connect(self.copy_to_clipboard), b.setIcon(QIcon(I('edit-copy.png')))
+        b.clicked.connect(self.copy_to_clipboard), b.setIcon(QIcon.ic('edit-copy.png'))
         l.addWidget(bb)
         self.resize(600, 400)
 
     def copy_to_clipboard(self):
-        items = [('✓' if item.checkState() == Qt.CheckState.Checked else '✗') + ' ' + unicode_type(item.text())
+        items = [('✓' if item.checkState() == Qt.CheckState.Checked else '✗') + ' ' + str(item.text())
                  for item in self.items]
         QApplication.clipboard().setText('\n'.join(items))
 
@@ -316,7 +334,6 @@ class DuplicatesQuestion(QDialog):  # {{{
     @property
     def ids(self):
         return {int(i.data(Qt.ItemDataRole.UserRole)) for i in self.items if i.checkState() == Qt.CheckState.Checked}
-
 # }}}
 
 
@@ -364,10 +381,11 @@ class CopyToLibraryAction(InterfaceAction):
             self.menu.addAction(_('Choose library...'), self.choose_library)
             self.menu.addSeparator()
         for name, loc in locations:
+            ic = library_qicon(name)
             name = name.replace('&', '&&')
-            self.menu.addAction(name, partial(self.copy_to_library,
+            self.menu.addAction(ic, name, partial(self.copy_to_library,
                 loc))
-            self.menu.addAction(name + ' ' + _('(delete after copy)'),
+            self.menu.addAction(ic, name + ' ' + _('(delete after copy)'),
                     partial(self.copy_to_library, loc, delete_after=True))
             self.menu.addSeparator()
         if len(locations) <= 5:
@@ -382,7 +400,7 @@ class CopyToLibraryAction(InterfaceAction):
         db = self.gui.library_view.model().db
         locations = list(self.stats.locations(db))
         d = ChooseLibrary(self.gui, locations)
-        if d.exec_() == QDialog.DialogCode.Accepted:
+        if d.exec() == QDialog.DialogCode.Accepted:
             path, delete_after = d.args
             if not path:
                 return
@@ -447,16 +465,18 @@ class CopyToLibraryAction(InterfaceAction):
         duplicate_ids = self.do_copy(ids, db, loc, delete_after, False)
         if duplicate_ids:
             d = DuplicatesQuestion(self.gui, duplicate_ids, loc)
-            if d.exec_() == QDialog.DialogCode.Accepted:
+            if d.exec() == QDialog.DialogCode.Accepted:
                 ids = d.ids
                 if ids:
                     self.do_copy(list(ids), db, loc, delete_after, add_duplicates=True)
 
     def do_copy(self, ids, db, loc, delete_after, add_duplicates=False):
         aname = _('Moving to') if delete_after else _('Copying to')
-        dtitle = '%s %s'%(aname, os.path.basename(loc))
+        dtitle = f'{aname} {os.path.basename(loc)}'
         self.pd = ProgressDialog(dtitle, min=0, max=len(ids)-1,
-                parent=self.gui, cancelable=True, icon='lt.png')
+                parent=self.gui, cancelable=True, icon='lt.png', cancel_confirm_msg=_(
+                    'Aborting this operation means that only some books will be copied'
+                    ' and resuming a partial copy is not supported. Are you sure you want to abort?'))
 
         def progress(idx, title):
             self.pd.set_msg(title)
@@ -467,7 +487,7 @@ class CopyToLibraryAction(InterfaceAction):
         self.worker.start()
         self.pd.canceled_signal.connect(self.worker.cancel_processing)
 
-        self.pd.exec_()
+        self.pd.exec()
         self.pd.canceled_signal.disconnect()
 
         if self.worker.left_after_cancel:

@@ -1,10 +1,10 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 
 
 __license__ = 'GPL v3'
 __copyright__ = '2013, Kovid Goyal <kovid at kovidgoyal.net>'
 
+import os
 import shutil
 
 from calibre import walk
@@ -27,7 +27,7 @@ class UtilsTest(BaseTest):
         total = 0
         for i in range(1, num+1):
             sz = i * 1000
-            c.insert(i, i, (('%d'%i) * sz).encode('ascii'))
+            c.insert(i, i, (f'{i}' * sz).encode('ascii'))
             total += sz
         return total
 
@@ -44,7 +44,7 @@ class UtilsTest(BaseTest):
         for i in (3, 4, 2, 5, 1):
             data, ts = c[i]
             self.assertEqual(i, ts, 'timestamp not correct')
-            self.assertEqual((('%d'%i) * (i*1000)).encode('ascii'), data)
+            self.assertEqual((f'{i}' * (i*1000)).encode('ascii'), data)
         c.set_group_id('a')
         self.basic_fill(c)
         order = tuple(c.items)
@@ -72,12 +72,12 @@ class UtilsTest(BaseTest):
         c.empty()
         self.assertEqual(c.total_size, 0)
         self.assertEqual(len(c), 0)
-        self.assertEqual(tuple(walk(c.location)), ())
+        self.assertEqual(tuple(walk(c.location)), (os.path.join(c.location, 'version'),))
         c = self.init_tc()
         self.basic_fill(c)
         self.assertEqual(len(c), 5)
         c.set_thumbnail_size(200, 201)
         self.assertIsNone(c[1][0])
         self.assertEqual(len(c), 0)
-        self.assertEqual(tuple(walk(c.location)), ())
+        self.assertEqual(tuple(walk(c.location)), (os.path.join(c.location, 'version'),))
     # }}}

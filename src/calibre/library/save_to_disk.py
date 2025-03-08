@@ -1,25 +1,25 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
 
 
 __license__   = 'GPL v3'
 __copyright__ = '2009, Kovid Goyal <kovid@kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
 
-import os, traceback, re, errno
+import os
+import re
+import traceback
 
-from calibre.constants import DEBUG
+from calibre import prints, sanitize_file_name, strftime
+from calibre.constants import DEBUG, iswindows, preferred_encoding
 from calibre.db.errors import NoSuchFormat
-from calibre.utils.config import Config, StringConfig, tweaks
-from calibre.utils.formatter import TemplateFormatter
-from calibre.utils.filenames import shorten_components_to, ascii_filename
-from calibre.constants import preferred_encoding
-from calibre.ebooks.metadata import fmt_sidx
-from calibre.ebooks.metadata import title_sort
-from calibre.utils.date import as_local_time
-from calibre import strftime, prints, sanitize_file_name
 from calibre.db.lazy import FormatsList
-from polyglot.builtins import unicode_type
+from calibre.ebooks.metadata import fmt_sidx, title_sort
+from calibre.utils.config import Config, StringConfig, tweaks
+from calibre.utils.date import as_local_time, is_date_undefined
+from calibre.utils.filenames import ascii_filename, make_long_path_useable, shorten_components_to
+from calibre.utils.formatter import TemplateFormatter
+from calibre.utils.formatter_functions import load_user_template_functions
+from calibre.utils.localization import _
 
 plugboard_any_device_value = 'any device'
 plugboard_any_format_value = 'any format'
@@ -29,26 +29,26 @@ plugboard_save_to_disk_value = 'save_to_disk'
 DEFAULT_TEMPLATE = '{author_sort}/{title}/{title} - {authors}'
 DEFAULT_SEND_TEMPLATE = '{author_sort}/{title} - {authors}'
 
-FORMAT_ARG_DESCS = dict(
-        title=_('The title'),
-        authors=_('The authors'),
-        author_sort=_('The author sort string. To use only the first letter '
+FORMAT_ARG_DESCS = {
+        'title': _('The title'),
+        'authors': _('The authors'),
+        'author_sort': _('The author sort string. To use only the first letter '
             'of the name use {author_sort[0]}'),
-        tags=_('The tags'),
-        series=_('The series'),
-        series_index=_('The series number. '
+        'tags': _('The tags'),
+        'series': _('The series'),
+        'series_index': _('The series number. '
             'To get leading zeros use {series_index:0>3s} or '
             '{series_index:>3s} for leading spaces'),
-        rating=_('The rating'),
-        isbn=_('The ISBN'),
-        publisher=_('The publisher'),
-        timestamp=_('The date'),
-        pubdate=_('The published date'),
-        last_modified=_('The date when the metadata for this book record'
+        'rating': _('The rating'),
+        'isbn': _('The ISBN'),
+        'publisher': _('The publisher'),
+        'timestamp': _('The date'),
+        'pubdate': _('The published date'),
+        'last_modified': _('The date when the metadata for this book record'
             ' was last modified'),
-        languages=_('The language(s) of this book'),
-        id=_('The calibre internal id')
-        )
+        'languages': _('The language(s) of this book'),
+        'id': _('The calibre internal id')
+}
 
 FORMAT_ARGS = {}
 for x in FORMAT_ARG_DESCS:
@@ -125,6 +125,8 @@ def config(defaults=None):
     x('single_dir', default=False,
             help=_('Save into a single folder, ignoring the template'
                 ' folder structure'))
+    x('save_extra_files', default=True, help=_(
+        'Save any data files associated with the book when saving the book'))
     return c
 
 
@@ -132,7 +134,7 @@ def preprocess_template(template):
     template = template.replace('//', '/')
     template = template.replace('{author}', '{authors}')
     template = template.replace('{tag}', '{tags}')
-    if not isinstance(template, unicode_type):
+    if not isinstance(template, str):
         template = template.decode(preferred_encoding, 'replace')
     return template
 
@@ -143,7 +145,7 @@ class Formatter(TemplateFormatter):
     '''
 
     def get_value(self, key, args, kwargs):
-        if key == '':
+        if not isinstance(key, str) or key == '':
             return ''
         try:
             key = key.lower()
@@ -170,10 +172,7 @@ class Formatter(TemplateFormatter):
             return key
 
 
-def get_components(template, mi, id, timefmt='%b %Y', length=250,
-        sanitize_func=ascii_filename, replace_whitespace=False,
-        to_lowercase=False, safe_format=True, last_has_extension=True,
-        single_dir=False):
+def get_component_metadata(template, mi, book_id, timefmt='%b %Y'):
     tsorder = tweaks['save_template_title_series_sorting']
     format_args = FORMAT_ARGS.copy()
     format_args.update(mi.all_non_none_fields())
@@ -199,8 +198,6 @@ def get_components(template, mi, id, timefmt='%b %Y', length=250,
         format_args['series'] = title_sort(mi.series, order=tsorder)
         if mi.series_index is not None:
             format_args['series_index'] = mi.format_series_index()
-    else:
-        template = re.sub(r'\{series_index[^}]*?\}', '', template)
     if mi.rating is not None:
         format_args['rating'] = mi.format_rating(divide_by=2.0)
     if mi.identifiers:
@@ -208,14 +205,17 @@ def get_components(template, mi, id, timefmt='%b %Y', length=250,
     else:
         format_args['identifiers'] = ''
 
-    if hasattr(mi.timestamp, 'timetuple'):
+    if not is_date_undefined(mi.timestamp) and hasattr(mi.timestamp, 'timetuple'):
         format_args['timestamp'] = strftime(timefmt, mi.timestamp.timetuple())
-    if hasattr(mi.pubdate, 'timetuple'):
+    if not is_date_undefined(mi.pubdate) and hasattr(mi.pubdate, 'timetuple'):
         format_args['pubdate'] = strftime(timefmt, mi.pubdate.timetuple())
-    if hasattr(mi, 'last_modified') and hasattr(mi.last_modified, 'timetuple'):
+    else:
+        format_args.pop('pubdate', None)
+    if (hasattr(mi, 'last_modified') and not is_date_undefined(mi.last_modified) and
+                hasattr(mi.last_modified, 'timetuple')):
         format_args['last_modified'] = strftime(timefmt, mi.last_modified.timetuple())
 
-    format_args['id'] = unicode_type(id)
+    format_args['id'] = str(book_id)
     # Now format the custom fields
     custom_metadata = mi.get_all_user_metadata(make_copy=False)
     for key in custom_metadata:
@@ -234,18 +234,25 @@ def get_components(template, mi, id, timefmt='%b %Y', length=250,
                         divide_by=2.0)
             elif cm['datatype'] in ['int', 'float']:
                 if format_args[key] != 0:
-                    format_args[key] = unicode_type(format_args[key])
+                    format_args[key] = str(format_args[key])
                 else:
                     format_args[key] = ''
+    return format_args
+
+
+def get_components(template, mi, book_id, timefmt='%b %Y', length=250,
+        sanitize_func=ascii_filename, replace_whitespace=False,
+        to_lowercase=False, safe_format=True, last_has_extension=True,
+        single_dir=False):
+    format_args = get_component_metadata(template, mi, book_id, timefmt)
     if safe_format:
-        components = Formatter().safe_format(template, format_args,
-                                            'G_C-EXCEPTION!', mi)
+        components = Formatter().safe_format(template, format_args, 'G_C-EXCEPTION!', mi)
     else:
         components = Formatter().unsafe_format(template, format_args, mi)
     components = [x.strip() for x in components.split('/')]
     components = [sanitize_func(x) for x in components if x]
     if not components:
-        components = [unicode_type(id)]
+        components = [str(book_id)]
     if to_lowercase:
         components = [x.lower() for x in components]
     if replace_whitespace:
@@ -319,7 +326,7 @@ def update_metadata(mi, fmt, stream, plugboards, cdata, error_report=None, plugb
 
 
 def do_save_book_to_disk(db, book_id, mi, plugboards,
-        formats, root, opts, length):
+        formats, root, opts, length, extra_files=()):
     originals = mi.cover, mi.pubdate, mi.timestamp
     formats_written = False
     try:
@@ -332,40 +339,43 @@ def do_save_book_to_disk(db, book_id, mi, plugboards,
         base_path = os.path.join(root, *components)
         base_name = os.path.basename(base_path)
         dirpath = os.path.dirname(base_path)
-        try:
-            os.makedirs(dirpath)
-        except EnvironmentError as err:
-            if err.errno != errno.EEXIST:
-                raise
-
+        os.makedirs(dirpath, exist_ok=True)
         cdata = None
         if opts.save_cover:
             cdata = db.cover(book_id)
             if cdata:
                 cpath = base_path + '.jpg'
-                with lopen(cpath, 'wb') as f:
+                with open(make_long_path_useable(cpath), 'wb') as f:
                     f.write(cdata)
                 mi.cover = base_name+'.jpg'
         if opts.write_opf:
             from calibre.ebooks.metadata.opf2 import metadata_to_opf
             opf = metadata_to_opf(mi)
-            with lopen(base_path+'.opf', 'wb') as f:
+            with open(make_long_path_useable(base_path+'.opf'), 'wb') as f:
                 f.write(opf)
     finally:
         mi.cover, mi.pubdate, mi.timestamp = originals
 
+    if extra_files and opts.save_extra_files:
+        for relpath in extra_files:
+            data_dest_path = os.path.abspath(os.path.join(dirpath, relpath))
+            try:
+                db.copy_extra_file_to(book_id, relpath, data_dest_path)
+            except FileNotFoundError:
+                os.makedirs(make_long_path_useable(os.path.dirname(data_dest_path)))
+                db.copy_extra_file_to(book_id, relpath, data_dest_path)
     if not formats:
         return not formats_written, book_id, mi.title
 
     for fmt in formats:
-        fmt_path = base_path+'.'+unicode_type(fmt)
+        fmt_path = base_path+'.'+str(fmt)
         try:
             db.copy_format_to(book_id, fmt, fmt_path)
             formats_written = True
         except NoSuchFormat:
             continue
         if opts.update_metadata:
-            with lopen(fmt_path, 'r+b') as stream:
+            with open(make_long_path_useable(fmt_path), 'r+b') as stream:
                 update_metadata(mi, fmt, stream, plugboards, cdata)
 
     return not formats_written, book_id, mi.title
@@ -377,10 +387,11 @@ def sanitize_args(root, opts):
     root = os.path.abspath(root)
 
     opts.template = preprocess_template(opts.template)
-    length = 240
+    length = 255 if iswindows else 1024
+    length -= 15
     length -= len(root)
     if length < 5:
-        raise ValueError('%r is too long.'%root)
+        raise ValueError(f'{root!r} is too long.')
     return root, opts, length
 
 
@@ -425,14 +436,16 @@ def read_serialized_metadata(data):
     mi.cover, mi.cover_data = None, (None, None)
     cdata = None
     if 'cover' in data:
-        with lopen(data['cover'], 'rb') as f:
+        with open(data['cover'], 'rb') as f:
             cdata = f.read()
     return mi, cdata
 
 
 def update_serialized_metadata(book, common_data=None):
+    # This is called from a worker process. It must not open the database.
     result = []
-    plugboard_cache = common_data
+    plugboard_cache = common_data['plugboard_cache']
+    load_user_template_functions(common_data['library_id'], common_data['template_functions'])
     from calibre.customize.ui import apply_null_metadata
     with apply_null_metadata:
         fmts = [fp.rpartition(os.extsep)[-1] for fp in book['fmts']]
@@ -443,7 +456,7 @@ def update_serialized_metadata(book, common_data=None):
 
         for fmt, fmtpath in zip(fmts, book['fmts']):
             try:
-                with lopen(fmtpath, 'r+b') as stream:
+                with open(fmtpath, 'r+b') as stream:
                     update_metadata(mi, fmt, stream, (), cdata, error_report=report_error, plugboard_cache=plugboard_cache)
             except Exception:
                 report_error(fmt, traceback.format_exc())

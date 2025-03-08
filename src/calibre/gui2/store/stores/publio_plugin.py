@@ -15,7 +15,6 @@ from base64 import b64encode
 from contextlib import closing
 
 from lxml import html
-
 from qt.core import QUrl
 
 from calibre import browser, url_slash_cleaner
@@ -53,7 +52,7 @@ class PublioStore(BasicStoreConfig, StorePlugin):
             d = WebStoreDialog(self.gui, url, parent, detail_url if detail_url else aff_url)
             d.setWindowTitle(self.name)
             d.set_tags(self.config.get('tags', ''))
-            d.exec_()
+            d.exec()
 
     def search(self, query, max_results=20, timeout=60):
 
@@ -62,7 +61,7 @@ class PublioStore(BasicStoreConfig, StorePlugin):
         counter = max_results
         page = 1
         while counter:
-            with closing(br.open('http://www.publio.pl/e-booki,strona{}.html?q={}'.format(page, quote(query)), timeout=timeout)) as f:  # noqa
+            with closing(br.open('http://www.publio.pl/e-booki,strona{}.html?q={}'.format(page, quote(query)), timeout=timeout)) as f:
                 doc = html.fromstring(f.read())
                 for data in doc.xpath('//div[@class="products-list"]//div[@class="product-tile"]'):
                     if counter <= 0:

@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 
 
 __license__ = 'GPL v3'
@@ -48,6 +47,3 @@ def format_for_pygments_token(theme, cache, token):
         return ans
     cache[token] = ans = NULL_FMT
     return ans
-
-
-

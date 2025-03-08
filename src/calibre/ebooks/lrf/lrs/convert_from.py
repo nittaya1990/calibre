@@ -1,5 +1,3 @@
-
-
 __license__   = 'GPL v3'
 __copyright__ = '2008, Kovid Goyal <kovid at kovidgoyal.net>'
 '''
@@ -11,18 +9,40 @@ import os
 import sys
 
 from calibre import setup_cli_handlers
-from calibre.ebooks.BeautifulSoup import (
-    BeautifulStoneSoup, CData, NavigableString, Tag
-)
+from calibre.ebooks.BeautifulSoup import BeautifulStoneSoup, CData, NavigableString, Tag
 from calibre.ebooks.chardet import xml_to_unicode
 from calibre.ebooks.lrf.pylrs.pylrs import (
-    CR, BlockStyle, Bold, Book, BookSetting, Canvas, CharButton, DropCaps, EmpLine,
-    Font, Footer, Header, Image, ImageBlock, ImageStream, Italic, JumpButton, Page,
-    PageStyle, Paragraph, Plot, RuledLine, Span, StyleDefault, Sub, Sup, TextBlock,
-    TextStyle
+    CR,
+    BlockStyle,
+    Bold,
+    Book,
+    BookSetting,
+    Canvas,
+    CharButton,
+    DropCaps,
+    EmpLine,
+    Font,
+    Footer,
+    Header,
+    Image,
+    ImageBlock,
+    ImageStream,
+    Italic,
+    JumpButton,
+    Page,
+    PageStyle,
+    Paragraph,
+    Plot,
+    RuledLine,
+    Span,
+    StyleDefault,
+    Sub,
+    Sup,
+    TextBlock,
+    TextStyle,
 )
 from calibre.utils.config import OptionParser
-from polyglot.builtins import string_or_bytes, unicode_type
+from polyglot.builtins import string_or_bytes
 
 
 class LrsParser:
@@ -55,20 +75,20 @@ class LrsParser:
         for key, val in tag.attrs:
             if key in exclude:
                 continue
-            result[unicode_type(key)] = val
+            result[str(key)] = val
         return result
 
     def text_tag_to_element(self, tag):
         map = {
-               'span'    : Span,
-               'italic'  : Italic,
-               'bold'    : Bold,
-               'empline' : EmpLine,
-               'sup'     : Sup,
-               'sub'     : Sub,
-               'cr'      : CR,
-               'drawchar': DropCaps,
-               }
+            'span'    : Span,
+            'italic'  : Italic,
+            'bold'    : Bold,
+            'empline' : EmpLine,
+            'sup'     : Sup,
+            'sub'     : Sub,
+            'cr'      : CR,
+            'drawchar': DropCaps,
+        }
         if tag.name == 'charbutton':
             return CharButton(self.parsed_objects[tag.get('refobj')], None)
         if tag.name == 'plot':
@@ -88,7 +108,7 @@ class LrsParser:
 
     def process_paragraph(self, tag):
         p = Paragraph()
-        contents = [i for i in tag.contents]
+        contents = list(tag.contents)
         if contents:
             if isinstance(contents[0], NavigableString):
                 contents[0] = contents[0].string.lstrip()
@@ -232,7 +252,7 @@ class LrsParser:
             tag = base.find(tagname.lower())
             if tag is None:
                 return ('', '', '')
-            tag = (self.tag_to_string(tag), tag.get('reading') if 'reading' in tag else '')  # noqa
+            tag = (self.tag_to_string(tag), tag.get('reading') if 'reading' in tag else '')
             return tag
 
         title          = me(bookinfo, 'Title')
@@ -307,7 +327,7 @@ def main(args=sys.argv, logger=None):
         warnings.defaultaction = 'error'
 
     logger.info('Parsing LRS file...')
-    converter =  LrsParser(open(args[1], 'rb'), logger)
+    converter = LrsParser(open(args[1], 'rb'), logger)
     logger.info('Writing to output file...')
     converter.render(opts.output, to_lrs=opts.lrs)
     logger.info('Output written to '+opts.output)

@@ -1,25 +1,39 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
 
 
 __license__   = 'GPL v3'
 __copyright__ = '2009, Kovid Goyal <kovid@kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
 
-import textwrap, codecs, importlib
+import codecs
+import importlib
+import textwrap
 from functools import partial
 
-from qt.core import (QWidget, QSpinBox, QDoubleSpinBox, QLineEdit, QTextEdit,
-    QCheckBox, QComboBox, Qt, QIcon, pyqtSignal, QLabel, QFontComboBox, QFont,
-    QFontInfo, QPlainTextEdit)
+from qt.core import (
+    QCheckBox,
+    QComboBox,
+    QDoubleSpinBox,
+    QFont,
+    QFontComboBox,
+    QFontInfo,
+    QIcon,
+    QLabel,
+    QLineEdit,
+    QPlainTextEdit,
+    QSpinBox,
+    Qt,
+    QTextEdit,
+    QWidget,
+    pyqtSignal,
+)
 
-from calibre.customize.conversion import OptionRecommendation
-from calibre.ebooks.conversion.config import (
-    load_defaults, save_defaults as save_defaults_, load_specifics, GuiRecommendations)
 from calibre import prepare_string_for_xml
+from calibre.customize.conversion import OptionRecommendation
 from calibre.customize.ui import plugin_for_input_format
+from calibre.ebooks.conversion.config import GuiRecommendations, load_defaults, load_specifics
+from calibre.ebooks.conversion.config import save_defaults as save_defaults_
 from calibre.gui2.font_family_chooser import FontFamilyChooser
-from polyglot.builtins import unicode_type
 
 
 def config_widget_for_input_plugin(plugin):
@@ -51,7 +65,7 @@ def bulk_defaults_for_input_format(fmt):
 class Widget(QWidget):
 
     TITLE = _('Unknown')
-    ICON  = I('config.png')
+    ICON  = 'config.png'
     HELP  = ''
     COMMIT_NAME = None
     # If True, leading and trailing spaces are removed from line and text edit
@@ -68,11 +82,10 @@ class Widget(QWidget):
         self._options = options
         self._name = self.commit_name = self.COMMIT_NAME
         assert self._name is not None
-        self._icon = QIcon(self.ICON)
+        self._icon = QIcon.ic(self.ICON)
         for name in self._options:
             if not hasattr(self, 'opt_'+name):
-                raise Exception('Option %s missing in %s'%(name,
-                    self.__class__.__name__))
+                raise Exception(f'Option {name} missing in {self.__class__.__name__}')
             self.connect_gui_obj(getattr(self, 'opt_'+name))
 
     def initialize_options(self, get_option, get_help, db=None, book_id=None):
@@ -101,7 +114,7 @@ class Widget(QWidget):
                     buddy = g.buddy()
                     if buddy is not None and hasattr(buddy, '_help'):
                         g._help = buddy._help
-                        htext = unicode_type(buddy.toolTip()).strip()
+                        htext = str(buddy.toolTip()).strip()
                         g.setToolTip(htext)
                         g.setWhatsThis(htext)
                         g.__class__.enterEvent = lambda obj, event: self.set_help(getattr(obj, '_help', obj.toolTip()))
@@ -140,8 +153,8 @@ class Widget(QWidget):
                 gui_opt.setDisabled(True)
 
     def get_value(self, g):
-        from calibre.gui2.convert.xpath_wizard import XPathEdit
         from calibre.gui2.convert.regex_builder import RegexEdit
+        from calibre.gui2.convert.xpath_wizard import XPathEdit
         from calibre.gui2.widgets import EncodingComboBox
         ret = self.get_value_handler(g)
         if ret != 'this is a dummy return value, xcswx1avcx4x':
@@ -152,18 +165,18 @@ class Widget(QWidget):
             return g.value()
         elif isinstance(g, (QLineEdit, QTextEdit, QPlainTextEdit)):
             func = getattr(g, 'toPlainText', getattr(g, 'text', None))()
-            ans = unicode_type(func)
+            ans = str(func)
             if self.STRIP_TEXT_FIELDS:
                 ans = ans.strip()
             if not ans:
                 ans = None
             return ans
         elif isinstance(g, QFontComboBox):
-            return unicode_type(QFontInfo(g.currentFont()).family())
+            return str(QFontInfo(g.currentFont()).family())
         elif isinstance(g, FontFamilyChooser):
             return g.font_family
         elif isinstance(g, EncodingComboBox):
-            ans = unicode_type(g.currentText()).strip()
+            ans = str(g.currentText()).strip()
             try:
                 codecs.lookup(ans)
             except:
@@ -172,7 +185,7 @@ class Widget(QWidget):
                 ans = None
             return ans
         elif isinstance(g, QComboBox):
-            return unicode_type(g.currentText())
+            return str(g.currentText())
         elif isinstance(g, QCheckBox):
             return bool(g.isChecked())
         elif isinstance(g, XPathEdit):
@@ -180,7 +193,7 @@ class Widget(QWidget):
         elif isinstance(g, RegexEdit):
             return g.regex if g.regex else None
         else:
-            raise Exception('Can\'t get value from %s'%type(g))
+            raise Exception(f"Can't get value from {type(g)}")
 
     def gui_obj_changed(self, gui_obj, *args):
         self.changed_signal.emit()
@@ -192,8 +205,8 @@ class Widget(QWidget):
             return
         except NotImplementedError:
             pass
-        from calibre.gui2.convert.xpath_wizard import XPathEdit
         from calibre.gui2.convert.regex_builder import RegexEdit
+        from calibre.gui2.convert.xpath_wizard import XPathEdit
         if isinstance(g, (QSpinBox, QDoubleSpinBox)):
             g.valueChanged.connect(f)
         elif isinstance(g, (QLineEdit, QTextEdit, QPlainTextEdit)):
@@ -209,14 +222,14 @@ class Widget(QWidget):
         elif isinstance(g, FontFamilyChooser):
             g.family_changed.connect(f)
         else:
-            raise Exception('Can\'t connect %s'%type(g))
+            raise Exception(f"Can't connect {type(g)}")
 
     def connect_gui_obj_handler(self, gui_obj, slot):
         raise NotImplementedError()
 
     def set_value(self, g, val):
-        from calibre.gui2.convert.xpath_wizard import XPathEdit
         from calibre.gui2.convert.regex_builder import RegexEdit
+        from calibre.gui2.convert.xpath_wizard import XPathEdit
         from calibre.gui2.widgets import EncodingComboBox
         if self.set_value_handler(g, val):
             return
@@ -250,8 +263,7 @@ class Widget(QWidget):
         elif isinstance(g, (XPathEdit, RegexEdit)):
             g.edit.setText(val if val else '')
         else:
-            raise Exception('Can\'t set value %s in %s'%(repr(val),
-                unicode_type(g.objectName())))
+            raise Exception(f"Can't set value {val!r} in {g.objectName()!s}")
         self.post_set_value(g, val)
 
     def set_help(self, msg):
@@ -276,7 +288,7 @@ class Widget(QWidget):
 
     def setup_widget_help(self, g):
         w = textwrap.TextWrapper(80)
-        htext = '<div>%s</div>'%prepare_string_for_xml('\n'.join(w.wrap(g._help)))
+        htext = '<div>{}</div>'.format(prepare_string_for_xml('\n'.join(w.wrap(g._help))))
         g.setToolTip(htext)
         g.setWhatsThis(htext)
         g.__class__.enterEvent = lambda obj, event: self.set_help(getattr(obj, '_help', obj.toolTip()))

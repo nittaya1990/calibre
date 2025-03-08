@@ -1,21 +1,20 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
 
 
 __license__   = 'GPL v3'
 __copyright__ = '2010, Kovid Goyal <kovid@kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
 
-import re, os, shutil, errno
+import os
+import shutil
 
 from qt.core import QModelIndex
 
+from calibre import sanitize_file_name
 from calibre.gui2 import choose_dir, error_dialog, warning_dialog
+from calibre.gui2.actions import InterfaceAction
 from calibre.gui2.tools import generate_catalog
 from calibre.utils.config import dynamic
-from calibre.gui2.actions import InterfaceAction
-from calibre import sanitize_file_name
-from polyglot.builtins import range, map
 
 
 class GenerateCatalogAction(InterfaceAction):
@@ -72,11 +71,11 @@ class GenerateCatalogAction(InterfaceAction):
             # jobs.results is a list - the first entry is the intended title for the dialog
             # Subsequent strings are error messages
             dialog_title = job.result.pop(0)
-            if re.search('warning', job.result[0].lower()):
-                msg = _("Catalog generation complete, with warnings.")
+            if 'warning' in job.result[0].lower():
+                msg = _('Catalog generation complete, with warnings.')
                 warning_dialog(self.gui, dialog_title, msg, det_msg='\n'.join(job.result), show=True)
             else:
-                job.result.append("Catalog generation terminated.")
+                job.result.append('Catalog generation terminated.')
                 error_dialog(self.gui, dialog_title,'\n'.join(job.result),show=True)
                 return
 
@@ -96,16 +95,9 @@ class GenerateCatalogAction(InterfaceAction):
                     _('Select destination for %(title)s.%(fmt)s') % dict(
                         title=job.catalog_title, fmt=job.fmt.lower()))
             if export_dir:
-                destination = os.path.join(export_dir, '%s.%s' % (
-                    sanitize_file_name(job.catalog_title), job.fmt.lower()))
+                destination = os.path.join(export_dir, f'{sanitize_file_name(job.catalog_title)}.{job.fmt.lower()}')
                 try:
                     shutil.copyfile(job.catalog_file_path, destination)
-                except EnvironmentError as err:
-                    if getattr(err, 'errno', None) == errno.EACCES:  # Permission denied
-                        import traceback
-                        error_dialog(self.gui, _('Permission denied'),
-                                _('Could not open %s. Is it being used by another'
-                                ' program?')%destination, det_msg=traceback.format_exc(),
-                                show=True)
-                        return
+                except OSError as err:
+                    err.locking_violation_msg = _('Could not open the catalog output file.')
                     raise

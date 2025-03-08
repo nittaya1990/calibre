@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
 # License: GPLv3 Copyright: 2010, Kovid Goyal <kovid at kovidgoyal.net>
 
 
@@ -7,16 +6,12 @@ import re
 
 from calibre import prepare_string_for_xml
 from calibre.constants import preferred_encoding
-from calibre.ebooks.BeautifulSoup import (
-    BeautifulSoup, CData, Comment, Declaration, NavigableString,
-    ProcessingInstruction
-)
+from calibre.ebooks.BeautifulSoup import BeautifulSoup, CData, Comment, Declaration, NavigableString, ProcessingInstruction
 from calibre.utils.html2text import html2text
-from polyglot.builtins import unicode_type
 
 # Hackish - ignoring sentences ending or beginning in numbers to avoid
 # confusion with decimal points.
-lost_cr_pat = re.compile('([a-z])([\\.\\?!])([A-Z])')
+lost_cr_pat = re.compile(r'([a-z])([\.\?!])([A-Z])')
 lost_cr_exception_pat = re.compile(r'(Ph\.D)|(D\.Phil)|((Dr|Mr|Mrs|Ms)\.[A-Z])')
 sanitize_pat = re.compile(r'<script|<table|<tr|<td|<th|<style|<iframe',
         re.IGNORECASE)
@@ -48,8 +43,8 @@ def comments_to_html(comments):
 
     '''
     if not comments:
-        return u'<p></p>'
-    if not isinstance(comments, unicode_type):
+        return '<p></p>'
+    if not isinstance(comments, str):
         comments = comments.decode(preferred_encoding, 'replace')
 
     if comments.lstrip().startswith('<'):
@@ -58,7 +53,7 @@ def comments_to_html(comments):
 
     if '<' not in comments:
         comments = prepare_string_for_xml(comments)
-        parts = [u'<p class="description">%s</p>'%x.replace(u'\n', u'<br />')
+        parts = ['<p class="description">{}</p>'.format(x.replace('\n', '<br />'))
                 for x in comments.split('\n\n')]
         return '\n'.join(parts)
 
@@ -68,22 +63,20 @@ def comments_to_html(comments):
         except:
             import traceback
             traceback.print_exc()
-            return u'<p></p>'
+            return '<p></p>'
 
     # Explode lost CRs to \n\n
     comments = lost_cr_exception_pat.sub(lambda m: m.group().replace('.',
         '.\r'), comments)
     for lost_cr in lost_cr_pat.finditer(comments):
         comments = comments.replace(lost_cr.group(),
-                                    '%s%s\n\n%s' % (lost_cr.group(1),
-                                                    lost_cr.group(2),
-                                                    lost_cr.group(3)))
+                                    f'{lost_cr.group(1)}{lost_cr.group(2)}\n\n{lost_cr.group(3)}')
 
-    comments = comments.replace(u'\r', u'')
+    comments = comments.replace('\r', '')
     # Convert \n\n to <p>s
-    comments = comments.replace(u'\n\n', u'<p>')
+    comments = comments.replace('\n\n', '<p>')
     # Convert solo returns to <br />
-    comments = comments.replace(u'\n', '<br />')
+    comments = comments.replace('\n', '<br />')
     # Convert two hyphens to emdash
     comments = comments.replace('--', '&mdash;')
 
@@ -96,7 +89,7 @@ def comments_to_html(comments):
     all_tokens = list(soup.contents)
     inline_tags = ('br', 'b', 'i', 'em', 'strong', 'span', 'font', 'a', 'hr')
     for token in all_tokens:
-        if isinstance(token,  (CData, Comment, Declaration, ProcessingInstruction)):
+        if isinstance(token, (CData, Comment, Declaration, ProcessingInstruction)):
             continue
         if isinstance(token, NavigableString):
             if not open_pTag:
@@ -136,7 +129,10 @@ def markdown(val):
     except AttributeError:
         from calibre.ebooks.markdown import Markdown
         md = markdown.Markdown = Markdown()
-    return md.convert(val)
+    val = md.convert(val)
+    # The Qt Rich text widgets display <p><br></p> as two blank lines instead
+    # of one so fix that here.
+    return re.sub(r'<p(|\s+[^>]*?)>\s*<br\s*/?>\s*</p>','<p\\1>\xa0</p>', val)
 
 
 def merge_comments(one, two):
@@ -145,7 +141,7 @@ def merge_comments(one, two):
 
 def sanitize_comments_html(html):
     from calibre.ebooks.markdown import Markdown
-    text = html2text(html)
+    text = html2text(html, single_line_break=False)
     md = Markdown()
     html = md.convert(text)
     return html
@@ -167,7 +163,11 @@ def find_tests():
                     ('a <?xml asd> b\n\ncd',
                         '<p class="description">a  b</p><p class="description">cd</p>'),
             ]:
-                cval = comments_to_html(pat)
-                self.assertEqual(cval, val)
+                try:
+                    cval = comments_to_html(pat)
+                except DeprecationWarning:
+                    pass  # new lxml + old Beautiful soup == deprecation warning
+                else:
+                    self.assertEqual(cval, val)
 
     return unittest.defaultTestLoader.loadTestsFromTestCase(Test)

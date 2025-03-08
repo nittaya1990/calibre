@@ -1,25 +1,27 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 
 
 __license__ = 'GPL v3'
 __copyright__ = '2014, Kovid Goyal <kovid at kovidgoyal.net>'
 
-import re, sys, copy, json
-from itertools import repeat
+import copy
+import json
+import re
+import sys
 from collections import defaultdict
+from itertools import repeat
 
 from lxml import etree
 from lxml.builder import ElementMaker
 
 from calibre import prints
-from calibre.ebooks.metadata import string_to_authors, check_isbn, check_doi
-from calibre.utils.xml_parse import safe_xml_fromstring
+from calibre.ebooks.metadata import check_doi, check_isbn, string_to_authors
 from calibre.ebooks.metadata.book.base import Metadata
 from calibre.ebooks.metadata.opf2 import dump_dict
-from calibre.utils.date import parse_date, isoformat, now
+from calibre.utils.date import isoformat, now, parse_date
 from calibre.utils.localization import canonicalize_lang, lang_as_iso639_1
-from polyglot.builtins import iteritems, string_or_bytes, filter
+from calibre.utils.xml_parse import safe_xml_fromstring
+from polyglot.builtins import iteritems, string_or_bytes
 
 _xml_declaration = re.compile(r'<\?xml[^<>]+encoding\s*=\s*[\'"](.*?)[\'"][^<>]*>', re.IGNORECASE)
 
@@ -48,7 +50,7 @@ KNOWN_ID_SCHEMES = {'isbn', 'url', 'doi'}
 
 def expand(name):
     prefix, name = name.partition(':')[::2]
-    return '{%s}%s' % (NS_MAP[prefix], name)
+    return f'{{{NS_MAP[prefix]}}}{name}'
 
 
 xpath_cache = {}
@@ -173,8 +175,8 @@ def read_series(root):
 
 
 def read_user_metadata(mi, root):
-    from calibre.utils.config import from_json
     from calibre.ebooks.metadata.book.json_codec import decode_is_multiple
+    from calibre.utils.config import from_json
     fields = set()
     for item in XPath('//calibre:custom_metadata')(root):
         for li in XPath('./rdf:Bag/rdf:li')(item):
@@ -290,13 +292,20 @@ def metadata_from_xmp_packet(raw_bytes):
             if val:
                 setattr(mi, x, val)
                 break
-    for x in ('author_link_map', 'user_categories'):
+    for x in ('link_maps', 'user_categories'):
         val = first_simple('//calibre:'+x, root)
         if val:
             try:
                 setattr(mi, x, json.loads(val))
-            except:
+            except Exception:
                 pass
+        elif x == 'link_maps':
+            val = first_simple('//calibre:author_link_map', root)
+            if val:
+                try:
+                    setattr(mi, x, {'authors': json.loads(val)})
+                except Exception:
+                    pass
 
     languages = multiple_sequences('//dc:language', root)
     if languages:
@@ -313,7 +322,7 @@ def metadata_from_xmp_packet(raw_bytes):
     for namespace in ('prism', 'pdfx'):
         for scheme in KNOWN_ID_SCHEMES:
             if scheme not in identifiers:
-                val = first_simple('//%s:%s' % (namespace, scheme), root)
+                val = first_simple(f'//{namespace}:{scheme}', root)
                 scheme = scheme.lower()
                 if scheme == 'isbn':
                     val = check_isbn(val)
@@ -431,13 +440,13 @@ def create_series(calibre, series, series_index):
     except (TypeError, ValueError):
         series_index = 1.0
     si = s.makeelement(expand('calibreSI:series_index'))
-    si.text = '%.2f' % series_index
+    si.text = f'{series_index:.2f}'
     s.append(si)
 
 
 def create_user_metadata(calibre, all_user_metadata):
+    from calibre.ebooks.metadata.book.json_codec import encode_is_multiple, object_to_unicode
     from calibre.utils.config import to_json
-    from calibre.ebooks.metadata.book.json_codec import object_to_unicode, encode_is_multiple
 
     s = calibre.makeelement(expand('calibre:custom_metadata'))
     calibre.append(s)
@@ -486,7 +495,7 @@ def metadata_to_xmp_packet(mi):
     if not mi.is_null('pubdate'):
         create_sequence_property(dc, 'dc:date', [isoformat(mi.pubdate, as_utc=False)])  # Adobe spec recommends local time
     if not mi.is_null('languages'):
-        langs = list(filter(None, map(lambda x:lang_as_iso639_1(x) or canonicalize_lang(x), mi.languages)))
+        langs = list(filter(None, (lang_as_iso639_1(x) or canonicalize_lang(x) for x in mi.languages)))
         if langs:
             create_sequence_property(dc, 'dc:language', langs, ordered=False)
 
@@ -505,7 +514,7 @@ def metadata_to_xmp_packet(mi):
         for scheme, val in iteritems(identifiers):
             if scheme in {'isbn', 'doi'}:
                 for prefix, parent in iteritems(extra_ids):
-                    ie = parent.makeelement(expand('%s:%s'%(prefix, scheme)))
+                    ie = parent.makeelement(expand(f'{prefix}:{scheme}'))
                     ie.text = val
                     parent.append(ie)
 
@@ -522,12 +531,12 @@ def metadata_to_xmp_packet(mi):
         except (TypeError, ValueError):
             pass
         else:
-            create_simple_property(calibre, 'calibre:rating', '%g' % r)
+            create_simple_property(calibre, 'calibre:rating', f'{r:g}')
     if not mi.is_null('series'):
         create_series(calibre, mi.series, mi.series_index)
     if not mi.is_null('timestamp'):
         create_simple_property(calibre, 'calibre:timestamp', isoformat(mi.timestamp, as_utc=False))
-    for x in ('author_link_map', 'user_categories'):
+    for x in ('link_maps', 'user_categories'):
         val = getattr(mi, x, None)
         if val:
             create_simple_property(calibre, 'calibre:'+x, dump_dict(val))
@@ -543,7 +552,8 @@ def metadata_to_xmp_packet(mi):
 
 
 def find_used_namespaces(elem):
-    getns = lambda x: (x.partition('}')[0][1:] if '}' in x else None)
+    def getns(x):
+        return (x.partition('}')[0][1:] if '}' in x else None)
     ans = {getns(x) for x in list(elem.attrib) + [elem.tag]}
     for child in elem.iterchildren(etree.Element):
         ans |= find_used_namespaces(child)
@@ -575,7 +585,7 @@ def find_nsmap(elems):
                 ans[pp] = ns
             else:
                 i += 1
-                ans['ns%d' % i] = ns
+                ans[f'ns{i}'] = ns
     return ans
 
 
@@ -608,7 +618,7 @@ def merge_xmp_packet(old, new):
     defined_tags |= {expand('xmp:' + x) for x in ('MetadataDate', 'Identifier')}
     # For redundancy also remove all fields explicitly set in the new packet
     defined_tags |= {x.tag for x in item_xpath(new)}
-    calibrens = '{%s}' % NS_MAP['calibre']
+    calibrens = '{{{}}}'.format(NS_MAP['calibre'])
     for elem in item_xpath(old):
         if elem.tag in defined_tags or (elem.tag and elem.tag.startswith(calibrens)):
             elem.getparent().remove(elem)

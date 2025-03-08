@@ -4,40 +4,81 @@ __license__ = 'GPL v3'
 '''
 sciencenews.org
 '''
-from calibre.web.feeds.news import BasicNewsRecipe
+
+import re
+
+from calibre.web.feeds.news import BasicNewsRecipe, prefixed_classes
 
 
 class ScienceNewsIssue(BasicNewsRecipe):
-    title = u'Science News Recent Issues'
-    __author__ = u'Darko Miletic, Sujata Raman and Starson17'
-    description           = u'''Science News is an award-winning weekly
-    newsmagazine covering the most important research in all fields of science.
-    Its 16 pages each week are packed with short, accurate articles that appeal
-    to both general readers and scientists. Published since 1922, the magazine
-    now reaches about 150,000 subscribers and more than 1 million readers.
-    These are the latest News Items from Science News. This recipe downloads
-    the last 30 days worth of articles.'''
+    title = u'Science News'
+    description = ('Science News is an award-winning bi-weekly newsmagazine covering the most important research'
+                   ' in all fields of science. This recipe downloads all the articles from the latest issue.')
     category = u'Science, Technology, News'
     publisher = u'Society for Science & the Public'
-    oldest_article = 15
     language = 'en'
-    max_articles_per_feed = 50
     no_stylesheets = True
     use_embedded_content = False
-    timefmt = ' [%A, %d %B, %Y]'
     auto_cleanup = False
+    remove_attributes = ['height', 'width', 'style']
+    ignore_duplicate_articles = {'url'}
+    resolve_internal_links = True
 
     keep_only_tags = [
-        dict(attrs={'class': lambda x: x and (
-            'single__content___' in x or 'header-default__title___' in x or
-            'header-default__deck___' in x or 'header-default__figure___' in x
-        )})
+        dict(
+            attrs={
+                'class':
+                lambda x: x and (
+                    'single__content___' in x or 'header-default__title___' in x or
+                    'header-default__deck___' in x or 'header-default__figure___' in
+                    x
+                )
+            }
+        )
     ]
     remove_tags = [
-        dict(attrs={'class': lambda x: x and (
-            'newsletter-signup__wrapper___' in x
-        )})
+        dict(name=['svg', 'button']),
+        dict(
+            attrs={'class': lambda x: x and ('newsletter-signup__wrapper___' in x)}
+        )
     ]
 
-    feeds = [(u"Science News Headlines",
-              u'https://www.sciencenews.org/feed')]
+    def parse_index(self):
+
+        index = self.index_to_soup('https://www.sciencenews.org/sn-magazine')
+        a = index.find(**prefixed_classes('magazine-archive__issue-thumbnail___'))
+        url = a['href']
+        self.timefmt = ' [' + url.split('/')[-1] + ']'
+        self.cover_url = a.img['src']
+
+        # Get articles
+        soup = self.index_to_soup(url)
+        soup = soup.find('main', attrs={'id':'content'})
+        re_article = re.compile(r'https://www.sciencenews.org/article/')
+        stories = []
+        past_urls = set()
+        for sec in soup.find_all(href=re_article):
+
+            article_url = sec['href']
+            article_title = sec.text.strip()
+
+            # Ignore image URLs which do not have text title
+            if article_title == '':
+                continue
+
+            # Ignore if link is a duplicate
+            if article_url in past_urls:
+                continue
+
+            past_urls.add(article_url)
+            self.log('\t', article_title, ' ', article_url)
+            article_info = {
+                'url': article_url,
+                'title': article_title,
+            }
+            stories.append(article_info)
+
+        index = [
+            ('Articles', stories),
+        ]
+        return index

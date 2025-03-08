@@ -1,27 +1,28 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 
 
 __license__ = 'GPL v3'
 __copyright__ = '2013, Kovid Goyal <kovid at kovidgoyal.net>'
 
-import sys, os
+import os
+import sys
 
 from lxml import etree
 
-from calibre import prepare_string_for_xml, CurrentDir
-from calibre.ptempfile import TemporaryDirectory
-from calibre.ebooks.oeb.base import serialize
+from calibre import CurrentDir, prepare_string_for_xml
 from calibre.ebooks.metadata import authors_to_string
 from calibre.ebooks.metadata.opf2 import metadata_to_opf
+from calibre.ebooks.oeb.base import serialize
+from calibre.ebooks.oeb.polish.container import OPF_NAMESPACES, Container, opf_to_azw3
 from calibre.ebooks.oeb.polish.parsing import parse
-from calibre.ebooks.oeb.polish.container import OPF_NAMESPACES, opf_to_azw3, Container
-from calibre.ebooks.oeb.polish.utils import guess_type
-from calibre.ebooks.oeb.polish.pretty import pretty_xml_tree, pretty_html_tree
+from calibre.ebooks.oeb.polish.pretty import pretty_html_tree, pretty_xml_tree
 from calibre.ebooks.oeb.polish.toc import TOC, create_ncx
+from calibre.ebooks.oeb.polish.utils import guess_type
+from calibre.ptempfile import TemporaryDirectory
 from calibre.utils.localization import lang_as_iso639_1
 from calibre.utils.logging import DevNull
-from calibre.utils.zipfile import ZipFile, ZIP_STORED
+from calibre.utils.resources import get_path as P
+from calibre.utils.zipfile import ZIP_STORED, ZipFile
 from polyglot.builtins import as_bytes
 
 valid_empty_formats = {'epub', 'txt', 'docx', 'azw3', 'md'}
@@ -39,7 +40,7 @@ def create_toc(mi, opf, html_name, lang):
 def create_book(mi, path, fmt='epub', opf_name='metadata.opf', html_name='start.xhtml', toc_name='toc.ncx'):
     ''' Create an empty book in the specified format at the specified location. '''
     if fmt not in valid_empty_formats:
-        raise ValueError('Cannot create empty book in the %s format' % fmt)
+        raise ValueError(f'Cannot create empty book in the {fmt} format')
     if fmt == 'txt':
         with open(path, 'wb') as f:
             if not mi.is_null('title'):
@@ -71,26 +72,26 @@ def create_book(mi, path, fmt='epub', opf_name='metadata.opf', html_name='start.
     lang = lang_as_iso639_1(lang) or lang
 
     opfns = OPF_NAMESPACES['opf']
-    m = opf.makeelement('{%s}manifest' % opfns)
+    m = opf.makeelement(f'{{{opfns}}}manifest')
     opf.insert(1, m)
-    i = m.makeelement('{%s}item' % opfns, href=html_name, id='start')
+    i = m.makeelement(f'{{{opfns}}}item', href=html_name, id='start')
     i.set('media-type', guess_type('a.xhtml'))
     m.append(i)
-    i = m.makeelement('{%s}item' % opfns, href=toc_name, id='ncx')
+    i = m.makeelement(f'{{{opfns}}}item', href=toc_name, id='ncx')
     i.set('media-type', guess_type(toc_name))
     m.append(i)
-    s = opf.makeelement('{%s}spine' % opfns, toc="ncx")
+    s = opf.makeelement(f'{{{opfns}}}spine', toc='ncx')
     opf.insert(2, s)
-    i = s.makeelement('{%s}itemref' % opfns, idref='start')
+    i = s.makeelement(f'{{{opfns}}}itemref', idref='start')
     s.append(i)
-    CONTAINER = '''\
+    CONTAINER = f'''\
 <?xml version="1.0"?>
 <container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
    <rootfiles>
-      <rootfile full-path="{0}" media-type="application/oebps-package+xml"/>
+      <rootfile full-path="{prepare_string_for_xml(opf_name, True)}" media-type="application/oebps-package+xml"/>
    </rootfiles>
 </container>
-    '''.format(prepare_string_for_xml(opf_name, True)).encode('utf-8')
+    '''.encode('utf-8')
     HTML = P('templates/new_book.html', data=True).decode('utf-8').replace(
         '_LANGUAGE_', prepare_string_for_xml(lang, True)
     ).replace(

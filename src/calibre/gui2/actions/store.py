@@ -1,13 +1,10 @@
-# -*- coding: utf-8 -*-
-
-
 __license__ = 'GPL 3'
 __copyright__ = '2011, John Schember <john@nachtimwald.com>'
 __docformat__ = 'restructuredtext en'
 
 from functools import partial
 
-from qt.core import QIcon, QSize
+from qt.core import QIcon
 
 from calibre.gui2 import error_dialog
 from calibre.gui2.actions import InterfaceAction
@@ -26,10 +23,8 @@ class StoreAction(InterfaceAction):
         self.qaction.triggered.connect(self.do_search)
         self.store_menu = self.qaction.menu()
         cm = partial(self.create_menu_action, self.store_menu)
-        for x, t in [('author', _('this author')), ('title', _('this title')),
-                ('book', _('this book'))]:
-            func = getattr(self, 'search_%s'%('author_title' if x == 'book'
-                else x))
+        for x, t in [('author', _('this author')), ('title', _('this title')), ('book', _('this book'))]:
+            func = getattr(self, 'search_{}'.format('author_title' if x == 'book' else x))
             ac = cm(x, _('Search for %s')%t, triggered=func)
             setattr(self, 'action_search_by_'+x, ac)
         self.store_menu.addSeparator()
@@ -40,8 +35,7 @@ class StoreAction(InterfaceAction):
 
     def load_menu(self):
         self.store_list_menu.clear()
-        icon = QIcon()
-        icon.addFile(I('donate.png'), QSize(16, 16))
+        icon = QIcon.ic('donate.png')
         for n, p in sorted(self.gui.istores.items(), key=lambda x: x[0].lower()):
             if p.base_plugin.affiliate:
                 self.store_list_menu.addAction(icon, n,
@@ -57,7 +51,7 @@ class StoreAction(InterfaceAction):
         self.show_disclaimer()
         from calibre.gui2.store.search.search import SearchDialog
         sd = SearchDialog(self.gui, self.gui, query)
-        sd.exec_()
+        sd.exec()
 
     def _get_selected_row(self):
         rows = self.gui.current_view().selectionModel().selectedRows()
@@ -118,7 +112,7 @@ class StoreAction(InterfaceAction):
     def choose(self):
         from calibre.gui2.store.config.chooser.chooser_dialog import StoreChooserDialog
         d = StoreChooserDialog(self.gui)
-        d.exec_()
+        d.exec()
         self.gui.load_store_plugins()
         self.load_menu()
 

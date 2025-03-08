@@ -1,15 +1,14 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
 
 __license__   = 'GPL v3'
 __copyright__ = '2008, Kovid Goyal <kovid at kovidgoyal.net>'
 
-from qt.core import (QDialog, QLineEdit, Qt)
+from qt.core import QDialog, QLineEdit, Qt
 
 from calibre.gui2 import error_dialog
 from calibre.gui2.dialogs.smartdevice_ui import Ui_Dialog
 from calibre.utils.mdns import get_all_ips
-from polyglot.builtins import itervalues, unicode_type, map
+from polyglot.builtins import itervalues
 
 
 def ipaddr_sort_key(ipaddr):
@@ -20,7 +19,7 @@ def ipaddr_sort_key(ipaddr):
 
 
 def get_all_ip_addresses():
-    ipaddrs = list()
+    ipaddrs = []
     for iface in itervalues(get_all_ips()):
         for addrs in iface:
             if 'broadcast' in addrs and addrs['addr'] != '127.0.0.1':
@@ -100,14 +99,14 @@ class SmartdeviceDialog(QDialog, Ui_Dialog):
         self.resize(self.sizeHint())
 
     def use_fixed_port_changed(self, state):
-        self.fixed_port.setEnabled(state == Qt.CheckState.Checked)
+        self.fixed_port.setEnabled(Qt.CheckState(state) == Qt.CheckState.Checked)
 
     def toggle_password(self, state):
         self.password_box.setEchoMode(QLineEdit.EchoMode.Password if state ==
                 Qt.CheckState.Unchecked else QLineEdit.EchoMode.Normal)
 
     def accept(self):
-        port = unicode_type(self.fixed_port.text())
+        port = str(self.fixed_port.text())
         if not port:
             error_dialog(self, _('Invalid port number'),
                 _('You must provide a port number.'), show=True)
@@ -125,13 +124,13 @@ class SmartdeviceDialog(QDialog, Ui_Dialog):
             return
 
         self.device_manager.set_option('smartdevice', 'password',
-                                       unicode_type(self.password_box.text()))
+                                       str(self.password_box.text()))
         self.device_manager.set_option('smartdevice', 'autostart',
                                        self.autostart_box.isChecked())
         self.device_manager.set_option('smartdevice', 'use_fixed_port',
                                        self.use_fixed_port.isChecked())
         self.device_manager.set_option('smartdevice', 'port_number',
-                                       unicode_type(self.fixed_port.text()))
+                                       str(self.fixed_port.text()))
 
         message = self.device_manager.start_plugin('smartdevice')
 

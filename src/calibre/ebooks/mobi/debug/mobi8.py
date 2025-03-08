@@ -1,23 +1,24 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
 
 
 __license__   = 'GPL v3'
 __copyright__ = '2012, Kovid Goyal <kovid@kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
 
-import sys, os, struct, textwrap
+import os
+import struct
+import sys
+import textwrap
 
 from calibre import CurrentDir
+from calibre.ebooks.mobi.debug import format_bytes
 from calibre.ebooks.mobi.debug.containers import ContainerHeader
 from calibre.ebooks.mobi.debug.headers import TextRecord
-from calibre.ebooks.mobi.debug.index import (SKELIndex, SECTIndex, NCXIndex,
-        GuideIndex)
-from calibre.ebooks.mobi.utils import read_font_record, decode_tbs, RECORD_SIZE
-from calibre.ebooks.mobi.debug import format_bytes
+from calibre.ebooks.mobi.debug.index import GuideIndex, NCXIndex, SECTIndex, SKELIndex
 from calibre.ebooks.mobi.reader.headers import NULL_INDEX
+from calibre.ebooks.mobi.utils import RECORD_SIZE, decode_tbs, read_font_record
 from calibre.utils.imghdr import what
-from polyglot.builtins import iteritems, itervalues, map, unicode_type, zip, print_to_binary_file
+from polyglot.builtins import iteritems, itervalues, print_to_binary_file
 
 
 class FDST:
@@ -33,17 +34,18 @@ class FDST:
         rest = raw[self.sec_off+struct.calcsize(secf):]
         if rest:
             raise ValueError('FDST record has trailing data: '
-                    '%s'%format_bytes(rest))
+                    f'{format_bytes(rest)}')
         self.sections = tuple(zip(secs[::2], secs[1::2]))
 
     def __str__(self):
         ans = ['FDST record']
-        a = lambda k, v:ans.append('%s: %s'%(k, v))
+        def a(k, v):
+            return ans.append(f'{k}: {v}')
         a('Offset to sections', self.sec_off)
         a('Number of section records', self.num_sections)
-        ans.append('**** %d Sections ****'% len(self.sections))
+        ans.append(f'**** {len(self.sections)} Sections ****')
         for sec in self.sections:
-            ans.append('Start: %20d End: %d'%sec)
+            ans.append(f'Start: {sec[0]:>20} End: {sec[1]}')
 
         return '\n'.join(ans)
 
@@ -51,7 +53,7 @@ class FDST:
 class File:
 
     def __init__(self, skel, skeleton, text, first_aid, sections):
-        self.name = 'part%04d'%skel.file_number
+        self.name = f'part{skel.file_number:04}'
         self.skeleton, self.text, self.first_aid = skeleton, text, first_aid
         self.sections = sections
 
@@ -64,7 +66,7 @@ class File:
             with open('skeleton.html', 'wb') as f:
                 f.write(self.skeleton)
             for i, text in enumerate(self.sections):
-                with open('sect-%04d.html'%i, 'wb') as f:
+                with open(f'sect-{i:04}.html', 'wb') as f:
                     f.write(text)
 
 
@@ -95,14 +97,14 @@ class MOBIFile:
 
     def print_header(self, f=sys.stdout):
         p = print_to_binary_file(f)
-        p(unicode_type(self.mf.palmdb))
+        p(str(self.mf.palmdb))
         p()
         p('Record headers:')
         for i, r in enumerate(self.mf.records):
-            p('%6d. %s'%(i, r.header))
+            p(f'{i:6}. {r.header}')
 
         p()
-        p(unicode_type(self.mf.mobi8_header))
+        p(str(self.mf.mobi8_header))
 
     def read_fdst(self):
         self.fdst = None
@@ -149,7 +151,7 @@ class MOBIFile:
         for i, x in enumerate(boundaries):
             start, end = x
             raw = self.raw_text[start:end]
-            with open(os.path.join(ddir, 'flow%04d.txt'%i), 'wb') as f:
+            with open(os.path.join(ddir, f'flow{i:04}.txt'), 'wb') as f:
                 f.write(raw)
 
     def extract_resources(self, records):
@@ -180,7 +182,7 @@ class MOBIFile:
             if sig == b'FONT':
                 font = read_font_record(rec.raw)
                 if font['err']:
-                    raise ValueError('Failed to read font record: %s Headers: %s'%(
+                    raise ValueError('Failed to read font record: {} Headers: {}'.format(
                         font['err'], font['headers']))
                 payload = (font['font_data'] if font['font_data'] else
                         font['raw_data'])
@@ -219,13 +221,19 @@ class MOBIFile:
                 elif sig in known_types:
                     suffix = '-' + sig.decode('ascii')
 
-            self.resource_map.append(('%s/%06d%s.%s'%(prefix, resource_index, suffix, ext),
+            self.resource_map.append((f'{prefix}/{resource_index:06}{suffix}.{ext}',
                 payload))
 
     def read_tbs(self):
-        from calibre.ebooks.mobi.writer8.tbs import (Entry, DOC,
-                collect_indexing_data, encode_strands_as_sequences,
-                sequences_to_bytes, calculate_all_tbs, NegativeStrandIndex)
+        from calibre.ebooks.mobi.writer8.tbs import (
+            DOC,
+            Entry,
+            NegativeStrandIndex,
+            calculate_all_tbs,
+            collect_indexing_data,
+            encode_strands_as_sequences,
+            sequences_to_bytes,
+        )
         entry_map = []
         for index in self.ncx_index:
             vals = list(index)[:-1] + [None, None, None, None]
@@ -252,13 +260,13 @@ class MOBIFile:
         for i, strands in enumerate(indexing_data):
             rec = self.text_records[i]
             tbs_bytes = rec.trailing_data.get('indexing', b'')
-            desc = ['Record #%d'%i]
+            desc = [f'Record #{i}']
             for s, strand in enumerate(strands):
-                desc.append('Strand %d'%s)
+                desc.append(f'Strand {s}')
                 for entries in itervalues(strand):
                     for e in entries:
                         desc.append(
-                        ' %s%d [%-9s] parent: %s (%d) Geometry: (%d, %d)'%(
+                        ' {}{} [{:<9}] parent: {} ({}) Geometry: ({}, {})'.format(
                             e.depth * ('  ') + '- ', e.index, e.action, e.parent,
                             e.index-(e.parent or 0), e.start-i*RECORD_SIZE,
                             e.start+e.length-i*RECORD_SIZE))
@@ -276,9 +284,9 @@ class MOBIFile:
                 extra = {bin(k):v for k, v in iteritems(extra)}
                 sequences.append((val, extra))
             for j, seq in enumerate(sequences):
-                desc.append('Sequence #%d: %r %r'%(j, seq[0], seq[1]))
+                desc.append(f'Sequence #{j}: {seq[0]!r} {seq[1]!r}')
             if tbs_bytes:
-                desc.append('Remaining bytes: %s'%format_bytes(tbs_bytes))
+                desc.append(f'Remaining bytes: {format_bytes(tbs_bytes)}')
             calculated_sequences = encode_strands_as_sequences(strands,
                     tbs_type=tbs_type)
             try:
@@ -286,9 +294,9 @@ class MOBIFile:
             except:
                 calculated_bytes = b'failed to calculate tbs bytes'
             if calculated_bytes != otbs:
-                print('WARNING: TBS mismatch for record %d'%i)
+                print(f'WARNING: TBS mismatch for record {i}')
                 desc.append('WARNING: TBS mismatch!')
-                desc.append('Calculated sequences: %r'%calculated_sequences)
+                desc.append(f'Calculated sequences: {calculated_sequences!r}')
             desc.append('')
             self.indexing_data.append('\n'.join(desc))
 
@@ -313,24 +321,24 @@ def inspect_mobi(mobi_file, ddir):
             fo.write(payload)
 
     for i, container in enumerate(f.containers):
-        with open(os.path.join(ddir, 'container%d.txt' % (i + 1)), 'wb') as cf:
-            cf.write(unicode_type(container).encode('utf-8'))
+        with open(os.path.join(ddir, f'container{i + 1}.txt'), 'wb') as cf:
+            cf.write(str(container).encode('utf-8'))
 
     if f.fdst:
         with open(os.path.join(ddir, 'fdst.record'), 'wb') as fo:
-            fo.write(unicode_type(f.fdst).encode('utf-8'))
+            fo.write(str(f.fdst).encode('utf-8'))
 
     with open(os.path.join(ddir, 'skel.record'), 'wb') as fo:
-        fo.write(unicode_type(f.skel_index).encode('utf-8'))
+        fo.write(str(f.skel_index).encode('utf-8'))
 
     with open(os.path.join(ddir, 'chunks.record'), 'wb') as fo:
-        fo.write(unicode_type(f.sect_index).encode('utf-8'))
+        fo.write(str(f.sect_index).encode('utf-8'))
 
     with open(os.path.join(ddir, 'ncx.record'), 'wb') as fo:
-        fo.write(unicode_type(f.ncx_index).encode('utf-8'))
+        fo.write(str(f.ncx_index).encode('utf-8'))
 
     with open(os.path.join(ddir, 'guide.record'), 'wb') as fo:
-        fo.write(unicode_type(f.guide_index).encode('utf-8'))
+        fo.write(str(f.guide_index).encode('utf-8'))
 
     with open(os.path.join(ddir, 'tbs.txt'), 'wb') as fo:
         fo.write(('\n'.join(f.indexing_data)).encode('utf-8'))

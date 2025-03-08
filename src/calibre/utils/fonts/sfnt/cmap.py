@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:fdm=marker:ai
 
 
 __license__   = 'GPL v3'
@@ -9,13 +8,12 @@ __docformat__ = 'restructuredtext en'
 # Note that the code for creating a BMP table (cmap format 4) is taken with
 # thanks from the fonttools project (BSD licensed).
 
-from struct import unpack_from, calcsize, pack
 from collections import OrderedDict
+from struct import calcsize, pack, unpack_from
 
-from calibre.utils.fonts.utils import read_bmp_prefix
 from calibre.utils.fonts.sfnt import UnknownTable, max_power_of_two
 from calibre.utils.fonts.sfnt.errors import UnsupportedFont
-from polyglot.builtins import range
+from calibre.utils.fonts.utils import read_bmp_prefix
 
 
 def split_range(start_code, end_code, cmap):  # {{{
@@ -27,7 +25,7 @@ def split_range(start_code, end_code, cmap):  # {{{
 
     last_id = cmap[start_code]
     last_code = start_code
-    in_order = None
+    in_order = False
     ordered_begin = None
     sub_ranges = []
 
@@ -36,12 +34,12 @@ def split_range(start_code, end_code, cmap):  # {{{
         glyph_id = cmap[code]
 
         if glyph_id - 1 == last_id:
-            if in_order is None or not in_order:
-                in_order = 1
+            if not in_order:
+                in_order = True
                 ordered_begin = last_code
         else:
             if in_order:
-                in_order = 0
+                in_order = False
                 sub_ranges.append((ordered_begin, last_code))
                 ordered_begin = None
 
@@ -97,7 +95,7 @@ def split_range(start_code, end_code, cmap):  # {{{
 # }}}
 
 
-def set_id_delta(id_delta):  # {{{
+def set_id_delta(index, start_code):  # {{{
     # The lowest gid in glyphIndexArray, after subtracting id_delta, must be 1.
     # id_delta is a short, and must be between -32K and 32K
     # startCode can be between 0 and 64K-1, and the first glyph index can be between 1 and 64K-1
@@ -108,13 +106,14 @@ def set_id_delta(id_delta):  # {{{
     #    (short)finalGID = (gid +  id_delta) % 0x10000),
     # we can get from a startCode of 0 to a final GID of 64 -1K by subtracting 1, and casting the
     # negative number to an unsigned short.
-    # Similarly , we can get from a startCode of 64K-1 to a final GID of 1 by adding 2, because of
+    # Similarly, we can get from a startCode of 64K-1 to a final GID of 1 by adding 2, because of
     # the modulo arithmetic.
 
+    id_delta = index - start_code
     if id_delta > 0x7FFF:
-        id_delta = id_delta - 0x10000
-    elif id_delta <  -0x7FFF:
-        id_delta = id_delta + 0x10000
+        id_delta -= 0x10000
+    elif id_delta < -0x7FFF:
+        id_delta += 0x10000
 
     return id_delta
 # }}}
@@ -171,7 +170,7 @@ class BMPTable:
 class CmapTable(UnknownTable):
 
     def __init__(self, *args, **kwargs):
-        super(CmapTable, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
 
         self.version, self.num_tables = unpack_from(b'>HH', self.raw)
 
@@ -255,12 +254,17 @@ class CmapTable(UnknownTable):
         id_range_offset = []
         glyph_index_array = []
         for i in range(len(end_code)-1):  # skip the closing codes (0xffff)
-            indices = list(cmap[char_code] for char_code in range(start_code[i], end_code[i] + 1))
-            if indices == list(range(indices[0], indices[0] + len(indices))):
+            indices = tuple(cmap[char_code] for char_code in range(start_code[i], end_code[i] + 1))
+            if indices == tuple(range(indices[0], indices[0] + len(indices))):
                 # indices is a contiguous list
-                id_delta_temp = set_id_delta(indices[0] - start_code[i])
-                id_delta.append(id_delta_temp)
-                id_range_offset.append(0)
+                id_delta_temp = set_id_delta(indices[0], start_code[i])
+                if id_delta_temp > 0x7FFF or id_delta_temp < -0x7FFF:
+                    id_delta.append(0)
+                    id_range_offset.append(2 * (len(end_code) + len(glyph_index_array) - i))
+                    glyph_index_array.extend(indices)
+                else:
+                    id_delta.append(id_delta_temp)
+                    id_range_offset.append(0)
             else:
                 id_delta.append(0)
                 id_range_offset.append(2 * (len(end_code) + len(glyph_index_array) - i))

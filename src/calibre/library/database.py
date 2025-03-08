@@ -1,5 +1,3 @@
-
-
 __license__   = 'GPL v3'
 __copyright__ = '2008, Kovid Goyal <kovid at kovidgoyal.net>'
 
@@ -7,15 +5,15 @@ __copyright__ = '2008, Kovid Goyal <kovid at kovidgoyal.net>'
 Backend that implements storage of ebooks in an sqlite database.
 '''
 
+import datetime
+import re
 import sqlite3 as sqlite
-import datetime, re, sre_constants
 from zlib import compress, decompress
 
-from calibre.ebooks.metadata import MetaInformation
-from calibre.ebooks.metadata import string_to_authors
-from calibre.utils.serialize import pickle_loads, pickle_dumps
 from calibre import isbytestring
-from polyglot.builtins import unicode_type, filter, map
+from calibre.ebooks.metadata import MetaInformation, string_to_authors
+from calibre.utils.localization import _
+from calibre.utils.serialize import pickle_dumps, pickle_loads
 
 
 class Concatenate:
@@ -55,10 +53,10 @@ class Connection(sqlite.Connection):
 
 
 def _connect(path):
-    if isinstance(path, unicode_type):
+    if isinstance(path, str):
         path = path.encode('utf-8')
-    conn =  sqlite.connect(path, factory=Connection, detect_types=sqlite.PARSE_DECLTYPES|sqlite.PARSE_COLNAMES)
-    conn.row_factory = lambda cursor, row : list(row)
+    conn = sqlite.connect(path, factory=Connection, detect_types=sqlite.PARSE_DECLTYPES|sqlite.PARSE_COLNAMES)
+    conn.row_factory = lambda cursor, row: list(row)
     conn.create_aggregate('concat', 1, Concatenate)
     title_pat = re.compile(r'^(A|The|An)\s+', re.IGNORECASE)
 
@@ -816,18 +814,18 @@ ALTER TABLE books ADD COLUMN isbn TEXT DEFAULT "" COLLATE NOCASE;
         i = 0
         while True:
             i += 1
-            func = getattr(LibraryDatabase, 'upgrade_version%d'%i, None)
+            func = getattr(LibraryDatabase, f'upgrade_version{i}', None)
             if func is None:
                 break
             if self.user_version == i:
-                print('Upgrading database from version: %d'%i)
+                print(f'Upgrading database from version: {i}')
                 func(self.conn)
 
     def close(self):
-        #        global _lock_file
-        #        _lock_file.close()
-        #        os.unlink(_lock_file.name)
-        #        _lock_file = None
+        # global _lock_file
+        # _lock_file.close()
+        # os.unlink(_lock_file.name)
+        # _lock_file = None
         self.conn.close()
 
     @property
@@ -843,16 +841,16 @@ ALTER TABLE books ADD COLUMN isbn TEXT DEFAULT "" COLLATE NOCASE;
         Rebuild self.data and self.cache. Filter results are lost.
         '''
         FIELDS = {
-                  'title'        : 'sort',
-                  'authors'      : 'author_sort',
-                  'publisher'    : 'publisher',
-                  'size'         : 'size',
-                  'date'         : 'timestamp',
-                  'timestamp'    : 'timestamp',
-                  'formats'      : 'formats',
-                  'rating'       : 'rating',
-                  'tags'         : 'tags',
-                  'series'       : 'series',
+                  'title'    : 'sort',
+                  'authors'  : 'author_sort',
+                  'publisher': 'publisher',
+                  'size'     : 'size',
+                  'date'     : 'timestamp',
+                  'timestamp': 'timestamp',
+                  'formats'  : 'formats',
+                  'rating'   : 'rating',
+                  'tags'     : 'tags',
+                  'series'   : 'series',
                  }
         field = FIELDS[sort_field]
         order = 'ASC'
@@ -983,7 +981,7 @@ ALTER TABLE books ADD COLUMN isbn TEXT DEFAULT "" COLLATE NOCASE;
         data = self.conn.get('SELECT data FROM covers WHERE book=?', (id,), all=False)
         if not data:
             return None
-        return(decompress(data))
+        return decompress(data)
 
     def tags(self, index, index_is_id=False):
         '''tags as a comma separated list or None'''
@@ -1059,15 +1057,15 @@ ALTER TABLE books ADD COLUMN isbn TEXT DEFAULT "" COLLATE NOCASE;
                 self.conn.get('SELECT id, name FROM series')]
 
     def series_name(self, series_id):
-        return self.conn.get('SELECT name FROM series WHERE id=%d'%series_id,
+        return self.conn.get(f'SELECT name FROM series WHERE id={series_id}',
                 all=False)
 
     def author_name(self, author_id):
-        return self.conn.get('SELECT name FROM authors WHERE id=%d'%author_id,
+        return self.conn.get(f'SELECT name FROM authors WHERE id={author_id}',
                 all=False)
 
     def tag_name(self, tag_id):
-        return self.conn.get('SELECT name FROM tags WHERE id=%d'%tag_id,
+        return self.conn.get(f'SELECT name FROM tags WHERE id={tag_id}',
                 all=False)
 
     def all_authors(self):
@@ -1104,12 +1102,12 @@ ALTER TABLE books ADD COLUMN isbn TEXT DEFAULT "" COLLATE NOCASE;
         if len(ids) > 50000:
             return True
         if len(ids) == 1:
-            ids = '(%d)'%ids[0]
+            ids = f'({ids[0]})'
         else:
             ids = repr(ids)
-        return self.conn.get('''
-            SELECT data FROM conversion_options WHERE book IN %s AND
-        format=? LIMIT 1'''%(ids,), (format,), all=False) is not None
+        return self.conn.get(f'''
+            SELECT data FROM conversion_options WHERE book IN {ids} AND
+        format=? LIMIT 1''', (format,), all=False) is not None
 
     def delete_conversion_options(self, id, format, commit=True):
         self.conn.execute('DELETE FROM conversion_options WHERE book=? AND format=?',
@@ -1358,7 +1356,7 @@ ALTER TABLE books ADD COLUMN isbn TEXT DEFAULT "" COLLATE NOCASE;
             id = obj.lastrowid
             self.conn.commit()
             self.set_metadata(id, mi)
-            stream = path if hasattr(path, 'read') else lopen(path, 'rb')
+            stream = path if hasattr(path, 'read') else open(path, 'rb')
             stream.seek(0, 2)
             usize = stream.tell()
             stream.seek(0)
@@ -1384,11 +1382,10 @@ ALTER TABLE books ADD COLUMN isbn TEXT DEFAULT "" COLLATE NOCASE;
 
     def get_feeds(self):
         feeds = self.conn.get('SELECT title, script FROM feeds')
-        for title, script in feeds:
-            yield title, script
+        yield from feeds
 
     def get_feed(self, id):
-        return self.conn.get('SELECT script FROM feeds WHERE id=%d'%id,
+        return self.conn.get(f'SELECT script FROM feeds WHERE id={id}',
                 all=False)
 
     def update_feed(self, id, script, title):
@@ -1465,13 +1462,13 @@ ALTER TABLE books ADD COLUMN isbn TEXT DEFAULT "" COLLATE NOCASE;
 
 class SearchToken:
 
-    FIELD_MAP = {'title'       : 1,
-                  'author'      : 2,
-                  'publisher'   : 3,
-                  'tag'         : 7,
-                  'comments'    : 8,
-                  'series'      : 9,
-                  'format'      : 13,
+    FIELD_MAP = {'title'     : 1,
+                  'author'   : 2,
+                  'publisher': 3,
+                  'tag'      : 7,
+                  'comments' : 8,
+                  'series'   : 9,
+                  'format'   : 13,
                  }
 
     def __init__(self, text_token):
@@ -1507,17 +1504,17 @@ def text_to_tokens(text):
         text = match.group(1)
         OR = True
     tokens = []
-    quot = re.search('"(.*?)"', text)
+    quot = re.search(r'"(.*?)"', text)
     while quot:
         tokens.append(quot.group(1))
         text = text.replace('"'+quot.group(1)+'"', '')
-        quot = re.search('"(.*?)"', text)
+        quot = re.search(r'"(.*?)"', text)
     tokens += text.split(' ')
     ans = []
     for i in tokens:
         try:
             ans.append(SearchToken(i))
-        except sre_constants.error:
+        except re.error:
             continue
     return ans, OR
 

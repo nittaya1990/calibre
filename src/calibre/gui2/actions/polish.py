@@ -1,27 +1,46 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:fdm=marker:ai
 
 
 __license__   = 'GPL v3'
 __copyright__ = '2013, Kovid Goyal <kovid at kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
 
-import os, weakref, shutil, textwrap
+import os
+import shutil
+import textwrap
+import weakref
 from collections import OrderedDict
 from functools import partial
-from polyglot.builtins import iteritems, itervalues, map, unicode_type
 
-from qt.core import (QDialog, QGridLayout, QIcon, QCheckBox, QLabel, QFrame,
-                      QApplication, QDialogButtonBox, Qt, QSize, QSpacerItem,
-                      QSizePolicy, QTimer, QModelIndex, QTextEdit,
-                      QInputDialog, QMenu)
+from qt.core import (
+    QApplication,
+    QCheckBox,
+    QDialog,
+    QDialogButtonBox,
+    QFrame,
+    QGridLayout,
+    QIcon,
+    QInputDialog,
+    QLabel,
+    QMenu,
+    QModelIndex,
+    QSize,
+    QSizePolicy,
+    QSpacerItem,
+    Qt,
+    QTextEdit,
+    QTimer,
+)
 
-from calibre.gui2 import error_dialog, Dispatcher, gprefs, question_dialog
-from calibre.gui2.actions import InterfaceAction
+from calibre.gui2 import Dispatcher, error_dialog, gprefs, question_dialog
+from calibre.gui2.actions import InterfaceActionWithLibraryDrop
 from calibre.gui2.convert.metadata import create_opf_file
 from calibre.gui2.dialogs.progress import ProgressDialog
 from calibre.ptempfile import PersistentTemporaryDirectory
+from calibre.startup import connect_lambda
 from calibre.utils.config_base import tweaks
+from calibre.utils.localization import ngettext
+from polyglot.builtins import iteritems, itervalues
 
 
 class Polish(QDialog):  # {{{
@@ -30,7 +49,7 @@ class Polish(QDialog):  # {{{
         from calibre.ebooks.oeb.polish.main import HELP
         QDialog.__init__(self, parent)
         self.db, self.book_id_map = weakref.ref(db), book_id_map
-        self.setWindowIcon(QIcon(I('polish.png')))
+        self.setWindowIcon(QIcon.ic('polish.png'))
         title = _('Polish book')
         if len(book_id_map) > 1:
             title = _('Polish %d books')%len(book_id_map)
@@ -68,6 +87,7 @@ class Polish(QDialog):  # {{{
             'remove_jacket':_('<h3>Remove book jacket</h3>%s')%HELP['remove_jacket'],
             'remove_unused_css':_('<h3>Remove unused CSS rules</h3>%s')%HELP['remove_unused_css'],
             'compress_images': _('<h3>Losslessly compress images</h3>%s') % HELP['compress_images'],
+            'download_external_resources': _('<h3>Download external resources</h3>%s') % HELP['download_external_resources'],
             'add_soft_hyphens': _('<h3>Add soft-hyphens</h3>%s') % HELP['add_soft_hyphens'],
             'remove_soft_hyphens': _('<h3>Remove soft-hyphens</h3>%s') % HELP['remove_soft_hyphens'],
             'upgrade_book': _('<h3>Upgrade book internals</h3>%s') % HELP['upgrade_book'],
@@ -90,8 +110,9 @@ class Polish(QDialog):  # {{{
             ('remove_jacket', _('&Remove a previously inserted book jacket')),
             ('remove_unused_css', _('Remove &unused CSS rules from the book')),
             ('compress_images', _('Losslessly &compress images')),
+            ('download_external_resources', _('&Download external resources')),
             ('add_soft_hyphens', _('Add s&oft hyphens')),
-            ('remove_soft_hyphens', _('Remove soft hyphens')),
+            ('remove_soft_hyphens', _('Remove so&ft hyphens')),
             ('upgrade_book', _('&Upgrade book internals')),
         ])
         prefs = gprefs.get('polishing_settings', {})
@@ -103,7 +124,7 @@ class Polish(QDialog):  # {{{
             connect_lambda(x.stateChanged, self, lambda self, state: self.option_toggled(self.sender().objectName(), state))
             l.addWidget(x, count, 0, 1, 1)
             setattr(self, 'opt_'+name, x)
-            la = QLabel(' <a href="#%s">%s</a>'%(name, _('About')))
+            la = QLabel(' <a href="#{}">{}</a>'.format(name, _('About')))
             setattr(self, 'label_'+name, x)
             la.linkActivated.connect(self.help_link_activated)
             l.addWidget(la, count, 1, 1, 1)
@@ -141,8 +162,11 @@ class Polish(QDialog):  # {{{
         connect_lambda(b.clicked, self, lambda self: self.select_all(False))
         l.addWidget(bb, count+1, 1, 1, -1)
         self.setup_load_button()
+        self.resize(self.sizeHint())
 
-        self.resize(QSize(950, 600))
+    def sizeHint(self):
+        sz = super().sizeHint()
+        return QSize(max(950, sz.width()), max(600, sz.height()))
 
     def select_all(self, enable):
         for action in self.all_actions:
@@ -159,7 +183,7 @@ class Polish(QDialog):  # {{{
         name, ok = QInputDialog.getText(self, _('Choose name'),
                 _('Choose a name for these settings'))
         if ok:
-            name = unicode_type(name).strip()
+            name = str(name).strip()
             if name:
                 settings = {ac:getattr(self, 'opt_'+ac).isChecked() for ac in
                             self.all_actions}
@@ -198,7 +222,7 @@ class Polish(QDialog):  # {{{
             self.help_label.setText(self.help_text[name])
 
     def help_link_activated(self, link):
-        link = unicode_type(link)[1:]
+        link = str(link)[1:]
         self.help_label.setText(self.help_text[link])
 
     @property
@@ -238,7 +262,7 @@ class Polish(QDialog):  # {{{
                                 show=True)
         gprefs['polishing_settings'] = saved_prefs
         self.queue_files()
-        return super(Polish, self).accept()
+        return super().accept()
 
     def queue_files(self):
         self.tdir = PersistentTemporaryDirectory('_queue_polish')
@@ -251,7 +275,7 @@ class Polish(QDialog):  # {{{
             self.pd = ProgressDialog(_('Queueing books for polishing'),
                                      max=len(self.queue), parent=self)
             QTimer.singleShot(0, self.do_one)
-            self.pd.exec_()
+            self.pd.exec()
 
     def do_one(self):
         if not self.queue:
@@ -272,7 +296,7 @@ class Polish(QDialog):  # {{{
             QTimer.singleShot(0, self.do_one)
 
     def do_book(self, num, book_id, formats):
-        base = os.path.join(self.tdir, unicode_type(book_id))
+        base = os.path.join(self.tdir, str(book_id))
         os.mkdir(base)
         db = self.db()
         opf = os.path.join(base, 'metadata.opf')
@@ -288,7 +312,7 @@ class Polish(QDialog):  # {{{
         for fmt in formats:
             ext = fmt.replace('ORIGINAL_', '').lower()
             is_orig[ext.upper()] = 'ORIGINAL_' in fmt
-            with open(os.path.join(base, '%s.%s'%(book_id, ext)), 'wb') as f:
+            with open(os.path.join(base, f'{book_id}.{ext}'), 'wb') as f:
                 db.copy_format_to(book_id, fmt, f, index_is_id=True)
                 data['files'].append(f.name)
 
@@ -314,7 +338,7 @@ class Report(QDialog):  # {{{
         QDialog.__init__(self, parent)
         self.gui = parent
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, False)
-        self.setWindowIcon(QIcon(I('polish.png')))
+        self.setWindowIcon(QIcon.ic('polish.png'))
         self.reports = []
 
         self.l = l = QGridLayout()
@@ -359,7 +383,7 @@ class Report(QDialog):  # {{{
         from calibre.ebooks.markdown import markdown
         self.current_log = job.details
         self.setWindowTitle(_('Polishing of %s')%book_title)
-        self.view.setText(markdown('# %s\n\n'%book_title + report,
+        self.view.setText(markdown(f'# {book_title}\n\n' + report,
                                    output_format='html4'))
         self.bb.button(QDialogButtonBox.StandardButton.Close).setFocus(Qt.FocusReason.OtherFocusReason)
         self.backup_msg.setVisible(bool(fmts))
@@ -390,7 +414,7 @@ class Report(QDialog):  # {{{
         if self.reports:
             self.show_next()
             return
-        super(Report, self).accept()
+        super().accept()
 
     def reject(self):
         if self.ign.isChecked():
@@ -398,36 +422,17 @@ class Report(QDialog):  # {{{
         if self.reports:
             self.show_next()
             return
-        super(Report, self).reject()
+        super().reject()
 # }}}
 
 
-class PolishAction(InterfaceAction):
+class PolishAction(InterfaceActionWithLibraryDrop):
 
     name = 'Polish Books'
     action_spec = (_('Polish books'), 'polish.png',
                    _('Apply the shine of perfection to your books'), _('P'))
     dont_add_to = frozenset(['context-menu-device'])
     action_type = 'current'
-    accepts_drops = True
-
-    def accept_enter_event(self, event, mime_data):
-        if mime_data.hasFormat("application/calibre+from_library"):
-            return True
-        return False
-
-    def accept_drag_move_event(self, event, mime_data):
-        if mime_data.hasFormat("application/calibre+from_library"):
-            return True
-        return False
-
-    def drop_event(self, event, mime_data):
-        mime = 'application/calibre+from_library'
-        if mime_data.hasFormat(mime):
-            self.dropped_ids = tuple(map(int, mime_data.data(mime).data().split()))
-            QTimer.singleShot(1, self.do_drop)
-            return True
-        return False
 
     def do_drop(self):
         book_id_map = self.get_supported_books(self.dropped_ids)
@@ -458,7 +463,7 @@ class PolishAction(InterfaceAction):
         if not rows or len(rows) == 0:
             d = error_dialog(self.gui, _('Cannot polish'),
                     _('No books selected'))
-            d.exec_()
+            d.exec()
             return None
         db = self.gui.library_view.model().db
         ans = (db.id(r) for r in rows)
@@ -506,7 +511,7 @@ class PolishAction(InterfaceAction):
 
     def do_polish(self, book_id_map):
         d = Polish(self.gui.library_view.model().db, book_id_map, parent=self.gui)
-        if d.exec_() == QDialog.DialogCode.Accepted and d.jobs:
+        if d.exec() == QDialog.DialogCode.Accepted and d.jobs:
             show_reports = bool(d.show_reports.isChecked())
             for desc, data, book_id, base, is_orig in reversed(d.jobs):
                 job = self.gui.job_manager.run_job(
@@ -562,4 +567,4 @@ if __name__ == '__main__':
     app
     from calibre.library import db
     d = Polish(db(), {1:{'EPUB'}, 2:{'AZW3'}})
-    d.exec_()
+    d.exec()

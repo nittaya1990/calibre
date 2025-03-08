@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 
 
 __license__ = 'GPL v3'
@@ -13,6 +12,7 @@ from io import BytesIO
 
 from calibre.ebooks.metadata.meta import get_metadata
 from calibre.srv.tests.base import LibraryBaseTest
+from calibre.utils.localization import _
 from polyglot.binary import as_base64_bytes
 from polyglot.http_client import FORBIDDEN, NOT_FOUND, OK
 from polyglot.urllib import quote, urlencode
@@ -20,7 +20,7 @@ from polyglot.urllib import quote, urlencode
 
 def make_request(conn, url, headers={}, prefix='/ajax', username=None, password=None, method='GET', data=None):
     if username and password:
-        headers[b'Authorization'] = b'Basic ' + as_base64_bytes((username + ':' + password))
+        headers[b'Authorization'] = b'Basic ' + as_base64_bytes(username + ':' + password)
     conn.request(method, prefix + url, headers=headers, body=data)
     r = conn.getresponse()
     data = r.read()
@@ -43,7 +43,7 @@ class ContentTest(LibraryBaseTest):
             r, onedata = request('/1')
             self.ae(r.status, OK)
             self.ae(request('/1/' + db.server_library_id)[1], onedata)
-            self.ae(request('/%s?id_is_uuid=true' % db.field_for('uuid', 1))[1], onedata)
+            self.ae(request('/{}?id_is_uuid=true'.format(db.field_for('uuid', 1)))[1], onedata)
 
             r, data = request('s')
             self.ae(set(data), set(map(str, db.all_book_ids())))
@@ -175,7 +175,7 @@ class ContentTest(LibraryBaseTest):
 
             def d(book_ids, username='12', status=OK):
                 book_ids = ','.join(map(str, book_ids))
-                r, data = make_request(conn, '/cdb/delete-books/{}'.format(book_ids),
+                r, data = make_request(conn, f'/cdb/delete-books/{book_ids}',
                                        username=username, password='test', prefix='', method='POST')
                 ae(status, r.status)
                 return data
@@ -187,7 +187,7 @@ class ContentTest(LibraryBaseTest):
             s = BytesIO(content)
             s.name = filename
             mi = get_metadata(s, stream_type='txt')
-            ae(data,  {'title': mi.title, 'book_id': data['book_id'], 'authors': mi.authors, 'languages': mi.languages, 'id': '1', 'filename': filename})
+            ae(data, {'title': mi.title, 'book_id': data['book_id'], 'authors': mi.authors, 'languages': mi.languages, 'id': '1', 'filename': filename})
             r, q = make_request(conn, '/get/txt/{}'.format(data['book_id']), username='12', password='test', prefix='')
             ae(r.status, OK)
             ae(q, content)

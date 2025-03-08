@@ -1,17 +1,21 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 
 
 __license__ = 'GPL v3'
 __copyright__ = '2015, Kovid Goyal <kovid at kovidgoyal.net>'
 
-import zlib, json, time, os
+import json
+import os
+import time
+import zlib
 from io import BytesIO
 
 from calibre.ebooks.metadata.epub import get_metadata
 from calibre.ebooks.metadata.opf2 import OPF
 from calibre.srv.tests.base import LibraryBaseTest
 from calibre.utils.imghdr import identify
+from calibre.utils.resources import get_image_path as I
+from calibre.utils.resources import get_path as P
 from calibre.utils.shared_file import share_open
 from polyglot import http_client
 from polyglot.binary import from_hex_unicode
@@ -37,9 +41,9 @@ class ContentTest(LibraryBaseTest):
                 self.ae(r.read(), body)
 
             for prefix in ('static', 'icon'):
-                missing('/%s/missing.xxx' % prefix)
-                missing('/%s/../out.html' % prefix, b'Naughty, naughty!')
-                missing('/%s/C:/out.html' % prefix, b'Naughty, naughty!')
+                missing(f'/{prefix}/missing.xxx')
+                missing(f'/{prefix}/../out.html', b'Naughty, naughty!')
+                missing(f'/{prefix}/C:/out.html', b'Naughty, naughty!')
 
             def test_response(r):
                 self.assertIn('max-age=', r.getheader('Cache-Control'))
@@ -79,7 +83,7 @@ class ContentTest(LibraryBaseTest):
 
             def get(what, book_id, library_id=None, q=''):
                 q = ('?' + q) if q else q
-                conn.request('GET', '/get/%s/%s' % (what, book_id) + (('/' + library_id) if library_id else '') + q)
+                conn.request('GET', f'/get/{what}/{book_id}' + (('/' + library_id) if library_id else '') + q)
                 r = conn.getresponse()
                 return r, r.read()
 
@@ -124,7 +128,7 @@ class ContentTest(LibraryBaseTest):
             import calibre.library.save_to_disk as c
             orig, c.DEBUG = c.DEBUG, False
             try:
-                db.set_pref('plugboards', {u'epub': {u'content_server': [[u'changed, {title}', u'title']]}})
+                db.set_pref('plugboards', {'epub': {'content_server': [['changed, {title}', 'title']]}})
                 # this is needed as the cache is not invalidated for plugboard changes
                 db.set_field('title', {1:'again'})
                 r, data = get('epub', 1)
@@ -227,8 +231,8 @@ class ContentTest(LibraryBaseTest):
     # }}}
 
     def test_char_count(self):  # {{{
-        from calibre.srv.render_book import get_length
         from calibre.ebooks.oeb.parse_utils import html5_parse
+        from calibre.srv.render_book import get_length
 
         root = html5_parse('<p>a b\nc\td\re')
         self.ae(get_length(root), 5)
@@ -239,8 +243,8 @@ class ContentTest(LibraryBaseTest):
     # }}}
 
     def test_html_as_json(self):  # {{{
-        from calibre.srv.render_book import html_as_json
         from calibre.ebooks.oeb.parse_utils import html5_parse
+        from calibre.srv.render_book import html_as_json
 
         def t(html, body_children, nsmap=('http://www.w3.org/1999/xhtml',)):
             root = html5_parse(html)
@@ -252,14 +256,29 @@ class ContentTest(LibraryBaseTest):
             bc = data['tree']['c'][1]['c']
             self.ae(bc, body_children)
 
-        t('<p>a<!--c-->t</p>l', [{"n":"p","x":"a","l":"l","c":[{"s":"c","x":"c","l":"t"}]}])
-        t('<p class="foo" id="bar">a', [{"n":"p","x":"a","a":[['class','foo'],['id','bar']]}])
+        t('<p>a<!--c-->t</p>l', [{'n':'p','x':'a','l':'l','c':[{'s':'c','x':'c','l':'t'}]}])
+        t('<p class="foo" id="bar">a', [{'n':'p','x':'a','a':[['class','foo'],['id','bar']]}])
         t(
             '<svg xlink:href="h"></svg>', [{'n': 'svg', 's': 1, 'a': [['href', 'h', 2]]}],
             ('http://www.w3.org/1999/xhtml', 'http://www.w3.org/2000/svg', 'http://www.w3.org/1999/xlink')
         )
         text = '🐈\n\t\\mūs"'
-        t("<p id='{}'>Peña".format(text), [{"n":"p","x":"Peña","a":[['id',text]]}])
+        t(f"<p id='{text}'>Peña", [{'n':'p','x':'Peña','a':[['id',text]]}])
         text = 'a' * (127 * 1024)
-        t('<p>{0}<p>{0}'.format(text), [{"n":"p","x":text}, {'n':'p','x':text}])
+        t(f'<p>{text}<p>{text}', [{'n':'p','x':text}, {'n':'p','x':text}])
+    # }}}
+
+    def test_last_read_cache(self):  # {{{
+        from calibre.srv.last_read import last_read_cache, path_cache
+        path_cache.clear()
+        lrc = last_read_cache(':memory:')
+        epoch = lrc.add_last_read_position('lib', 1, 'FMT', 'user', 'epubcfi(/)', 0.1, 'tt')
+        expected = {'library_id': 'lib', 'book_id': 1, 'format': 'FMT', 'cfi': 'epubcfi(/)', 'epoch': epoch, 'pos_frac': 0.1, 'tooltip': 'tt'}
+        self.ae(lrc.get_recently_read('user'), [expected])
+        epoch = lrc.add_last_read_position('lib', 1, 'FMT', 'user', 'epubcfi(/)', 0.2, 'tt')
+        expected['epoch'], expected['pos_frac'] = epoch, 0.2
+        self.ae(lrc.get_recently_read('user'), [expected])
+        for book_id in range(2, 7):
+            lrc.add_last_read_position('lib', book_id, 'FMT', 'user', 'epubcfi(/)', 0.1, 'tt')
+        self.ae(len(lrc.get_recently_read('user')), lrc.limit)
     # }}}

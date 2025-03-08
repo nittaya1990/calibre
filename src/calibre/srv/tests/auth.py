@@ -1,29 +1,28 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 
 
 __license__ = 'GPL v3'
 __copyright__ = '2015, Kovid Goyal <kovid at kovidgoyal.net>'
 
-import subprocess, os, time
+import os
+import shutil
+import subprocess
+import time
 from collections import namedtuple
-try:
-    from distutils.spawn import find_executable
-except ImportError:  # windows
-    find_executable = lambda x: None
 
+from calibre.constants import ismacos
 from calibre.ptempfile import TemporaryDirectory
 from calibre.srv.errors import HTTPForbidden
+from calibre.srv.routes import Router, endpoint
 from calibre.srv.tests.base import BaseTest, TestServer
-from calibre.srv.routes import endpoint, Router
-from polyglot.builtins import iteritems, itervalues, map
 from polyglot import http_client
-from polyglot.http_cookie import CookieJar
-from polyglot.urllib import (build_opener, HTTPBasicAuthHandler,
-        HTTPCookieProcessor, HTTPDigestAuthHandler, HTTPError)
 from polyglot.binary import as_base64_bytes
+from polyglot.builtins import iteritems, itervalues
+from polyglot.http_cookie import CookieJar
+from polyglot.urllib import HTTPBasicAuthHandler, HTTPCookieProcessor, HTTPDigestAuthHandler, HTTPError, build_opener
 
 REALM = 'calibre-test'
+is_ci = os.environ.get('CI', '').lower() == 'true'
 
 
 @endpoint('/open', auth_required=False)
@@ -56,7 +55,7 @@ def router(prefer_basic_auth=False, ban_for=0, ban_after=5):
 
 def urlopen(server, path='/closed', un='testuser', pw='testpw', method='digest'):
     auth_handler = HTTPBasicAuthHandler() if method == 'basic' else HTTPDigestAuthHandler()
-    url = 'http://localhost:%d%s' % (server.address[1], path)
+    url = f'http://localhost:{server.address[1]}{path}'
     auth_handler.add_password(realm=REALM, uri=url, user=un, passwd=pw)
     return build_opener(auth_handler).open(url)
 
@@ -99,7 +98,7 @@ class TestAuth(BaseTest):
             conn.request('GET', '/closed')
             r = conn.getresponse()
             self.ae(r.status, http_client.UNAUTHORIZED)
-            self.ae(r.getheader('WWW-Authenticate'), 'Basic realm="%s"' % REALM)
+            self.ae(r.getheader('WWW-Authenticate'), f'Basic realm="{REALM}"')
             self.assertFalse(r.read())
             conn.request('GET', '/closed', headers={'Authorization': b'Basic ' + as_base64_bytes(b'testuser:testpw')})
             r = conn.getresponse()
@@ -109,7 +108,7 @@ class TestAuth(BaseTest):
             self.ae(b'closed', urlopen(server, un='!@#$%^&*()-=_+', pw='!@#$%^&*()-=_+', method='basic').read())
 
             def request(un='testuser', pw='testpw'):
-                conn.request('GET', '/closed', headers={'Authorization': b'Basic ' + as_base64_bytes('%s:%s' % (un, pw))})
+                conn.request('GET', '/closed', headers={'Authorization': b'Basic ' + as_base64_bytes(f'{un}:{pw}')})
                 r = conn.getresponse()
                 return r.status, r.read()
 
@@ -126,13 +125,13 @@ class TestAuth(BaseTest):
     # }}}
 
     def test_library_restrictions(self):  # {{{
-        from calibre.srv.opts import Options
-        from calibre.srv.handler import Handler
         from calibre.db.legacy import create_backend
+        from calibre.srv.handler import Handler
+        from calibre.srv.opts import Options
         opts = Options(userdb=':memory:')
         Data = namedtuple('Data', 'username')
         with TemporaryDirectory() as base:
-            l1, l2, l3 = map(lambda x: os.path.join(base, 'l' + x), '123')
+            l1, l2, l3 = (os.path.join(base, 'l' + x) for x in '123')
             for l in (l1, l2, l3):
                 create_backend(l).close()
             ctx = Handler((l1, l2, l3), opts).router.ctx
@@ -148,15 +147,15 @@ class TestAuth(BaseTest):
                 return lmap, defaultlib
 
             self.assertEqual(get_library(), 'l1')
-            self.assertEqual(library_info()[0], {'l%d'%i:'l%d'%i for i in range(1, 4)})
+            self.assertEqual(library_info()[0], {f'l{i}':f'l{i}' for i in range(1, 4)})
             self.assertEqual(library_info()[1], 'l1')
             self.assertRaises(HTTPForbidden, get_library, 'xxx')
             um.add_user('a', 'a')
-            self.assertEqual(library_info('a')[0], {'l%d'%i:'l%d'%i for i in range(1, 4)})
+            self.assertEqual(library_info('a')[0], {f'l{i}':f'l{i}' for i in range(1, 4)})
             um.update_user_restrictions('a', {'blocked_library_names': ['L2']})
-            self.assertEqual(library_info('a')[0], {'l%d'%i:'l%d'%i for i in range(1, 4) if i != 2})
+            self.assertEqual(library_info('a')[0], {f'l{i}':f'l{i}' for i in range(1, 4) if i != 2})
             um.update_user_restrictions('a', {'allowed_library_names': ['l3']})
-            self.assertEqual(library_info('a')[0], {'l%d'%i:'l%d'%i for i in range(1, 4) if i == 3})
+            self.assertEqual(library_info('a')[0], {f'l{i}':f'l{i}' for i in range(1, 4) if i == 3})
             self.assertEqual(library_info('a')[1], 'l3')
             self.assertRaises(HTTPForbidden, get_library, 'a', 'l1')
             self.assertRaises(HTTPForbidden, get_library, 'xxx')
@@ -215,33 +214,33 @@ class TestAuth(BaseTest):
                 return test(conn, '/closed', headers={'Authorization':digest(**args)}, **kw)
 
             # Check modified nonce fails
-            fail_test(conn, lambda da:setattr(da, 'nonce', 'xyz'))
-            fail_test(conn, lambda da:setattr(da, 'nonce', 'x' + da.nonce))
+            fail_test(conn, lambda da: setattr(da, 'nonce', 'xyz'))
+            fail_test(conn, lambda da: setattr(da, 'nonce', 'x' + da.nonce))
 
             # Check mismatched uri fails
-            fail_test(conn, lambda da:setattr(da, 'uri', '/'))
-            fail_test(conn, lambda da:setattr(da, 'uri', '/closed2'))
-            fail_test(conn, lambda da:setattr(da, 'uri', '/closed/2'))
+            fail_test(conn, lambda da: setattr(da, 'uri', '/'))
+            fail_test(conn, lambda da: setattr(da, 'uri', '/closed2'))
+            fail_test(conn, lambda da: setattr(da, 'uri', '/closed/2'))
 
             # Check that incorrect user/password fails
-            fail_test(conn, lambda da:setattr(da, 'pw', '/'))
-            fail_test(conn, lambda da:setattr(da, 'username', '/'))
-            fail_test(conn, lambda da:setattr(da, 'username', ''))
-            fail_test(conn, lambda da:setattr(da, 'pw', ''))
+            fail_test(conn, lambda da: setattr(da, 'pw', '/'))
+            fail_test(conn, lambda da: setattr(da, 'username', '/'))
+            fail_test(conn, lambda da: setattr(da, 'username', ''))
+            fail_test(conn, lambda da: setattr(da, 'pw', ''))
             fail_test(conn, lambda da:(setattr(da, 'pw', ''), setattr(da, 'username', '')))
 
             # Check against python's stdlib
             self.ae(urlopen(server).read(), b'closed')
 
             # Check using curl
-            curl = find_executable('curl')
-            if curl:
+            curl = shutil.which('curl')
+            if curl and not (is_ci and ismacos):  # curl mysteriously returns b'' in CI with no errors
                 def docurl(data, *args):
-                    cmd = [curl] + list(args) + ['http://localhost:%d/closed' % server.address[1]]
-                    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=open(os.devnull, 'wb'))
-                    x = p.stdout.read()
+                    cmd = [curl, '--silent'] + list(args) + [f'http://localhost:{server.address[1]}/closed']
+                    p = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                    stdout, stderr = p.communicate()
                     p.wait()
-                    self.ae(x, data)
+                    self.ae(stdout, data, f'stderr:\n{stderr.decode(errors="replace")}')
                 docurl(b'')
                 docurl(b'', '--digest', '--user', 'xxxx:testpw')
                 docurl(b'', '--digest', '--user', 'testuser:xtestpw')
@@ -256,7 +255,7 @@ class TestAuth(BaseTest):
             conn = server.connect()
 
             def request(un='testuser', pw='testpw'):
-                conn.request('GET', '/closed', headers={'Authorization': b'Basic ' + as_base64_bytes('%s:%s' % (un, pw))})
+                conn.request('GET', '/closed', headers={'Authorization': b'Basic ' + as_base64_bytes(f'{un}:{pw}')})
                 r = conn.getresponse()
                 return r.status, r.read()
 
@@ -284,7 +283,7 @@ class TestAuth(BaseTest):
             self.ae(r.status, http_client.UNAUTHORIZED)
 
             auth_handler = HTTPDigestAuthHandler()
-            url = 'http://localhost:%d%s' % (server.address[1], '/android')
+            url = f'http://localhost:{server.address[1]}/android'
             auth_handler.add_password(realm=REALM, uri=url, user='testuser', passwd='testpw')
             cj = CookieJar()
             cookie_handler = HTTPCookieProcessor(cj)

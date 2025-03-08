@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 # License: GPL v3 Copyright: 2019, Eli Schwartz <eschwartz@archlinux.org>
 
 import os
@@ -8,9 +7,7 @@ import tarfile
 import time
 from io import BytesIO
 
-from setup import Command, download_securely
-
-is_ci = os.environ.get('CI', '').lower() == 'true'
+from setup import Command, download_securely, is_ci
 
 
 class ReVendor(Command):
@@ -19,24 +16,27 @@ class ReVendor(Command):
     CAN_USE_SYSTEM_VERSION = True
 
     def add_options(self, parser):
-        parser.add_option('--path-to-%s' % self.NAME, help='Path to the extracted %s source' % self.TAR_NAME)
-        parser.add_option('--%s-url' % self.NAME, default=self.DOWNLOAD_URL,
-                help='URL to %s source archive in tar.gz format' % self.TAR_NAME)
+        parser.add_option(f'--path-to-{self.NAME}', help=f'Path to the extracted {self.TAR_NAME} source')
+        parser.add_option(f'--{self.NAME}-url', default=self.DOWNLOAD_URL,
+                help=f'URL to {self.TAR_NAME} source archive in tar.gz format')
         if self.CAN_USE_SYSTEM_VERSION:
-            parser.add_option('--system-%s' % self.NAME, default=False, action='store_true',
-                    help='Treat %s as system copy and symlink instead of copy' % self.TAR_NAME)
+            parser.add_option(f'--system-{self.NAME}', default=False, action='store_true',
+                    help=f'Treat {self.TAR_NAME} as system copy and symlink instead of copy')
 
-    def download_vendor_release(self, tdir, url):
-        self.info('Downloading %s:' % self.TAR_NAME, url)
+    def download_securely(self, url: str) -> bytes:
         num = 5 if is_ci else 1
         for i in range(num):
             try:
-                raw = download_securely(url)
+                return download_securely(url)
             except Exception as err:
                 if i == num - 1:
                     raise
                 self.info(f'Download failed with error "{err}" sleeping and retrying...')
                 time.sleep(2)
+
+    def download_vendor_release(self, tdir, url):
+        self.info(f'Downloading {self.TAR_NAME}:', url)
+        raw = self.download_securely(url)
         with tarfile.open(fileobj=BytesIO(raw)) as tf:
             tf.extractall(tdir)
             if len(os.listdir(tdir)) == 1:

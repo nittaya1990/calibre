@@ -1,34 +1,32 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 # License: GPLv3 Copyright: 2015, Kovid Goyal <kovid at kovidgoyal.net>
 
 
 import os
 import socket
 import weakref
-from calibre_extensions.speedup import utf8_decode, websocket_mask as fast_mask
 from collections import deque
 from hashlib import sha1
-from struct import error as struct_error, pack, unpack_from
+from struct import error as struct_error
+from struct import pack, unpack_from
 from threading import Lock
 
 from calibre import as_unicode
 from calibre.srv.http_response import HTTPConnection, create_http_handler
-from calibre.srv.loop import (
-    RDWR, READ, WRITE, Connection, HandleInterrupt, ServerLoop
-)
+from calibre.srv.loop import RDWR, READ, WRITE, Connection, HandleInterrupt, ServerLoop
 from calibre.srv.utils import DESIRED_SEND_BUFFER_SIZE
 from calibre.utils.speedups import ReadOnlyFileBuffer
+from calibre_extensions.speedup import utf8_decode
+from calibre_extensions.speedup import websocket_mask as fast_mask
 from polyglot import http_client
 from polyglot.binary import as_base64_unicode
-from polyglot.builtins import unicode_type
 from polyglot.queue import Empty, Queue
 
 HANDSHAKE_STR = (
-    "HTTP/1.1 101 Switching Protocols\r\n"
-    "Upgrade: WebSocket\r\n"
-    "Connection: Upgrade\r\n"
-    "Sec-WebSocket-Accept: %s\r\n\r\n"
+    'HTTP/1.1 101 Switching Protocols\r\n'
+    'Upgrade: WebSocket\r\n'
+    'Connection: Upgrade\r\n'
+    'Sec-WebSocket-Accept: %s\r\n\r\n'
 )
 GUID_STR = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11'
 
@@ -87,8 +85,8 @@ class ReadFrame:  # {{{
             self.opcode = b1 & 0b1111
             self.is_control = self.opcode in CONTROL_CODES
             if self.opcode not in ALL_CODES:
-                conn.log.error('Unknown OPCODE from client: %r' % self.opcode)
-                conn.websocket_close(PROTOCOL_ERROR, 'Unknown OPCODE: %r' % self.opcode)
+                conn.log.error(f'Unknown OPCODE from client: {self.opcode!r}')
+                conn.websocket_close(PROTOCOL_ERROR, f'Unknown OPCODE: {self.opcode!r}')
                 return
             if not self.fin and self.is_control:
                 conn.log.error('Fragmented control frame from client')
@@ -174,11 +172,11 @@ class ReadFrame:  # {{{
 
 # }}}
 
+
 # Sending frames {{{
 
-
 def create_frame(fin, opcode, payload, mask=None, rsv=0):
-    if isinstance(payload, unicode_type):
+    if isinstance(payload, str):
         payload = payload.encode('utf-8')
     l = len(payload)
     header_len = 2 + (0 if l < 126 else 2 if 126 <= l <= 65535 else 8) + (0 if mask is None else 4)
@@ -207,7 +205,7 @@ class MessageWriter:
 
     def __init__(self, buf, mask=None, chunk_size=None):
         self.buf, self.data_type, self.mask = buf, BINARY, mask
-        if isinstance(buf, unicode_type):
+        if isinstance(buf, str):
             self.buf, self.data_type = ReadOnlyFileBuffer(buf.encode('utf-8')), TEXT
         elif isinstance(buf, bytes):
             self.buf = ReadOnlyFileBuffer(buf)
@@ -285,9 +283,9 @@ class WebSocketConnection(HTTPConnection):
         except Exception:
             ver_ok = False
         if not ver_ok:
-            return self.simple_response(http_client.BAD_REQUEST, 'Unsupported WebSocket protocol version: %s' % ver)
+            return self.simple_response(http_client.BAD_REQUEST, f'Unsupported WebSocket protocol version: {ver}')
         if self.method != 'GET':
-            return self.simple_response(http_client.BAD_REQUEST, 'Invalid WebSocket method: %s' % self.method)
+            return self.simple_response(http_client.BAD_REQUEST, f'Invalid WebSocket method: {self.method}')
 
         response = HANDSHAKE_STR % as_base64_unicode(sha1((key + GUID_STR).encode('utf-8')).digest())
         self.optimize_for_sending_packet()
@@ -304,7 +302,7 @@ class WebSocketConnection(HTTPConnection):
                 self.websocket_handler.handle_websocket_upgrade(self.websocket_connection_id, weakref.ref(self), inheaders)
             except Exception as err:
                 self.log.exception('Error in WebSockets upgrade handler:')
-                self.websocket_close(UNEXPECTED_ERROR, 'Unexpected error in handler: %r' % as_unicode(err))
+                self.websocket_close(UNEXPECTED_ERROR, f'Unexpected error in handler: {as_unicode(err)!r}')
             self.handle_event = self.ws_duplex
             self.set_ws_state()
             self.end_send_optimization()
@@ -386,7 +384,7 @@ class WebSocketConnection(HTTPConnection):
             self.handle_websocket_data(data, message_starting, message_finished)
         except Exception as err:
             self.log.exception('Error in WebSockets data handler:')
-            self.websocket_close(UNEXPECTED_ERROR, 'Unexpected error in handler: %r' % as_unicode(err))
+            self.websocket_close(UNEXPECTED_ERROR, f'Unexpected error in handler: {as_unicode(err)!r}')
 
     def ws_control_frame(self, opcode, data):
         if opcode in (PING, CLOSE):
@@ -422,7 +420,7 @@ class WebSocketConnection(HTTPConnection):
         self.set_ws_state()
 
     def websocket_close(self, code=NORMAL_CLOSE, reason=b''):
-        if isinstance(reason, unicode_type):
+        if isinstance(reason, str):
             reason = reason.encode('utf-8')
         self.stop_reading = True
         reason = reason[:123]
@@ -487,7 +485,7 @@ class WebSocketConnection(HTTPConnection):
         ''' Useful for streaming handlers that want to break up messages into
         frames themselves. Note that these frames will be interleaved with
         control frames, so they should not be too large. '''
-        opcode = (TEXT if isinstance(data, unicode_type) else BINARY) if is_first else CONTINUATION
+        opcode = (TEXT if isinstance(data, str) else BINARY) if is_first else CONTINUATION
         fin = 1 if is_last else 0
         frame = create_frame(fin, opcode, data)
         with self.cf_lock:
@@ -496,7 +494,7 @@ class WebSocketConnection(HTTPConnection):
     def send_websocket_ping(self, data=b''):
         ''' Send a PING to the remote client, it should reply with a PONG which
         will be sent to the handle_websocket_pong callback in your handler. '''
-        if isinstance(data, unicode_type):
+        if isinstance(data, str):
             data = data.encode('utf-8')
         frame = create_frame(True, PING, data)
         with self.cf_lock:
@@ -527,11 +525,10 @@ class DummyHandler:
     def handle_websocket_close(self, connection_id):
         pass
 
+
 # Testing {{{
 
-# Run this file with calibre-debug and use wstest to run the Autobahn test
-# suite
-
+# Run this file with calibre-debug and use wstest to run the Autobahn test suite
 
 class EchoHandler:
 

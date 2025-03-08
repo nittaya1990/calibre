@@ -1,19 +1,25 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
 
 
 __license__   = 'GPL v3'
 __copyright__ = '2011, Kovid Goyal <kovid@kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
 
-import unittest, os, shutil, tempfile, atexit, gc, time
+import atexit
+import gc
+import os
+import shutil
+import tempfile
+import time
+import unittest
 from functools import partial
 from io import BytesIO
-from polyglot.builtins import map, unicode_type
+
+from calibre.utils.resources import get_image_path as I
 
 rmtree = partial(shutil.rmtree, ignore_errors=True)
 
-IMG = b'\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x01\x00`\x00`\x00\x00\xff\xe1\x00\x16Exif\x00\x00II*\x00\x08\x00\x00\x00\x00\x00\x00\x00\x00\x00\xff\xdb\x00C\x00\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\xff\xdb\x00C\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\xff\xc0\x00\x11\x08\x00\x01\x00\x01\x03\x01"\x00\x02\x11\x01\x03\x11\x01\xff\xc4\x00\x15\x00\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\n\xff\xc4\x00\x14\x10\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xff\xc4\x00\x14\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xff\xc4\x00\x14\x11\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xff\xda\x00\x0c\x03\x01\x00\x02\x11\x03\x11\x00?\x00\xbf\x80\x01\xff\xd9'  # noqa {{{ }}}
+IMG = b'\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x01\x00`\x00`\x00\x00\xff\xe1\x00\x16Exif\x00\x00II*\x00\x08\x00\x00\x00\x00\x00\x00\x00\x00\x00\xff\xdb\x00C\x00\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\xff\xdb\x00C\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\x01\xff\xc0\x00\x11\x08\x00\x01\x00\x01\x03\x01"\x00\x02\x11\x01\x03\x11\x01\xff\xc4\x00\x15\x00\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\n\xff\xc4\x00\x14\x10\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xff\xc4\x00\x14\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xff\xc4\x00\x14\x11\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xff\xda\x00\x0c\x03\x01\x00\x02\x11\x03\x11\x00?\x00\xbf\x80\x01\xff\xd9'  # noqa: E501
 
 
 class BaseTest(unittest.TestCase):
@@ -33,7 +39,7 @@ class BaseTest(unittest.TestCase):
         gc.collect(), gc.collect()
         try:
             shutil.rmtree(self.library_path)
-        except EnvironmentError:
+        except OSError:
             # Try again in case something transient has a file lock on windows
             gc.collect(), gc.collect()
             time.sleep(2)
@@ -42,7 +48,7 @@ class BaseTest(unittest.TestCase):
     def create_db(self, library_path):
         from calibre.library.database2 import LibraryDatabase2
         if LibraryDatabase2.exists_at(library_path):
-            raise ValueError('A library already exists at %r'%library_path)
+            raise ValueError(f'A library already exists at {library_path!r}')
         src = os.path.join(os.path.dirname(__file__), 'metadata.db')
         dest = os.path.join(library_path, 'metadata.db')
         shutil.copyfile(src, dest)
@@ -82,7 +88,7 @@ class BaseTest(unittest.TestCase):
             atexit.register(rmtree, self.clone_dir)
             self.clone_count = 0
         self.clone_count += 1
-        dest = os.path.join(self.clone_dir, unicode_type(self.clone_count))
+        dest = os.path.join(self.clone_dir, str(self.clone_count))
         shutil.copytree(library_path, dest)
         return dest
 
@@ -96,7 +102,7 @@ class BaseTest(unittest.TestCase):
         self.assertEqual(allfk1, allfk2)
 
         all_keys = {'format_metadata', 'id', 'application_id',
-                    'author_sort_map', 'author_link_map', 'book_size',
+                    'author_sort_map', 'link_maps', 'book_size',
                     'ondevice_col', 'last_modified', 'has_cover',
                     'cover_data'}.union(allfk1)
         for attr in all_keys:
@@ -104,12 +110,12 @@ class BaseTest(unittest.TestCase):
                 continue
             attr1, attr2 = getattr(mi1, attr), getattr(mi2, attr)
             if attr == 'formats':
-                attr1, attr2 = map(lambda x:tuple(x) if x else (), (attr1, attr2))
+                attr1, attr2 = (tuple(x) if x else () for x in (attr1, attr2))
             if isinstance(attr1, (tuple, list)) and 'authors' not in attr and 'languages' not in attr:
                 attr1, attr2 = set(attr1), set(attr2)
             self.assertEqual(attr1, attr2,
-                    '%s not the same: %r != %r'%(attr, attr1, attr2))
+                    f'{attr} not the same: {attr1!r} != {attr2!r}')
             if attr.startswith('#') and attr + '_index' not in exclude:
                 attr1, attr2 = mi1.get_extra(attr), mi2.get_extra(attr)
                 self.assertEqual(attr1, attr2,
-                    '%s {#extra} not the same: %r != %r'%(attr, attr1, attr2))
+                    f'{attr} {{#extra}} not the same: {attr1!r} != {attr2!r}')

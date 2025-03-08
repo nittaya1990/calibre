@@ -1,26 +1,33 @@
-# -*- coding: utf-8 -*-
-
-
 __license__ = 'GPL 3'
 __copyright__ = '2009, Kovid Goyal <kovid@kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
 
-import os, re, sys, shutil, pprint, json
+import json
+import os
+import pprint
+import shutil
+import sys
 from functools import partial
 
-from calibre.customize.conversion import OptionRecommendation, DummyReporter
-from calibre.customize.ui import input_profiles, output_profiles, \
-        plugin_for_input_format, plugin_for_output_format, \
-        available_input_formats, available_output_formats, \
-        run_plugins_on_preprocess, run_plugins_on_postprocess
+from calibre import filesystem_encoding, get_types_map, isbytestring
+from calibre.constants import __version__
+from calibre.customize.conversion import DummyReporter, OptionRecommendation
+from calibre.customize.ui import (
+    available_input_formats,
+    available_output_formats,
+    input_profiles,
+    output_profiles,
+    plugin_for_input_format,
+    plugin_for_output_format,
+    run_plugins_on_postprocess,
+    run_plugins_on_preprocess,
+)
+from calibre.ebooks.conversion.archives import ARCHIVE_FMTS, unarchive
 from calibre.ebooks.conversion.preprocess import HTMLPreProcessor
 from calibre.ptempfile import PersistentTemporaryDirectory
 from calibre.utils.date import parse_date
 from calibre.utils.zipfile import ZipFile
-from calibre import (extract, walk, isbytestring, filesystem_encoding,
-        get_types_map)
-from calibre.constants import __version__
-from polyglot.builtins import unicode_type, string_or_bytes, map
+from polyglot.builtins import string_or_bytes
 
 DEBUG_README=b'''
 This debug folder contains snapshots of the e-book as it passes through the
@@ -67,11 +74,7 @@ class CompositeProgressReporter:
         self.global_reporter(global_frac, msg)
 
 
-ARCHIVE_FMTS = ('zip', 'rar', 'oebzip')
-
-
 class Plumber:
-
     '''
     The `Plumber` manages the conversion pipeline. An UI should call the methods
     :method:`merge_ui_recommendations` and then :method:`run`. The plumber will
@@ -143,7 +146,7 @@ OptionRecommendation(name='output_profile',
             choices=[x.short_name for x in output_profiles()],
             help=_('Specify the output profile. The output profile '
                    'tells the conversion system how to optimize the '
-                   'created document for the specified device (such as by resizing images for the device screen size). In some cases, '
+                   'created document for the specified device. In some cases, '
                    'an output profile can be used to optimize the output for a particular device, but this is rarely necessary. '
                    'Choices are:') + ', '.join([
                        x.short_name for x in output_profiles()])
@@ -180,7 +183,7 @@ OptionRecommendation(name='disable_font_rescaling',
 OptionRecommendation(name='minimum_line_height',
             recommended_value=120.0, level=OptionRecommendation.LOW,
             help=_(
-            'The minimum line height, as a percentage of the element\'s '
+            "The minimum line height, as a percentage of the element's "
             'calculated font size. calibre will ensure that every element '
             'has a line height of at least this setting, irrespective of '
             'what the input document specifies. Set to zero to disable. '
@@ -369,6 +372,12 @@ OptionRecommendation(name='transform_css_rules',
                    ' rules are applied after all other CSS processing is done.')
         ),
 
+OptionRecommendation(name='transform_html_rules',
+            recommended_value=None, level=OptionRecommendation.LOW,
+            help=_('Rules for transforming the HTML in this book. These'
+                   ' rules are applied after the HTML is parsed, but before any other transformations.')
+        ),
+
 OptionRecommendation(name='filter_css',
             recommended_value=None, level=OptionRecommendation.LOW,
             help=_('A comma separated list of CSS properties that '
@@ -407,6 +416,12 @@ OptionRecommendation(name='remove_fake_margins',
                 'case you can disable the removal.')
         ),
 
+OptionRecommendation(name='add_alt_text_to_img',
+    recommended_value=False, level=OptionRecommendation.LOW,
+    help=_('When an <img> tag has no alt attribute, check the associated image file for metadata that specifies alternate text, and'
+           ' use it to fill in the alt attribute. The alt attribute improves accessibility by providing text descriptions'
+           ' for users who cannot see or fully interpret visual content.')
+),
 
 OptionRecommendation(name='margin_top',
         recommended_value=5.0, level=OptionRecommendation.LOW,
@@ -542,13 +557,15 @@ OptionRecommendation(name='asciiize',
 OptionRecommendation(name='keep_ligatures',
             recommended_value=False, level=OptionRecommendation.LOW,
             help=_('Preserve ligatures present in the input document. '
-                'A ligature is a special rendering of a pair of '
+                'A ligature is a combined character of a pair of '
                 'characters like ff, fi, fl et cetera. '
                 'Most readers do not have support for '
                 'ligatures in their default fonts, so they are '
                 'unlikely to render correctly. By default, calibre '
                 'will turn a ligature into the corresponding pair of normal '
-                'characters. This option will preserve them instead.')
+                'characters. Note that ligatures here mean only unicode ligatures '
+                'not ligatures created via CSS or font styles. '
+                'This option will preserve them instead.')
         ),
 
 OptionRecommendation(name='title',
@@ -726,7 +743,7 @@ OptionRecommendation(name='search_replace',
         if input_fmt in ARCHIVE_FMTS:
             self.log('Processing archive...')
             tdir = PersistentTemporaryDirectory('_pl_arc')
-            self.input, input_fmt = self.unarchive(self.input, tdir)
+            self.input, input_fmt = unarchive(self.input, tdir)
             self.archive_input_tdir = tdir
         if os.access(self.input, os.R_OK):
             nfp = run_plugins_on_preprocess(self.input, input_fmt)
@@ -791,43 +808,6 @@ OptionRecommendation(name='search_replace',
             self.merge_plugin_recommendations()
 
     @classmethod
-    def unarchive(self, path, tdir):
-        extract(path, tdir)
-        files = list(walk(tdir))
-        files = [f if isinstance(f, unicode_type) else f.decode(filesystem_encoding)
-                for f in files]
-        from calibre.customize.ui import available_input_formats
-        fmts = set(available_input_formats())
-        fmts -= {'htm', 'html', 'xhtm', 'xhtml'}
-        fmts -= set(ARCHIVE_FMTS)
-
-        for ext in fmts:
-            for f in files:
-                if f.lower().endswith('.'+ext):
-                    if ext in ['txt', 'rtf'] and os.stat(f).st_size < 2048:
-                        continue
-                    return f, ext
-        return self.find_html_index(files)
-
-    @classmethod
-    def find_html_index(self, files):
-        '''
-        Given a list of files, find the most likely root HTML file in the
-        list.
-        '''
-        html_pat = re.compile(r'\.(x){0,1}htm(l){0,1}$', re.IGNORECASE)
-        html_files = [f for f in files if html_pat.search(f) is not None]
-        if not html_files:
-            raise ValueError(_('Could not find an e-book inside the archive'))
-        html_files = [(f, os.stat(f).st_size) for f in html_files]
-        html_files.sort(key=lambda x: x[1])
-        html_files = [f[0] for f in html_files]
-        for q in ('toc', 'index'):
-            for f in html_files:
-                if os.path.splitext(os.path.basename(f))[0].lower() == q:
-                    return f, os.path.splitext(f)[1].lower()[1:]
-        return html_files[-1], os.path.splitext(html_files[-1])[1].lower()[1:]
-
     def get_all_options(self):
         ans = {}
         for group in (self.input_options, self.pipeline_options,
@@ -847,7 +827,7 @@ OptionRecommendation(name='search_replace',
         rec = self.get_option_by_name(name)
         help = getattr(rec, 'help', None)
         if help is not None:
-            return help.replace('%default', unicode_type(rec.recommended_value))
+            return help.replace('%default', str(rec.recommended_value))
 
     def get_all_help(self):
         ans = {}
@@ -881,7 +861,7 @@ OptionRecommendation(name='search_replace',
             if name in {'sr1_search', 'sr1_replace', 'sr2_search', 'sr2_replace', 'sr3_search', 'sr3_replace', 'filter_css', 'comments'}:
                 if not a and not b:
                     return True
-            if name in {'transform_css_rules', 'search_replace'}:
+            if name in {'transform_css_rules', 'transform_html_rules', 'search_replace'}:
                 if b == '[]':
                     b = None
             return a == b
@@ -915,16 +895,18 @@ OptionRecommendation(name='search_replace',
                     try:
                         val = parse_date(val, assume_utc=x=='timestamp')
                     except:
-                        self.log.exception(_('Failed to parse date/time') + ' ' + unicode_type(val))
+                        self.log.exception(_('Failed to parse date/time') + ' ' + str(val))
                         continue
                 setattr(mi, x, val)
 
     def download_cover(self, url):
-        from calibre import browser
-        from PIL import Image
         import io
+
+        from PIL import Image
+
+        from calibre import browser
         from calibre.ptempfile import PersistentTemporaryFile
-        self.log('Downloading cover from %r'%url)
+        self.log(f'Downloading cover from {url!r}')
         br = browser()
         raw = br.open_novisit(url).read()
         buf = io.BytesIO(raw)
@@ -945,7 +927,7 @@ OptionRecommendation(name='search_replace',
         if self.opts.read_metadata_from_opf is not None:
             self.opts.read_metadata_from_opf = os.path.abspath(
                                             self.opts.read_metadata_from_opf)
-            with lopen(self.opts.read_metadata_from_opf, 'rb') as stream:
+            with open(self.opts.read_metadata_from_opf, 'rb') as stream:
                 opf = OPF(stream, os.path.dirname(self.opts.read_metadata_from_opf))
             mi = opf.to_book_metadata()
         self.opts_to_mi(mi)
@@ -955,7 +937,7 @@ OptionRecommendation(name='search_replace',
             ext = mi.cover.rpartition('.')[-1].lower().strip()
             if ext not in ('png', 'jpg', 'jpeg', 'gif'):
                 ext = 'jpg'
-            with lopen(mi.cover, 'rb') as stream:
+            with open(mi.cover, 'rb') as stream:
                 mi.cover_data = (ext, stream.read())
             mi.cover = None
         self.user_metadata = mi
@@ -978,7 +960,7 @@ OptionRecommendation(name='search_replace',
                     setattr(self.opts, attr, x)
                     return
             self.log.warn(
-                'Profile (%s) %r is no longer available, using default'%(which, sval))
+                f'Profile ({which}) {sval!r} is no longer available, using default')
             for x in profiles():
                 if x.short_name == 'default':
                     setattr(self.opts, attr, x)
@@ -996,7 +978,7 @@ OptionRecommendation(name='search_replace',
             self.log('Conversion options changed from defaults:')
             for rec in self.changed_options:
                 if rec.option.name not in ('username', 'password'):
-                    self.log(' ', '%s:' % rec.option.name, repr(rec.recommended_value))
+                    self.log(' ', f'{rec.option.name}:', repr(rec.recommended_value))
         if self.opts.verbose > 1:
             self.log.debug('Resolved conversion options')
             try:
@@ -1051,8 +1033,10 @@ OptionRecommendation(name='search_replace',
         self.flush()
         if self.opts.embed_all_fonts or self.opts.embed_font_family:
             # Start the threaded font scanner now, for performance
-            from calibre.utils.fonts.scanner import font_scanner  # noqa
-        import css_parser, logging
+            from calibre.utils.fonts.scanner import font_scanner  # noqa: F401
+        import logging
+
+        import css_parser
         css_parser.log.setLevel(logging.WARN)
         get_types_map()  # Ensure the mimetypes module is initialized
 
@@ -1061,7 +1045,7 @@ OptionRecommendation(name='search_replace',
             self.opts.debug_pipeline = os.path.abspath(self.opts.debug_pipeline)
             if not os.path.exists(self.opts.debug_pipeline):
                 os.makedirs(self.opts.debug_pipeline)
-            with lopen(os.path.join(self.opts.debug_pipeline, 'README.txt'), 'wb') as f:
+            with open(os.path.join(self.opts.debug_pipeline, 'README.txt'), 'wb') as f:
                 f.write(DEBUG_README)
             for x in ('input', 'parsed', 'structure', 'processed'):
                 x = os.path.join(self.opts.debug_pipeline, x)
@@ -1079,7 +1063,7 @@ OptionRecommendation(name='search_replace',
 
         tdir = PersistentTemporaryDirectory('_plumber')
         stream = self.input if self.input_fmt == 'recipe' else \
-                lopen(self.input, 'rb')
+                open(self.input, 'rb')
         if self.input_fmt == 'recipe':
             self.opts.original_recipe_input_arg = self.original_input_arg
 
@@ -1133,6 +1117,13 @@ OptionRecommendation(name='search_replace',
 
         self.oeb.plumber_output_format = self.output_fmt or ''
 
+        if self.opts.transform_html_rules:
+            transform_html_rules = self.opts.transform_html_rules
+            if isinstance(transform_html_rules, string_or_bytes):
+                transform_html_rules = json.loads(transform_html_rules)
+            from calibre.ebooks.html_transform_rules import transform_conversion_book
+            transform_conversion_book(self.oeb, self.opts, transform_html_rules)
+
         from calibre.ebooks.oeb.transforms.data_url import DataURL
         DataURL()(self.oeb, self.opts)
         from calibre.ebooks.oeb.transforms.guide import Clean
@@ -1174,11 +1165,17 @@ OptionRecommendation(name='search_replace',
             try:
                 fkey = list(map(float, fkey.split(',')))
             except Exception:
-                self.log.error('Invalid font size key: %r ignoring'%fkey)
+                self.log.error(f'Invalid font size key: {fkey!r} ignoring')
                 fkey = self.opts.dest.fkey
 
         from calibre.ebooks.oeb.transforms.jacket import Jacket
         Jacket()(self.oeb, self.opts, self.user_metadata)
+        pr(0.37)
+        self.flush()
+
+        if self.opts.add_alt_text_to_img:
+            from calibre.ebooks.oeb.transforms.alt_text import AddAltText
+            AddAltText()(self.oeb, self.opts)
         pr(0.4)
         self.flush()
 
@@ -1189,7 +1186,7 @@ OptionRecommendation(name='search_replace',
 
         if self.opts.extra_css and os.path.exists(self.opts.extra_css):
             with open(self.opts.extra_css, 'rb') as f:
-                self.opts.extra_css = f.read()
+                self.opts.extra_css = f.read().decode('utf-8')
 
         oibl = self.opts.insert_blank_line
         orps  = self.opts.remove_paragraph_spacing
@@ -1232,8 +1229,7 @@ OptionRecommendation(name='search_replace',
         self.opts.insert_blank_line = oibl
         self.opts.remove_paragraph_spacing = orps
 
-        from calibre.ebooks.oeb.transforms.page_margin import \
-            RemoveFakeMargins, RemoveAdobeMargins
+        from calibre.ebooks.oeb.transforms.page_margin import RemoveAdobeMargins, RemoveFakeMargins
         RemoveFakeMargins()(self.oeb, self.log, self.opts)
         RemoveAdobeMargins()(self.oeb, self.log, self.opts)
 
@@ -1263,7 +1259,7 @@ OptionRecommendation(name='search_replace',
             self.dump_oeb(self.oeb, out_dir)
             self.log('Processed HTML written to:', out_dir)
 
-        self.log.info('Creating %s...'%self.output_plugin.name)
+        self.log.info(f'Creating {self.output_plugin.name}...')
         our = CompositeProgressReporter(0.67, 1., self.ui_reporter)
         self.output_plugin.report_progress = our
         our(0., _('Running %s plugin')%self.output_plugin.name)

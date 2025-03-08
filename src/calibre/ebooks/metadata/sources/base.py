@@ -6,7 +6,8 @@ __license__   = 'GPL v3'
 __copyright__ = '2011, Kovid Goyal <kovid@kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
 
-import re, threading
+import re
+import threading
 from functools import total_ordering
 
 from calibre import browser, random_user_agent
@@ -14,19 +15,19 @@ from calibre.customize import Plugin
 from calibre.ebooks.metadata import check_isbn
 from calibre.ebooks.metadata.author_mapper import cap_author_token
 from calibre.utils.localization import canonicalize_lang, get_lang
-from polyglot.builtins import iteritems, cmp
+from polyglot.builtins import cmp, iteritems
 
 
 def create_log(ostream=None):
-    from calibre.utils.logging import ThreadSafeLog, FileStream
+    from calibre.utils.logging import FileStream, ThreadSafeLog
     log = ThreadSafeLog(level=ThreadSafeLog.DEBUG)
     log.outputs = [FileStream(ostream)]
     return log
 
 
 # Comparing Metadata objects for relevance {{{
-words = ("the", "a", "an", "of", "and")
-prefix_pat = re.compile(r'^(%s)\s+'%("|".join(words)))
+words = ('the', 'a', 'an', 'of', 'and')
+prefix_pat = re.compile(r'^(%s)\s+'%('|'.join(words)))
 trailing_paren_pat = re.compile(r'\(.*\)$')
 whitespace_pat = re.compile(r'\s+')
 
@@ -43,7 +44,6 @@ def cleanup_title(s):
 
 @total_ordering
 class InternalMetadataCompareKeyGen:
-
     '''
     Generate a sort key for comparison of the relevance of Metadata objects,
     given a search query. This is used only to compare results from the same
@@ -163,7 +163,7 @@ def fixcase(x):
 
 
 class Option:
-    __slots__ = ['type', 'default', 'label', 'desc', 'name', 'choices']
+    __slots__ = ('choices', 'default', 'desc', 'label', 'name', 'type')
 
     def __init__(self, name, type_, default, label, desc, choices=None):
         '''
@@ -179,7 +179,7 @@ class Option:
         self.name, self.type, self.default, self.label, self.desc = (name,
                 type_, default, label, desc)
         if choices and not isinstance(choices, dict):
-            choices = dict([(x, x) for x in choices])
+            choices = {x: x for x in choices}
         self.choices = choices
 
 
@@ -212,8 +212,8 @@ class Source(Plugin):
     ignore_ssl_errors = False
 
     #: Cached cover URLs can sometimes be unreliable (i.e. the download could
-    #: fail or the returned image could be bogus. If that is often the case
-    #: with this source set to False
+    #: fail or the returned image could be bogus). If that is often the case
+    #: with this source, set to False
     cached_cover_url_is_reliable = True
 
     #: A list of :class:`Option` objects. They will be used to automatically
@@ -441,8 +441,8 @@ class Source(Plugin):
         if not urls:
             log('No images found for, title: %r and authors: %r'%(title, authors))
             return
-        from threading import Thread
         import time
+        from threading import Thread
         if prefs_name:
             urls = urls[:self.prefs[prefs_name]]
         if get_best_cover:
@@ -487,7 +487,7 @@ class Source(Plugin):
         consistent, so only implement it if it is possible to construct the URL
         from a known scheme given identifiers.
         '''
-        return None
+        return
 
     def get_book_url_name(self, idtype, idval, url):
         '''
@@ -497,7 +497,7 @@ class Source(Plugin):
 
     def get_book_urls(self, identifiers):
         '''
-        Override this method if you would like to return multiple urls for this book.
+        Override this method if you would like to return multiple URLs for this book.
         Return a list of 3-tuples. By default this method simply calls :func:`get_book_url`.
         '''
         data = self.get_book_url(identifiers)
@@ -508,12 +508,12 @@ class Source(Plugin):
     def get_cached_cover_url(self, identifiers):
         '''
         Return cached cover URL for the book identified by
-        the identifiers dict or None if no such URL exists.
+        the identifiers dictionary or None if no such URL exists.
 
         Note that this method must only return validated URLs, i.e. not URLS
         that could result in a generic cover image or a not found error.
         '''
-        return None
+        return
 
     def id_from_url(self, url):
         '''
@@ -522,7 +522,7 @@ class Source(Plugin):
         If the URL does not match the pattern for the metadata source,
         return None.
         '''
-        return None
+        return
 
     def identify_results_keygen(self, title=None, authors=None,
             identifiers={}):
@@ -581,7 +581,7 @@ class Source(Plugin):
                  of the error suitable for showing to the user
 
         '''
-        return None
+        return
 
     def download_cover(self, log, result_queue, abort,
             title=None, authors=None, identifiers={}, timeout=30, get_best_cover=False):

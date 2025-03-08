@@ -1,6 +1,3 @@
-# -*- coding: utf-8 -*-
-
-
 __license__ = 'GPL 3'
 __copyright__ = '2012, Kovid Goyal <kovid at kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
@@ -9,14 +6,14 @@ __docformat__ = 'restructuredtext en'
 Convert OEB ebook format to PDF.
 '''
 
-import glob, os
+import glob
+import os
 
-from calibre.customize.conversion import (OutputFormatPlugin,
-    OptionRecommendation)
+from calibre.customize.conversion import OptionRecommendation, OutputFormatPlugin
 from calibre.ptempfile import TemporaryDirectory
-from polyglot.builtins import iteritems, unicode_type
+from polyglot.builtins import iteritems
 
-UNITS = ('millimeter', 'centimeter', 'point', 'inch' , 'pica' , 'didot',
+UNITS = ('millimeter', 'centimeter', 'point', 'inch', 'pica', 'didot',
         'cicero', 'devicepixel')
 
 PAPER_SIZES = ('a0', 'a1', 'a2', 'a3', 'a4', 'a5', 'a6', 'b0', 'b1',
@@ -47,7 +44,7 @@ class PDFOutput(OutputFormatPlugin):
             'non default output profile is used. Default is letter. Choices '
             'are {}').format(', '.join(PAPER_SIZES))),
         OptionRecommendation(name='custom_size', recommended_value=None,
-            help=_('Custom size of the document. Use the form widthxheight '
+            help=_('Custom size of the document. Use the form width x height '
             'e.g. `123x321` to specify the width and height. '
             'This overrides any specified paper-size.')),
         OptionRecommendation(name='preserve_cover_aspect_ratio',
@@ -66,15 +63,16 @@ class PDFOutput(OutputFormatPlugin):
                 'The font family used to render monospace fonts. Will work only if the font is available system-wide.')),
         OptionRecommendation(name='pdf_standard_font', choices=ui_data['font_types'],
             recommended_value='serif', help=_(
-                'The font family used to render monospace fonts')),
+                'The type of font family used to render font for which no font family is specified.')),
         OptionRecommendation(name='pdf_default_font_size',
             recommended_value=20, help=_(
-                'The default font size')),
+                'The default font size (in pixels)')),
         OptionRecommendation(name='pdf_mono_font_size',
             recommended_value=16, help=_(
-                'The default font size for monospaced text')),
+                'The default font size for monospaced text (in pixels)')),
         OptionRecommendation(name='pdf_hyphenate', recommended_value=False,
-            help=_('Break long words at the end of lines. This can give the text at the right margin a more even appearance.')),
+            help=_('Break long words at the end of lines. This can give the text at the right margin a more even appearance.'
+                   ' Note that depending on the fonts used this option can break the copying of text from the PDF file.')),
         OptionRecommendation(name='pdf_mark_links', recommended_value=False,
             help=_('Surround all links with a red box, useful for debugging.')),
         OptionRecommendation(name='pdf_page_numbers', recommended_value=False,
@@ -141,6 +139,11 @@ class PDFOutput(OutputFormatPlugin):
                 ' the PDF CropBox, not all software respects the CropBox.'
             )
         ),
+        OptionRecommendation(name='pdf_no_cover',
+            recommended_value=False,
+            help=_('Do not insert the book cover as an image at the start of the document.'
+                   ' If you use this option, the book cover will be discarded.')
+        ),
 
     }
 
@@ -148,15 +151,13 @@ class PDFOutput(OutputFormatPlugin):
         # Ensure Qt is setup to be used with WebEngine
         # specialize_options is called early enough in the pipeline
         # that hopefully no Qt application has been constructed as yet
-        from qt.webengine import QWebEngineUrlScheme
-        from qt.webengine import QWebEnginePage  # noqa
+        from qt.webengine import QWebEnginePage  # noqa: F401
+
         from calibre.gui2 import must_use_qt
-        from calibre.constants import FAKE_PROTOCOL
-        scheme = QWebEngineUrlScheme(FAKE_PROTOCOL.encode('ascii'))
-        scheme.setSyntax(QWebEngineUrlScheme.Syntax.Host)
-        scheme.setFlags(QWebEngineUrlScheme.Flag.SecureScheme)
-        QWebEngineUrlScheme.registerScheme(scheme)
+        from calibre.utils.webengine import setup_default_profile, setup_fake_protocol
+        setup_fake_protocol()
         must_use_qt()
+        setup_default_profile()
         self.input_fmt = input_fmt
 
         if opts.pdf_use_document_margins:
@@ -169,9 +170,11 @@ class PDFOutput(OutputFormatPlugin):
         self.oeb = oeb_book
         self.input_plugin, self.opts, self.log = input_plugin, opts, log
         self.output_path = output_path
-        from calibre.ebooks.oeb.base import OPF, OPF2_NS
-        from lxml import etree
         from io import BytesIO
+
+        from lxml import etree
+
+        from calibre.ebooks.oeb.base import OPF, OPF2_NS
         package = etree.Element(OPF('package'),
             attrib={'version': '2.0', 'unique-identifier': 'dummy'},
             nsmap={None: OPF2_NS})
@@ -193,8 +196,8 @@ class PDFOutput(OutputFormatPlugin):
 
     def get_cover_data(self):
         oeb = self.oeb
-        if (oeb.metadata.cover and unicode_type(oeb.metadata.cover[0]) in oeb.manifest.ids):
-            cover_id = unicode_type(oeb.metadata.cover[0])
+        if (oeb.metadata.cover and str(oeb.metadata.cover[0]) in oeb.manifest.ids):
+            cover_id = str(oeb.metadata.cover[0])
             item = oeb.manifest.ids[cover_id]
             if isinstance(item.data, bytes):
                 self.cover_data = item.data
@@ -233,8 +236,10 @@ class PDFOutput(OutputFormatPlugin):
 
     def convert_text(self, oeb_book):
         import json
+
         from calibre.ebooks.pdf.html_writer import convert
-        self.get_cover_data()
+        if not self.opts.pdf_no_cover:
+            self.get_cover_data()
         self.process_fonts()
 
         if self.opts.pdf_use_document_margins and self.stored_page_margins:

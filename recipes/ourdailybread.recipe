@@ -5,9 +5,11 @@ __copyright__ = '2009-2010, Darko Miletic <darko.miletic at gmail.com>'
 odb.org
 '''
 
-from calibre.web.feeds.news import BasicNewsRecipe
 import uuid
+
 from lxml import html
+
+from calibre.web.feeds.news import BasicNewsRecipe
 
 
 class OurDailyBread(BasicNewsRecipe):
@@ -64,7 +66,7 @@ class OurDailyBread(BasicNewsRecipe):
                 div.set('class', 'calibre-inserted-psalm')
                 hr = div.makeelement('hr')
                 div.insert(0, hr)
-                # print html.tostring(div)
+                # print(html.tostring(div))
                 raw = html.tostring(root, encoding='unicode')
         return raw
 

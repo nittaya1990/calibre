@@ -1,23 +1,22 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
 
 
 __license__   = 'GPL v3'
 __copyright__ = '2010, Kovid Goyal <kovid@kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
 
-import os, errno
-from threading import Thread, Event
+import errno
+import os
+from threading import Event, Thread
 
-from qt.core import QDialog, QTimer, Qt, pyqtSignal
+from qt.core import QDialog, Qt, QTimer, pyqtSignal
 
+from calibre import force_unicode, isbytestring, patheq
+from calibre.constants import filesystem_encoding, get_portable_base, iswindows
+from calibre.gui2 import choose_dir, error_dialog
 from calibre.gui2.dialogs.choose_library_ui import Ui_Dialog
 from calibre.gui2.dialogs.progress import ProgressDialog as PD
-from calibre.gui2 import error_dialog, choose_dir
-from calibre.constants import (filesystem_encoding, iswindows,
-        get_portable_base)
-from calibre import isbytestring, patheq, force_unicode
-from polyglot.builtins import unicode_type
+from calibre.utils.localization import localize_user_manual_link
 
 
 class ProgressDialog(PD):
@@ -45,8 +44,11 @@ class ProgressDialog(PD):
 class ChooseLibrary(QDialog, Ui_Dialog):
 
     def __init__(self, db, callback, parent):
-        QDialog.__init__(self, parent)
+        super().__init__(parent)
         self.setupUi(self)
+        self.nas_warning.setText(self.nas_warning.text().format(localize_user_manual_link(
+            'https://manual.calibre-ebook.com/faq.html#i-am-getting-errors-with-my-calibre-library-on-a-networked-drive-nas')))
+        self.nas_warning.setOpenExternalLinks(True)
         self.db = db
         self.new_db = None
         self.callback = callback
@@ -55,7 +57,7 @@ class ChooseLibrary(QDialog, Ui_Dialog):
         lp = db.library_path
         if isbytestring(lp):
             lp = lp.decode(filesystem_encoding)
-        loc = unicode_type(self.old_location.text()).format(lp)
+        loc = str(self.old_location.text()).format(lp)
         self.old_location.setText(loc)
         self.browse_button.clicked.connect(self.choose_loc)
         self.empty_library.toggled.connect(self.empty_library_toggled)
@@ -151,7 +153,7 @@ class ChooseLibrary(QDialog, Ui_Dialog):
 
             t = Thread(name='MoveLibrary', target=do_move)
             QTimer.singleShot(0, t.start)
-            pd.exec_()
+            pd.exec()
             if abort_move.is_set():
                 self.callback(self.db.library_path)
                 return
@@ -169,7 +171,7 @@ class ChooseLibrary(QDialog, Ui_Dialog):
             action = 'existing'
         elif self.empty_library.isChecked():
             action = 'new'
-        text = unicode_type(self.location.text()).strip()
+        text = str(self.location.text()).strip()
         if not text:
             return error_dialog(self, _('No location'), _('No location selected'),
                     show=True)
@@ -177,7 +179,7 @@ class ChooseLibrary(QDialog, Ui_Dialog):
         if action == 'move':
             try:
                 os.makedirs(loc)
-            except EnvironmentError as e:
+            except OSError as e:
                 if e.errno != errno.EEXIST:
                     raise
         if not loc or not os.path.exists(loc) or not os.path.isdir(loc):

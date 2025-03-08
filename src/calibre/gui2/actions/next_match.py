@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
 
 
 __license__   = 'GPL v3'
@@ -19,7 +18,7 @@ class NextMatchAction(InterfaceAction):
     def genesis(self):
         '''
         Setup this plugin. Only called once during initialization. self.gui is
-        available. The action secified by :attr:`action_spec` is available as
+        available. The action specified by :attr:`action_spec` is available as
         ``self.qaction``.
         '''
         self.can_move = None

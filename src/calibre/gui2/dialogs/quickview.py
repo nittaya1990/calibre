@@ -10,21 +10,32 @@ import traceback
 from functools import partial
 
 from qt.core import (
-    Qt, QDialog, QAbstractItemView, QTableWidgetItem, QIcon, QListWidgetItem,
-    QCoreApplication, QEvent, QObject, QApplication, pyqtSignal, QByteArray, QMenu,
-    QShortcut, QTimer)
+    QAbstractItemView,
+    QApplication,
+    QCoreApplication,
+    QDialog,
+    QEvent,
+    QIcon,
+    QListWidgetItem,
+    QMenu,
+    QObject,
+    QShortcut,
+    QStyle,
+    Qt,
+    QTableWidgetItem,
+    QTimer,
+    pyqtSignal,
+)
 
 from calibre.customize.ui import find_plugin
-from calibre.gui2 import gprefs
+from calibre.gui2 import error_dialog, gprefs
 from calibre.gui2.dialogs.quickview_ui import Ui_Quickview
 from calibre.utils.date import timestampfromdt
 from calibre.utils.icu import sort_key
 from calibre.utils.iso8601 import UNDEFINED_DATE
-from polyglot.builtins import unicode_type
 
 
 class TableItem(QTableWidgetItem):
-
     '''
     A QTableWidgetItem that sorts on a separate string and uses ICU rules
     '''
@@ -51,7 +62,7 @@ class TableItem(QTableWidgetItem):
             # self is not None and other is None therefore self >= other
             return True
 
-        if isinstance(self.sort, (bytes, unicode_type)):
+        if isinstance(self.sort, (bytes, str)):
             l = sort_key(self.sort)
             r = sort_key(other.sort)
         else:
@@ -76,7 +87,7 @@ class TableItem(QTableWidgetItem):
             # self is not None therefore self > other
             return False
 
-        if isinstance(self.sort, (bytes, unicode_type)):
+        if isinstance(self.sort, (bytes, str)):
             l = sort_key(self.sort)
             r = sort_key(other.sort)
         else:
@@ -95,7 +106,7 @@ class TableItem(QTableWidgetItem):
 
     def data(self, role):
         self.get_data()
-        if role == Qt.DisplayRole:
+        if role == Qt.ItemDataRole.DisplayRole:
             return self.val
         return QTableWidgetItem.data(self, role)
 
@@ -153,13 +164,12 @@ class Quickview(QDialog, Ui_Quickview):
     tab_pressed_signal       = pyqtSignal(object, object)
     quickview_closed         = pyqtSignal()
 
-    def __init__(self, gui, row, toggle_shortcut):
+    def __init__(self, gui, row, toggle_shortcut, focus_booklist_shortcut=None):
         self.is_pane = gprefs.get('quickview_is_pane', False)
-
         if not self.is_pane:
-            QDialog.__init__(self, gui, flags=Qt.WindowType.Widget)
+            QDialog.__init__(self, None, flags=Qt.WindowType.Window)
         else:
-            QDialog.__init__(self, gui)
+            QDialog.__init__(self, None, flags=Qt.WindowType.Dialog)
         Ui_Quickview.__init__(self)
         self.setupUi(self)
         self.isClosed = False
@@ -176,9 +186,7 @@ class Quickview(QDialog, Ui_Quickview):
             self.books_table_column_widths = \
                         gprefs.get('quickview_dialog_books_table_widths', None)
             if not self.is_pane:
-                geom = gprefs.get('quickview_dialog_geometry', None)
-                if geom:
-                    QApplication.instance().safe_restore_geometry(self, QByteArray(geom))
+                self.restore_geometry(gprefs, 'quickview_dialog_geometry')
         except:
             pass
 
@@ -264,18 +272,20 @@ class Quickview(QDialog, Ui_Quickview):
 
         self.close_button.setDefault(False)
         self.close_button_tooltip = _('The Quickview shortcut ({0}) shows/hides the Quickview panel')
+        self.refresh_button.setIcon(QIcon.ic('view-refresh.png'))
+        self.close_button.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_DialogCloseButton))
         if self.is_pane:
             self.dock_button.setText(_('Undock'))
             self.dock_button.setToolTip(_('Show the Quickview panel in its own floating window'))
-            self.dock_button.setIcon(QIcon(I('arrow-up.png')))
+            self.dock_button.setIcon(QIcon.ic('arrow-up.png'))
             # Remove the ampersands from the buttons because shortcuts exist.
             self.lock_qv.setText(_('Lock Quickview contents'))
             self.refresh_button.setText(_('Refresh'))
-            self.gui.quickview_splitter.add_quickview_dialog(self)
+            self.gui.layout_container.set_widget('quick_view', self)
             self.close_button.setVisible(False)
         else:
             self.dock_button.setToolTip(_('Embed the Quickview panel into the main calibre window'))
-            self.dock_button.setIcon(QIcon(I('arrow-down.png')))
+            self.dock_button.setIcon(QIcon.ic('arrow-down.png'))
         self.set_focus()
 
         self.books_table.horizontalHeader().sectionResized.connect(self.section_resized)
@@ -286,25 +296,36 @@ class Quickview(QDialog, Ui_Quickview):
         self.refresh_button.setEnabled(False)
         self.lock_qv.stateChanged.connect(self.lock_qv_changed)
 
-        self.view_icon = QIcon(I('view.png'))
+        self.view_icon = QIcon.ic('view.png')
         self.view_plugin = self.gui.iactions['View']
-        self.edit_metadata_icon = QIcon(I('edit_input.png'))
-        self.quickview_icon = QIcon(I('quickview.png'))
-        self.select_book_icon = QIcon(I('library.png'))
-        self.search_icon = QIcon(I('search.png'))
+        self.show_details_plugin = self.gui.iactions['Show Book Details']
+        self.edit_metadata_icon = QIcon.ic('edit_input.png')
+        self.quickview_icon = QIcon.ic('quickview.png')
+        self.select_book_icon = QIcon.ic('library.png')
+        self.search_icon = QIcon.ic('search.png')
         self.books_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.books_table.customContextMenuRequested.connect(self.show_context_menu)
 
         # Add the quickview toggle as a shortcut for the close button
         # Don't add it if it identical to the current &X shortcut because that
-        # breaks &X
-        if (not self.is_pane and toggle_shortcut and
-                             self.close_button.shortcut() != toggle_shortcut):
-            toggle_sc = QShortcut(toggle_shortcut, self.close_button)
-            toggle_sc.activated.connect(lambda: self.close_button_clicked())
-            toggle_sc.setEnabled(True)
-            self.close_button.setToolTip(_('Alternate shortcut: ') +
-                                         toggle_shortcut.toString())
+        # breaks &X. Also add the focus booklist shortcut
+        if not self.is_pane:
+            if toggle_shortcut and self.close_button.shortcut() != toggle_shortcut:
+                toggle_sc = QShortcut(toggle_shortcut, self.close_button)
+                toggle_sc.activated.connect(lambda: self.close_button_clicked())
+                toggle_sc.setEnabled(True)
+                self.close_button.setToolTip(_('Alternate shortcut: ') +
+                                             toggle_shortcut.toString())
+            if focus_booklist_shortcut is not None:
+                toggle_sc = QShortcut(focus_booklist_shortcut, self)
+                toggle_sc.activated.connect(self.focus_booklist)
+                toggle_sc.setEnabled(True)
+
+    def focus_booklist(self):
+        from calibre.gui2.ui import get_gui
+        gui = get_gui()
+        gui.activateWindow()
+        gui.focus_current_view()
 
     def delayed_slave(self, current, func=None, dex=None):
         self.slave_timers[dex].stop()
@@ -315,7 +336,7 @@ class Quickview(QDialog, Ui_Quickview):
         t.start()
 
     def item_doubleclicked(self, item):
-        tb = self.gui.stack.tb_widget
+        tb = self.gui.tb_widget
         tb.set_focus_to_find_box()
         tb.item_search.lineEdit().setText(self.current_key + ':=' + item.text())
         tb.do_find()
@@ -323,9 +344,9 @@ class Quickview(QDialog, Ui_Quickview):
     def show_item_context_menu(self, point):
         item = self.items.currentItem()
         self.context_menu = QMenu(self)
-        self.context_menu.addAction(self.search_icon, _('Search for item in the Tag browser'),
+        self.context_menu.addAction(self.search_icon, _('Find item in the Tag browser'),
                                 partial(self.item_doubleclicked, item))
-        self.context_menu.addAction(self.search_icon, _('Search for item in the library'),
+        self.context_menu.addAction(self.search_icon, _('Find item in the library'),
                                 partial(self.do_search, follow_library_view=False))
         self.context_menu.popup(self.items.mapToGlobal(point))
         self.context_menu = QMenu(self)
@@ -343,15 +364,19 @@ class Quickview(QDialog, Ui_Quickview):
         a = m.addAction(self.select_book_icon, _('Select this book in the library'),
                                 partial(self.select_book, book_id))
         a.setEnabled(book_displayed)
-        m.addAction(self.search_icon, _('Search for item in the library'),
+        m.addAction(_('Open a locked Book details window for this book'),
+                    partial(self.show_book_details, book_id))
+        m.addAction(self.search_icon, _('Find item in the library'),
                         partial(self.do_search, follow_library_view=False))
-        a = m.addAction(self.edit_metadata_icon, _('Edit book metadata'),
+        a = m.addAction(self.edit_metadata_icon, _('Edit metadata'),
                         partial(self.edit_metadata, book_id, follow_library_view=False))
         a.setEnabled(book_displayed)
         a = m.addAction(self.quickview_icon, _('Quickview this cell'),
                         partial(self.quickview_item, row, column))
-        a.setEnabled(self.is_category(self.column_order[column]) and
-                     book_displayed and not self.lock_qv.isChecked())
+        key = self.column_order[column]
+        a.setEnabled(self.is_category(key) and book_displayed and
+                     key in self.view.visible_columns and
+                     not self.lock_qv.isChecked())
         m.addSeparator()
         m.addAction(self.view_icon, _('Open book in the E-book viewer'),
                         partial(self.view_plugin._view_calibre_books, [book_id]))
@@ -443,7 +468,7 @@ class Quickview(QDialog, Ui_Quickview):
     def show(self):
         QDialog.show(self)
         if self.is_pane:
-            self.gui.quickview_splitter.show_quickview_widget()
+            self.gui.show_panel('quick_view')
 
     def show_as_pane_changed(self):
         gprefs['quickview_is_pane'] = not gprefs.get('quickview_is_pane', False)
@@ -483,7 +508,7 @@ class Quickview(QDialog, Ui_Quickview):
     def item_selected(self, txt):
         if self.no_valid_items:
             return
-        self.fill_in_books_box(unicode_type(txt))
+        self.fill_in_books_box(str(txt))
         self.set_search_text(self.current_key + ':"=' + txt.replace('"', '\\"') + '"')
 
     def vl_box_changed(self):
@@ -519,9 +544,11 @@ class Quickview(QDialog, Ui_Quickview):
             self.indicate_no_items()
 
     def is_category(self, key):
-        return key is not None and (self.fm[key]['is_category'] or
+        return key is not None and (
+                     self.fm[key]['table'] is not None and
+                     (self.fm[key]['is_category'] or
                                     (self.fm[key]['datatype'] == 'composite' and
-                                     self.fm[key]['display'].get('make_category', False)))
+                                     self.fm[key]['display'].get('make_category', False))))
 
     def _refresh(self, book_id, key):
         '''
@@ -543,10 +570,7 @@ class Quickview(QDialog, Ui_Quickview):
         self.books_table.setRowCount(0)
 
         mi = self.db.new_api.get_proxy_metadata(book_id)
-        vals = mi.get(key, None)
-        if self.fm[key]['datatype'] == 'composite' and self.fm[key]['is_multiple']:
-            sep = self.fm[key]['is_multiple'].get('cache_to_list', ',')
-            vals = [v.strip() for v in vals.split(sep) if v.strip()]
+        vals = self.db.new_api.split_if_is_multiple_composite(key, mi.get(key, None))
         try:
             # Check if we are in the GridView and there are no values for the
             # selected column. In this case switch the column to 'authors'
@@ -569,9 +593,9 @@ class Quickview(QDialog, Ui_Quickview):
             self.no_valid_items = False
             if self.fm[key]['datatype'] == 'rating':
                 if self.fm[key]['display'].get('allow_half_stars', False):
-                    vals = unicode_type(vals/2.0)
+                    vals = str(vals/2.0)
                 else:
-                    vals = unicode_type(vals//2)
+                    vals = str(vals//2)
             if not isinstance(vals, list):
                 vals = [vals]
             vals.sort(key=sort_key)
@@ -641,7 +665,7 @@ class Quickview(QDialog, Ui_Quickview):
                         select_item = a
                 # The data is supplied on demand when the item is displayed
                 a.setData(Qt.ItemDataRole.UserRole, b)
-                a.setToolTip(tt)
+                a.setToolTip(f"<div>{_('Value')}: {a.text()}</div>{tt}")
                 self.books_table.setItem(row, self.key_to_table_widget_column(col), a)
                 self.books_table.setRowHeight(row, self.books_table_row_height)
         self.books_table.blockSignals(False)
@@ -655,49 +679,45 @@ class Quickview(QDialog, Ui_Quickview):
         mi = self.db.new_api.get_proxy_metadata(book_id)
         try:
             if col == 'title':
-                return (mi.title, mi.title_sort, 0)
+                return mi.title, mi.title_sort, 0
             elif col == 'authors':
-                return (' & '.join(mi.authors), mi.author_sort, 0)
+                return ' & '.join(mi.authors), mi.author_sort, 0
             elif col == 'series':
                 series = mi.format_field('series')[1]
                 if series is None:
-                    return ('', None, 0)
+                    return '', None, 0
                 else:
-                    return (series, mi.series, mi.series_index)
+                    return series, mi.series, mi.series_index
             elif col == 'size':
                 v = mi.get('book_size')
                 if v is not None:
-                    return ('{:n}'.format(v), v, 0)
+                    return f'{v:n}', v, 0
                 else:
-                    return ('', None, 0)
+                    return '', None, 0
             elif self.fm[col]['datatype'] == 'series':
                 v = mi.format_field(col)[1]
-                return (v, mi.get(col), mi.get(col+'_index'))
+                return v, mi.get(col), mi.get(col+'_index')
             elif self.fm[col]['datatype'] == 'datetime':
                 v = mi.format_field(col)[1]
                 d = mi.get(col)
                 if d is None:
                     d = UNDEFINED_DATE
-                return (v, timestampfromdt(d), 0)
+                return v, timestampfromdt(d), 0
             elif self.fm[col]['datatype'] in ('float', 'int'):
                 v = mi.format_field(col)[1]
                 sort_val = mi.get(col)
-                return (v, sort_val, 0)
+                return v, sort_val, 0
             else:
                 v = mi.format_field(col)[1]
-                return (v, v, 0)
+                return v, v, 0
         except:
             traceback.print_exc()
-            return (_('Something went wrong while filling in the table'), '', 0)
+            return _('Something went wrong while filling in the table'), '', 0
 
     # Deal with sizing the table columns. Done here because the numbers are not
     # correct until the first paint.
     def resizeEvent(self, *args):
         QDialog.resizeEvent(self, *args)
-
-        # Do this if we are resizing for the first time to reset state.
-        if self.is_pane and self.height() == 0:
-            self.gui.quickview_splitter.set_sizes()
 
         if self.books_table_column_widths is not None:
             for c,w in enumerate(self.books_table_column_widths):
@@ -708,7 +728,7 @@ class Quickview(QDialog, Ui_Quickview):
             # widths will be remembered
             w = self.books_table.width() - 25 - self.books_table.verticalHeader().width()
             w //= self.books_table.columnCount()
-            for c in range(0, self.books_table.columnCount()):
+            for c in range(self.books_table.columnCount()):
                 self.books_table.setColumnWidth(c, w)
         self.save_state()
 
@@ -723,7 +743,6 @@ class Quickview(QDialog, Ui_Quickview):
             self.select_book_and_qv(row, self.key_to_table_widget_column(self.current_key))
 
     def book_not_in_view_error(self):
-        from calibre.gui2 import error_dialog
         error_dialog(self, _('Quickview: Book not in library view'),
                      _('The book you selected is not currently displayed in '
                        'the library view, perhaps because of a search or a '
@@ -750,6 +769,7 @@ class Quickview(QDialog, Ui_Quickview):
             else:
                 self.quickview_item(row, self.key_to_table_widget_column(self.current_key))
         except:
+            traceback.print_exc()
             self.book_not_in_view_error()
 
     def edit_metadata(self, book_id, follow_library_view=True):
@@ -761,6 +781,12 @@ class Quickview(QDialog, Ui_Quickview):
                 em.actual_plugin_.edit_metadata(None)
         finally:
             self.follow_library_view = True
+
+    def show_book_details(self, book_id):
+        try:
+            self.show_details_plugin.show_book_info(book_id=book_id, locked=True)
+        finally:
+            pass
 
     def select_book(self, book_id):
         '''
@@ -786,10 +812,16 @@ class Quickview(QDialog, Ui_Quickview):
             self.book_not_in_view_error()
             return
         key = self.column_order[column]
-        modifiers = int(QApplication.keyboardModifiers())
-        if modifiers in (Qt.Modifier.CTRL, Qt.Modifier.SHIFT):
+        if QApplication.keyboardModifiers() in (Qt.KeyboardModifier.ControlModifier, Qt.KeyboardModifier.ShiftModifier):
             self.edit_metadata(book_id)
         else:
+            if key not in self.view.visible_columns:
+                error_dialog(self, _('Quickview: Column cannot be selected'),
+                     _("The column you double-clicked, '{}', is not shown in the "
+                       "library view. The book/column cannot be selected by Quickview.").format(key),
+                     show=True,
+                     show_copy_button=False)
+                return
             self.view.select_cell(self.db.data.id_to_index(book_id),
                                   self.view.column_map.index(key))
 
@@ -820,11 +852,11 @@ class Quickview(QDialog, Ui_Quickview):
         if self.is_closed:
             return
         self.books_table_column_widths = []
-        for c in range(0, self.books_table.columnCount()):
+        for c in range(self.books_table.columnCount()):
             self.books_table_column_widths.append(self.books_table.columnWidth(c))
         gprefs['quickview_dialog_books_table_widths'] = self.books_table_column_widths
         if not self.is_pane:
-            gprefs['quickview_dialog_geometry'] = bytearray(self.saveGeometry())
+            self.save_geometry(gprefs, 'quickview_dialog_geometry')
 
     def _close(self):
         self.save_state()
@@ -843,9 +875,10 @@ class Quickview(QDialog, Ui_Quickview):
             self._reject()
 
     def _reject(self):
+        gui = self.gui
         if self.is_pane:
-            self.gui.quickview_splitter.hide_quickview_widget()
-        self.gui.library_view.setFocus(Qt.FocusReason.ActiveWindowFocusReason)
+            gui.hide_panel('quick_view')
+        gui.library_view.setFocus(Qt.FocusReason.ActiveWindowFocusReason)
         self._close()
         QDialog.reject(self)
 
@@ -858,7 +891,7 @@ def get_qv_field_list(fm, use_defaults=False):
     else:
         src = db.prefs
     fieldlist = list(src['qv_display_fields'])
-    names = frozenset([x[0] for x in fieldlist])
+    names = frozenset(x[0] for x in fieldlist)
     for field in fm.displayable_field_keys():
         if (field != 'comments' and fm[field]['datatype'] != 'comments' and field not in names):
             fieldlist.append((field, False))

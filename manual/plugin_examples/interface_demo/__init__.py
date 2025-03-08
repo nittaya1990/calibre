@@ -9,6 +9,7 @@ __docformat__ = 'restructuredtext en'
 # The class that all Interface Action plugin wrappers must inherit from
 from calibre.customize import InterfaceActionBase
 
+
 class InterfacePluginDemo(InterfaceActionBase):
     '''
     This class is a simple wrapper that provides information about the actual
@@ -75,5 +76,3 @@ class InterfacePluginDemo(InterfaceActionBase):
         ac = self.actual_plugin_
         if ac is not None:
             ac.apply_settings()
-
-

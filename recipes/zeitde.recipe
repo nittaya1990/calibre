@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+# vim:fileencoding=utf-8
 __license__ = 'GPL v3'
 __copyright__ = '2008, Kovid Goyal <kovid at kovidgoyal.net>'
 
@@ -5,18 +7,20 @@ __copyright__ = '2008, Kovid Goyal <kovid at kovidgoyal.net>'
 Fetch Zeit-Online.de
 '''
 import re
-from calibre.web.feeds.news import BasicNewsRecipe
 from datetime import datetime
+
+from calibre.web.feeds.news import BasicNewsRecipe
+
 try:
     from http.cookiejar import Cookie
 except ImportError:
     from cookielib import Cookie
 
 try:
-    from urllib.request import Request, urlopen
     from urllib.error import HTTPError
+    from urllib.request import Request, urlopen
 except ImportError:
-    from urllib2 import Request, urlopen, HTTPError
+    from urllib2 import HTTPError, Request, urlopen
 
 from calibre.ebooks.BeautifulSoup import BeautifulSoup
 
@@ -41,10 +45,10 @@ class ZeitDe(BasicNewsRecipe):
 
     masthead_url = 'https://static.zeit.de/p/zeit.web/3.714/images/structured-data-publisher-logo-zon.png'
 
-    extra_css = '.figure__text { font-size: 0.9em; font-style: italic; } \
-                 .figure__copyright { font-size: 0.9em; font-style: italic; color: #888; } \
-                 .article-heading__kicker { font-size: 0.5em; display: block; margin-bottom: 1em; } \
-                 p.summary { font-size: 1.3em; font-style: italic; } '
+    extra_css = '''.figure__text { font-size: 0.9em; font-style: italic; }
+                   .figure__copyright { font-size: 0.9em; font-style: italic; color: #888; }
+                   .article-heading__kicker { font-size: 0.5em; display: block; margin-bottom: 1em; }
+                   p.summary { font-size: 1.3em; font-style: italic; } '''
 
     remove_tags = [
         dict(name='aside', class_='topicbox'),
@@ -52,6 +56,20 @@ class ZeitDe(BasicNewsRecipe):
         dict(class_='visually-hidden'),
         dict(name='a', class_='faq-link'),
     ]
+
+    recipe_specific_options = {
+        'days': {
+            'short': 'Oldest article to download from this news source. In days ',
+            'long': 'For example, 0.5, gives you articles from the past 12 hours',
+            'default': str(oldest_article)
+        }
+    }
+
+    def __init__(self, *args, **kwargs):
+        BasicNewsRecipe.__init__(self, *args, **kwargs)
+        d = self.recipe_specific_options.get('days')
+        if d and isinstance(d, str):
+            self.oldest_article = float(d)
 
     feeds = [
         (u'Startseite – Die wichtigsten Themen auf einen Blick',
@@ -97,7 +115,7 @@ class ZeitDe(BasicNewsRecipe):
     def print_version(self, url):
         # If there is a complete page, use that one
         req = Request(url=url+'/komplettansicht')
-        req.get_method = lambda : 'HEAD'
+        req.get_method = lambda: 'HEAD'
         try:
             urlopen(req)
             return url + '/komplettansicht'
@@ -121,7 +139,7 @@ class ZeitDe(BasicNewsRecipe):
                 body.insert(0, header)
 
         # Add real img tags for images
-        for container in soup.findAll(class_=re.compile('__media-container$')):
+        for container in soup.findAll(class_=re.compile(r'__media-container$')):
             img = container.find('noscript')
             if img is not None:
                 img.name = 'div'

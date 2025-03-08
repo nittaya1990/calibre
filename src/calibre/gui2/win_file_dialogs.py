@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 # License: GPLv3 Copyright: 2016, Kovid Goyal <kovid at kovidgoyal.net>
 
 
@@ -7,14 +6,13 @@ import os
 import struct
 import subprocess
 import sys
+from contextlib import suppress
 from threading import Thread
 from uuid import uuid4
-from contextlib import suppress
 
+from calibre.utils.localization import _
+from polyglot.builtins import string_or_bytes
 
-from polyglot.builtins import filter, string_or_bytes, unicode_type
-
-is64bit = sys.maxsize > (1 << 32)
 base = sys.extensions_location if hasattr(sys, 'new_app_layout') else os.path.dirname(sys.executable)
 HELPER = os.path.join(base, 'calibre-file-dialog.exe')
 current_app_uid = None
@@ -47,7 +45,7 @@ def get_hwnd(widget=None):
 def serialize_hwnd(hwnd):
     if hwnd is None:
         return b''
-    return struct.pack('=B4s' + ('Q' if is64bit else 'I'), 4, b'HWND', int(hwnd))
+    return struct.pack('=B4sQ', 4, b'HWND', int(hwnd))
 
 
 def serialize_secret(secret):
@@ -56,24 +54,24 @@ def serialize_secret(secret):
 
 def serialize_binary(key, val):
     key = key.encode('ascii') if not isinstance(key, bytes) else key
-    return struct.pack('=B%ssB' % len(key), len(key), key, int(val))
+    return struct.pack(f'=B{len(key)}sB', len(key), key, int(val))
 
 
 def serialize_string(key, val):
     key = key.encode('ascii') if not isinstance(key, bytes) else key
-    val = unicode_type(val).encode('utf-8')
+    val = str(val).encode('utf-8')
     if len(val) > 2**16 - 1:
-        raise ValueError('%s is too long' % key)
-    return struct.pack('=B%dsH%ds' % (len(key), len(val)), len(key), key, len(val), val)
+        raise ValueError(f'{key} is too long')
+    return struct.pack(f'=B{len(key)}sH{len(val)}s', len(key), key, len(val), val)
 
 
 def serialize_file_types(file_types):
-    key = b"FILE_TYPES"
-    buf = [struct.pack('=B%dsH' % len(key), len(key), key, len(file_types))]
+    key = b'FILE_TYPES'
+    buf = [struct.pack(f'=B{len(key)}sH', len(key), key, len(file_types))]
 
     def add(x):
         x = x.encode('utf-8').replace(b'\0', b'')
-        buf.append(struct.pack('=H%ds' % len(x), len(x), x))
+        buf.append(struct.pack(f'=H{len(x)}s', len(x), x))
     for name, extensions in file_types:
         add(name or _('Files'))
         if isinstance(extensions, string_or_bytes):
@@ -125,7 +123,7 @@ def run_file_dialog(
 ):
     from calibre.gui2 import sanitize_env_vars
     secret = os.urandom(32).replace(b'\0', b' ')
-    pipename = '\\\\.\\pipe\\%s' % uuid4()
+    pipename = f'\\\\.\\pipe\\{uuid4()}'
     data = [serialize_string('PIPENAME', pipename), serialize_secret(secret)]
     parent = parent or None
     if parent is not None:
@@ -190,7 +188,7 @@ def run_file_dialog(
             [HELPER], stdout=subprocess.PIPE, stdin=subprocess.PIPE, stderr=subprocess.PIPE),
                data, loop.dialog_closed.emit)
     h.start()
-    loop.exec_(QEventLoop.ProcessEventsFlag.ExcludeUserInputEvents)
+    loop.exec(QEventLoop.ProcessEventsFlag.ExcludeUserInputEvents)
 
     def decode(x):
         x = x or b''
@@ -205,10 +203,10 @@ def run_file_dialog(
     from calibre import prints
     from calibre.constants import DEBUG
     if DEBUG:
-        prints('stdout+stderr from file dialog helper:', unicode_type([h.stdoutdata, h.stderrdata]))
+        prints('stdout+stderr from file dialog helper:', str([h.stdoutdata, h.stderrdata]))
 
     if h.rc != 0:
-        raise Exception('File dialog failed (return code %s): %s' % (h.rc, get_errors()))
+        raise Exception(f'File dialog failed (return code {h.rc}): {get_errors()}')
     server.join(2)
     if server.is_alive():
         raise Exception('Timed out waiting for read from pipe to complete')
@@ -218,7 +216,7 @@ def run_file_dialog(
         return ()
     parts = list(filter(None, server.data.split(b'\0')))
     if DEBUG:
-        prints('piped data from file dialog helper:', unicode_type(parts))
+        prints('piped data from file dialog helper:', str(parts))
     if len(parts) < 2:
         return ()
     if parts[0] != secret:
@@ -262,16 +260,15 @@ def choose_dir(window, name, title, default_dir='~', no_save_dir=False):
 
 
 def choose_files(window, name, title,
-                 filters=(), all_files=True, select_only_single_file=False, default_dir=u'~'):
-    name, initial_folder = get_initial_folder(name, title, default_dir)
+                 filters=(), all_files=True, select_only_single_file=False, default_dir='~', no_save_dir=False):
+    name, initial_folder = get_initial_folder(name, title, default_dir, no_save_dir)
     file_types = list(filters)
     if all_files:
         file_types.append((_('All files'), ['*']))
     ans = run_file_dialog(window, title, allow_multiple=not select_only_single_file, initial_folder=initial_folder, file_types=file_types)
-    if ans:
+    if ans and not no_save_dir:
         dynamic.set(name, os.path.dirname(ans[0]))
-        return ans
-    return None
+    return ans or None
 
 
 def choose_images(window, name, title, select_only_single_file=True, formats=None):
@@ -347,10 +344,10 @@ class PipeServer(Thread):
 
 
 def test(helper=HELPER):
-    pipename = '\\\\.\\pipe\\%s' % uuid4()
+    pipename = f'\\\\.\\pipe\\{uuid4()}'
     echo = '\U0001f431 Hello world!'
     secret = os.urandom(32).replace(b'\0', b' ')
-    data = serialize_string('PIPENAME', pipename) +  serialize_string('ECHO', echo) + serialize_secret(secret)
+    data = serialize_string('PIPENAME', pipename) + serialize_string('ECHO', echo) + serialize_secret(secret)
     server = PipeServer(pipename)
     server.start()
     p = subprocess.Popen([helper], stdout=subprocess.PIPE, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -362,10 +359,10 @@ def test(helper=HELPER):
     server.join(2)
     parts = list(filter(None, server.data.split(b'\0')))
     if parts[0] != secret:
-        raise RuntimeError('Did not get back secret: %r != %r' % (secret, parts[0]))
+        raise RuntimeError(f'Did not get back secret: {secret!r} != {parts[0]!r}')
     q = parts[1].decode('utf-8')
     if q != echo:
-        raise RuntimeError('Unexpected response: %r' % server.data)
+        raise RuntimeError(f'Unexpected response: {server.data!r}')
 
 
 if __name__ == '__main__':

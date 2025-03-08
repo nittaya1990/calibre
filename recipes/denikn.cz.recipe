@@ -1,20 +1,21 @@
 #!/usr/bin/env python
 # vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
-from __future__ import unicode_literals, division, absolute_import, print_function
-from calibre.web.feeds.news import BasicNewsRecipe
+from __future__ import absolute_import, division, print_function, unicode_literals
+
 from datetime import datetime
 
+from calibre.web.feeds.news import BasicNewsRecipe
 
 CZ_DAYS = ['Po', 'Út', 'St', 'Čt', 'Pá', 'So', 'Ne']
 CZ_MONTHS = ['led', 'úno', 'bře', 'dub', 'kvě', 'čen', 'čec', 'srp', 'zář', 'říj', 'lis', 'pro']
 
 
 def cz_title_time():
-    """
+    '''
     Helper function to return date with czech locale.
     Uses hardcoded lookup table of day and month names as strftime requires
     locale change that is not thread safe.
-    """
+    '''
     today = datetime.today()
     weekday = CZ_DAYS[today.weekday()]
     month = CZ_MONTHS[today.month-1]
@@ -25,9 +26,9 @@ def cz_title_time():
 
 
 class DenikNRecipe(BasicNewsRecipe):
-    """
+    '''
     Recipe for the RSS feed of https://denikn.cz/
-    """
+    '''
 
     title = u'Deník N'
     __author__ = 'Robert Mihaly'

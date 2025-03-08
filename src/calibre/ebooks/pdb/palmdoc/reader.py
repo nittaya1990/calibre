@@ -1,6 +1,3 @@
-# -*- coding: utf-8 -*-
-
-
 '''
 Read content from palmdoc pdb file.
 '''
@@ -9,8 +6,8 @@ __license__   = 'GPL v3'
 __copyright__ = '2009, John Schember <john@nachtimwald.com>'
 __docformat__ = 'restructuredtext en'
 
-import struct, io
-
+import io
+import struct
 
 from calibre.ebooks.pdb.formatreader import FormatReader
 
@@ -57,7 +54,7 @@ class Reader(FormatReader):
 
         self.log.info('Decompressing text...')
         for i in range(1, self.header_record.num_records + 1):
-            self.log.debug('\tDecompressing text section %i' % i)
+            self.log.debug(f'\tDecompressing text section {i}')
             raw_txt += self.decompress_text(i)
 
         self.log.info('Converting text to OEB...')

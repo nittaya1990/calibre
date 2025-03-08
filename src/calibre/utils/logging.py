@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 # License: GPLv3 Copyright: 2009, Kovid Goyal <kovid at kovidgoyal.net>
 
 # A simplified logging system
@@ -13,7 +12,6 @@ from threading import Lock
 
 from calibre.prints import prints
 from polyglot.builtins import as_unicode
-
 
 DEBUG = 0
 INFO  = 1
@@ -247,7 +245,6 @@ class ThreadSafeWrapper(Log):
 
 
 class GUILog(ThreadSafeLog):
-
     '''
     Logs in HTML and plain text as unicode. Ideal for display in a GUI context.
     '''

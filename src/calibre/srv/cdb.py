@@ -1,9 +1,10 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 # License: GPLv3 Copyright: 2017, Kovid Goyal <kovid at kovidgoyal.net>
 
 
 import os
+import shutil
+import time
 from functools import partial
 from io import BytesIO
 
@@ -16,6 +17,7 @@ from calibre.srv.metadata import book_as_json
 from calibre.srv.routes import endpoint, json, msgpack_or_json
 from calibre.srv.utils import get_db, get_library_data
 from calibre.utils.imghdr import what
+from calibre.utils.localization import canonicalize_lang, reverse_lang_map_for_ui
 from calibre.utils.serialize import MSGPACK_MIME, json_loads, msgpack_loads
 from calibre.utils.speedups import ReadOnlyFileBuffer
 from polyglot.binary import from_base64_bytes
@@ -29,13 +31,13 @@ def cdb_run(ctx, rd, which, version):
     try:
         m = module_for_cmd(which)
     except ImportError:
-        raise HTTPNotFound('No module named: {}'.format(which))
+        raise HTTPNotFound(f'No module named: {which}')
     if not getattr(m, 'readonly', False):
         ctx.check_for_write_access(rd)
     if getattr(m, 'version', 0) != int(version):
-        raise HTTPNotFound(('The module {} is not available in version: {}.'
+        raise HTTPNotFound(f'The module {which} is not available in version: {version}.'
                            'Make sure the version of calibre used for the'
-                            ' server and calibredb match').format(which, version))
+                            ' server and calibredb match')
     db = get_library_data(ctx, rd, strict_library_id=True)[0]
     if ctx.restriction_for(rd, db):
         raise HTTPForbidden('Cannot use the command-line db interface with a user who has per library restrictions')
@@ -92,11 +94,17 @@ def cdb_add_book(ctx, rd, job_id, add_duplicates, filename, library_id):
         raise HTTPBadRequest('A request body containing the file data must be specified')
     add_duplicates = add_duplicates in ('y', '1')
     path = os.path.join(rd.tdir, sfilename)
-    rd.request_body_file.name = path
     rd.request_body_file.seek(0)
-    mi = get_metadata(rd.request_body_file, stream_type=fmt, use_libprs_metadata=True)
-    rd.request_body_file.seek(0)
-    ids, duplicates = db.add_books([(mi, {fmt: rd.request_body_file})], add_duplicates=add_duplicates)
+    with open(path, 'wb') as f:
+        shutil.copyfileobj(rd.request_body_file, f)
+    from calibre.ebooks.metadata.worker import run_import_plugins
+    path = run_import_plugins((path,), time.monotonic_ns(), rd.tdir)[0]
+    with open(path, 'rb') as f:
+        mi = get_metadata(f, stream_type=os.path.splitext(path)[1][1:], use_libprs_metadata=True)
+        f.seek(0)
+        nfmt = os.path.splitext(path)[1]
+        fmt = nfmt[1:] if nfmt else fmt
+        ids, duplicates = db.add_books([(mi, {fmt: f})], add_duplicates=add_duplicates)
     ans = {'title': mi.title, 'authors': mi.authors, 'languages': mi.languages, 'filename': filename, 'id': job_id}
     if ids:
         ans['book_id'] = ids[0]
@@ -115,7 +123,7 @@ def cdb_delete_book(ctx, rd, book_ids, library_id):
     try:
         ids = {int(x) for x in book_ids.split(',')}
     except Exception:
-        raise HTTPBadRequest('invalid book_ids: {}'.format(book_ids))
+        raise HTTPBadRequest(f'invalid book_ids: {book_ids}')
     db.remove_books(ids)
     ctx.notify_changes(db.backend.library_path, books_deleted(ids))
     return {}
@@ -199,6 +207,11 @@ def cdb_set_fields(ctx, rd, book_id, library_id):
         dirtied.add(book_id)
 
     for field, value in iteritems(changes):
+        if field == 'languages' and value:
+            rmap = reverse_lang_map_for_ui()
+            def to_lang_code(x):
+                return rmap.get(x, canonicalize_lang(x))
+            value = list(filter(None, map(to_lang_code, value)))
         dirtied |= db.set_field(field, {book_id: value})
     ctx.notify_changes(db.backend.library_path, metadata(dirtied))
     all_ids = dirtied if all_dirtied else (dirtied & loaded_book_ids)

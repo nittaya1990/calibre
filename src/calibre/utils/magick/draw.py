@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
 
 
 __license__   = 'GPL v3'
@@ -8,10 +7,12 @@ __docformat__ = 'restructuredtext en'
 
 import os
 
-from calibre.utils.magick import Image, create_canvas
-from calibre.utils.img import save_cover_data_to as _save_cover_data_to, image_to_data, add_borders_to_image as abti
-from calibre.utils.imghdr import identify as _identify
 from calibre import fit_image
+from calibre.utils.img import add_borders_to_image as abti
+from calibre.utils.img import image_to_data
+from calibre.utils.img import save_cover_data_to as _save_cover_data_to
+from calibre.utils.imghdr import identify as _identify
+from calibre.utils.magick import Image, create_canvas
 
 
 def _data_to_image(data):
@@ -113,7 +114,7 @@ def identify(path):
     (width, height, format)
     or raises an Exception.
     '''
-    with lopen(path, 'rb') as f:
+    with open(path, 'rb') as f:
         fmt, width, height = _identify(f)
     return width, height, fmt
 

@@ -40,7 +40,7 @@ the folder in which you created :file:`__init__.py`::
     are in :file:`/Applications/calibre.app/Contents/MacOS/`.
 
 You can download the Hello World plugin from
-`helloworld_plugin.zip  <https://calibre-ebook.com/downloads/helloworld_plugin.zip>`_.
+:download_file:`helloworld_plugin.zip`.
 
 Every time you use calibre to convert a book, the plugin's :meth:`run` method will be called and the
 converted book will have its publisher set to "Hello World". This is a trivial plugin, lets move on to
@@ -54,7 +54,7 @@ This plugin will be spread over a few files (to keep the code clean). It will sh
 how to create elements in the calibre user interface and how to access
 and query the books database in calibre.
 
-You can download this plugin from `interface_demo_plugin.zip <https://calibre-ebook.com/downloads/interface_demo_plugin.zip>`_
+You can download this plugin from :download_file:`interface_demo_plugin.zip`
 
 .. _import_name_txt:
 
@@ -138,15 +138,23 @@ Getting resources from the plugin ZIP file
 calibre's plugin loading system defines a couple of built-in functions that allow you to conveniently get files from the plugin ZIP file.
 
     **get_resources(name_or_list_of_names)**
-        This function should be called with a list of paths to files inside the ZIP file. For example to access the file icon.png in
-        the folder images in the ZIP file, you would use: ``images/icon.png``. Always use a forward slash as the path separator,
-        even on Windows. When you pass in a single name, the function will return the raw bytes of that file or None if the name
-        was not found in the ZIP file. If you pass in more than one name then it returns a dict mapping the names to bytes.
-        If a name is not found, it will not be present in the returned dict.
+        This function should be called with a list of paths to files inside the
+        ZIP file. For example to access the file :file:`icon.png` in the folder
+        images in the ZIP file, you would use: ``images/icon.png``. Always use
+        a forward slash as the path separator, even on Windows. When you pass
+        in a single name, the function will return the raw bytes of that file
+        or None if the name was not found in the ZIP file. If you pass in more
+        than one name then it returns a dictionary mapping the names to bytes.  If a
+        name is not found, it will not be present in the returned dictionary.
 
-    **get_icons(name_or_list_of_names)**
-        A convenience wrapper for get_resources() that creates QIcon objects from the raw bytes returned by get_resources.
-        If a name is not found in the ZIP file the corresponding QIcon will be null.
+    **get_icons(name_or_list_of_names, plugin_name='')**
+        A wrapper for get_resources() that creates QIcon objects
+        from the raw bytes returned by get_resources. If a name is not found
+        in the ZIP file the corresponding QIcon will be null. In order to
+        support icon theme-ing, pass in the human friendly name of your plugin
+        as ``plugin_name``. If the user is using an icon theme with icons for
+        your plugin, they will be loaded preferentially.
+
 
 Enabling user configuration of your plugin
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -185,7 +193,7 @@ Edit book plugins
 
 Now let's change gears for a bit and look at creating a plugin to add tools to
 the calibre book editor. The plugin is available here:
-`editor_demo_plugin.zip <https://calibre-ebook.com/downloads/editor_demo_plugin.zip>`_.
+:download_file:`editor_demo_plugin.zip`.
 
 The first step, as for all plugins is to create the
 import name empty txt file, as described :ref:`above <import_name_txt>`.
@@ -247,34 +255,6 @@ HTML/CSS/image files and has convenience methods for doing many useful things.
 The container object and various useful utility functions that can be reused in
 your plugin code are documented in :ref:`polish_api`.
 
-
-Running User Interface plugins in a separate process
------------------------------------------------------------
-
-If you are writing a user interface plugin that needs to make use
-of Qt WebEngine, it cannot be run in the main calibre process as it
-is not possible to use WebEngine there. Instead you can copy the data
-your plugin needs to a temporary folder and run the plugin with that
-data in a separate process. A simple example plugin follows that shows how
-to do this.
-
-You can download the plugin from
-`webengine_demo_plugin.zip  <https://calibre-ebook.com/downloads/webengine_demo_plugin.zip>`_.
-
-The important part of the plugin is in two functions:
-
-.. literalinclude:: plugin_examples/webengine_demo/ui.py
-    :lines: 47-
-
-.. literalinclude:: plugin_examples/webengine_demo/main.py
-    :lines: 12-
-
-
-The ``show_demo()`` function asks the user for a URL and then runs
-the ``main()`` function passing it that URL. The ``main()`` function
-displays the URL in a ``QWebEngineView``.
-
-
 Adding translations to your plugin
 --------------------------------------
 
@@ -305,12 +285,17 @@ typical User Interface plugin you would call it at the top of ``ui.py`` but not
 ``__init__.py``.
 
 You can test the translations of your plugins by changing the user interface
-language in calibre under :guilabel:`Preferences->Interface->Look & feel` or by running calibre like
-this::
+language in calibre under :guilabel:`Preferences->Interface->Look & feel` or by running calibre
+with the ``CALIBRE_OVERRIDE_LANG`` environment variable set. For example::
 
-    CALIBRE_OVERRIDE_LANG=de calibre
+    CALIBRE_OVERRIDE_LANG=de
 
 Replace ``de`` with the language code of the language you want to test.
+
+For translations with plurals, use the ``ngettext()`` function instead of
+``_()``. For example::
+
+    ngettext('Delete a book', 'Delete {} books', num_books).format(num_books)
 
 The plugin API
 --------------------------------

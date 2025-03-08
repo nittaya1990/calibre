@@ -1,10 +1,11 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 # License: GPLv3 Copyright: 2016, Kovid Goyal <kovid at kovidgoyal.net>
 
 
-import subprocess, re
-from calibre.constants import iswindows, ismacos
+import re
+import subprocess
+
+from calibre.constants import ismacos, iswindows
 
 
 def get_address_of_default_gateway(family='AF_INET'):

@@ -1,33 +1,69 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 # License: GPLv3 Copyright: 2016, Kovid Goyal <kovid at kovidgoyal.net>
 
 
+import unittest
 from collections import defaultdict
 from io import BytesIO
-import unittest
 
 from calibre.ebooks.metadata.book import ALL_METADATA_FIELDS
-from calibre.utils.xml_parse import safe_xml_fromstring
 from calibre.ebooks.metadata.opf2 import OPF
 from calibre.ebooks.metadata.opf3 import (
-    parse_prefixes, reserved_prefixes, expand_prefix, read_identifiers,
-    read_metadata, set_identifiers, XPath, set_application_id, read_title,
-    read_refines, set_title, read_title_sort, read_languages, set_languages,
-    read_authors, Author, set_authors, ensure_prefix, read_prefixes,
-    read_book_producers, set_book_producers, read_timestamp, set_timestamp,
-    read_pubdate, set_pubdate, CALIBRE_PREFIX, read_last_modified, read_comments,
-    set_comments, read_publisher, set_publisher, read_tags, set_tags, read_rating,
-    set_rating, read_series, set_series, read_user_metadata, set_user_metadata,
-    read_author_link_map, read_user_categories, set_author_link_map, set_user_categories,
-    apply_metadata, read_raster_cover, ensure_is_only_raster_cover
+    CALIBRE_PREFIX,
+    Author,
+    XPath,
+    apply_metadata,
+    ensure_is_only_raster_cover,
+    ensure_prefix,
+    expand_prefix,
+    parse_prefixes,
+    read_authors,
+    read_book_producers,
+    read_comments,
+    read_identifiers,
+    read_languages,
+    read_last_modified,
+    read_link_maps,
+    read_metadata,
+    read_prefixes,
+    read_pubdate,
+    read_publisher,
+    read_raster_cover,
+    read_rating,
+    read_refines,
+    read_series,
+    read_tags,
+    read_timestamp,
+    read_title,
+    read_title_sort,
+    read_user_categories,
+    read_user_metadata,
+    reserved_prefixes,
+    set_application_id,
+    set_authors,
+    set_book_producers,
+    set_comments,
+    set_identifiers,
+    set_languages,
+    set_link_maps,
+    set_pubdate,
+    set_publisher,
+    set_rating,
+    set_series,
+    set_tags,
+    set_timestamp,
+    set_title,
+    set_user_categories,
+    set_user_metadata,
 )
+
 # This import is needed to prevent a test from running slowly
-from calibre.ebooks.oeb.polish.pretty import pretty_opf, pretty_xml_tree  # noqa
+from calibre.ebooks.oeb.polish.pretty import pretty_opf, pretty_xml_tree  # noqa: F401
+from calibre.utils.xml_parse import safe_xml_fromstring
 
-read_author_link_map, read_user_categories, set_author_link_map, set_user_categories
+read_user_categories, set_user_categories, read_link_maps, set_link_maps
 
-TEMPLATE = '''<package xmlns="http://www.idpf.org/2007/opf" version="3.0" prefix="calibre: %s" unique-identifier="uid"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:opf="http://www.idpf.org/2007/opf">{metadata}</metadata><manifest>{manifest}</manifest></package>''' % CALIBRE_PREFIX  # noqa
+TEMPLATE = f'''<package xmlns="http://www.idpf.org/2007/opf" version="3.0" prefix="calibre: {CALIBRE_PREFIX}" unique-identifier="uid"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:opf="http://www.idpf.org/2007/opf">{{metadata}}</metadata><manifest>{{manifest}}</manifest></package>'''  # noqa: E501
 default_refines = defaultdict(list)
 
 
@@ -55,7 +91,7 @@ class TestOPF3(unittest.TestCase):
 
     def test_identifiers(self):  # {{{
         def idt(val, scheme=None, iid=''):
-            return '<dc:identifier id="{id}" {scheme}>{val}</dc:identifier>'.format(scheme=('opf:scheme="%s"'%scheme if scheme else ''), val=val, id=iid)
+            return '<dc:identifier id="{id}" {scheme}>{val}</dc:identifier>'.format(scheme=(f'opf:scheme="{scheme}"' if scheme else ''), val=val, id=iid)
 
         def ri(root):
             return dict(read_identifiers(root, read_prefixes(root), default_refines))
@@ -134,7 +170,7 @@ class TestOPF3(unittest.TestCase):
         self.ae([Author('a b', None)], rl(root))
         for scheme in ('scheme="marc:relators"', ''):
             root = self.get_opf('''<dc:creator>a  b</dc:creator><dc:creator id="1">c d</dc:creator>'''
-                                '''<meta refines="#1" property="role" %s>aut</meta>''' % scheme)
+                                f'''<meta refines="#1" property="role" {scheme}>aut</meta>''')
             self.ae([Author('c d', None)], rl(root))
         root = self.get_opf('''<dc:creator>a  b</dc:creator><dc:creator opf:role="aut">c d</dc:creator>''')
         self.ae([Author('c d', None)], rl(root))
@@ -143,7 +179,7 @@ class TestOPF3(unittest.TestCase):
         self.ae([Author('a b', 'b, a'), Author('c d', 'd, c')], rl(root))
         authors = [Author('x y', 'y, x'), Author('u i', None)]
         self.ae(authors, st(root, authors))
-        self.ae(root.get('prefix'), 'calibre: %s' % CALIBRE_PREFIX)
+        self.ae(root.get('prefix'), f'calibre: {CALIBRE_PREFIX}')
         root = self.get_opf('''<dc:creator>a  b</dc:creator><dc:creator opf:role="aut">c d</dc:creator>''')
         self.ae([Author('c d', None)], rl(root))
         self.ae(authors, st(root, authors))
@@ -162,7 +198,7 @@ class TestOPF3(unittest.TestCase):
             return rl(root)
         for scheme in ('scheme="marc:relators"', ''):
             root = self.get_opf('''<dc:contributor>a  b</dc:contributor><dc:contributor id="1">c d</dc:contributor>'''
-                                '''<meta refines="#1" property="role" %s>bkp</meta>''' % scheme)
+                                f'''<meta refines="#1" property="role" {scheme}>bkp</meta>''')
             self.ae(['c d'], rl(root))
         root = self.get_opf('''<dc:contributor>a  b</dc:contributor><dc:contributor opf:role="bkp">c d</dc:contributor>''')
         self.ae(['c d'], rl(root))
@@ -289,10 +325,10 @@ class TestOPF3(unittest.TestCase):
             f = globals()['set_' + name]
             f(root, read_prefixes(root), read_refines(root), val)
             return rt(root, name)
-        for name in 'author_link_map user_categories'.split():
-            root = self.get_opf('''<meta name="calibre:%s" content='{"1":1}'/>''' % name)
+        for name in 'link_maps user_categories'.split():
+            root = self.get_opf(f'''<meta name="calibre:{name}" content='{{"1":1}}'/>''')
             self.ae({'1':1}, rt(root, name))
-            root = self.get_opf('''<meta name="calibre:%s" content='{"1":1}'/><meta property="calibre:%s">{"2":2}</meta>''' % (name, name))
+            root = self.get_opf(f'''<meta name="calibre:{name}" content='{{"1":1}}'/><meta property="calibre:{name}">{{"2":2}}</meta>''')
             self.ae({'2':2}, rt(root, name))
             self.ae({'3':3}, st(root, name, {3:3}))
 
@@ -303,11 +339,11 @@ class TestOPF3(unittest.TestCase):
             set_user_metadata(root, read_prefixes(root), read_refines(root), val)
             return ru(root)
         root = self.get_opf('''<meta name="calibre:user_metadata:#a" content='{"1":1}'/>''')
-        self.ae({'#a': {'1': 1, 'is_multiple': dict()}}, ru(root))
+        self.ae({'#a': {'1': 1, 'is_multiple': {}}}, ru(root))
         root = self.get_opf('''<meta name="calibre:user_metadata:#a" content='{"1":1}'/>'''
                             '''<meta property="calibre:user_metadata">{"#b":{"2":2}}</meta>''')
-        self.ae({'#b': {'2': 2, 'is_multiple': dict()}}, ru(root))
-        self.ae({'#c': {'3': 3, 'is_multiple': {}, 'is_multiple2': dict()}}, su(root, {'#c':{'3':3}}))
+        self.ae({'#b': {'2': 2, 'is_multiple': {}}}, ru(root))
+        self.ae({'#c': {'3': 3, 'is_multiple': {}, 'is_multiple2': {}}}, su(root, {'#c':{'3':3}}))
 
     # }}}
 
@@ -329,7 +365,7 @@ class TestOPF3(unittest.TestCase):
         <dc:subject>conversion</dc:subject>
         <dc:subject>docs</dc:subject>
         <dc:subject>ebook</dc:subject>
-        <meta content="{&quot;Kovid Goyal&quot;: &quot;&quot;}" name="calibre:author_link_map"/>
+        <meta content="{&quot;Kovid Goyal&quot;: &quot;https://kovidgoyal.net&quot;}" name="calibre:author_link_map"/>
         <meta content="Demos" name="calibre:series"/>
         <meta content="1" name="calibre:series_index"/>
         <meta content="10" name="calibre:rating"/>
@@ -519,7 +555,7 @@ class TestOPF3(unittest.TestCase):
             for field in ALL_METADATA_FIELDS:
                 if field not in 'manifest spine':
                     v2, v3 = getattr(mi2, field, None), getattr(mi3, field, None)
-                    self.ae(v2, v3, '%s: %r != %r' % (field, v2, v3))
+                    self.ae(v2, v3, f'{field}: {v2!r} != {v3!r}')
 
         mi2 = OPF(BytesIO(raw.encode('utf-8'))).to_book_metadata()
         root = safe_xml_fromstring(raw)
@@ -551,8 +587,8 @@ class TestOPF3(unittest.TestCase):
         self.ae('xxx/cover.jpg', apply_metadata(root, mi3, cover_data=b'x', cover_prefix='xxx'))
     # }}}
 
-# Run tests {{{
 
+# Run tests {{{
 
 def suite():
     return unittest.TestLoader().loadTestsFromTestCase(TestOPF3)

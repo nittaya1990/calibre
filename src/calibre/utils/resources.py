@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
 
 
 __license__   = 'GPL v3'
@@ -7,11 +6,11 @@ __copyright__ = '2009, Kovid Goyal <kovid@kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
 
 
-import sys, os
+import os
+import sys
 
 from calibre import config_dir
 from polyglot.builtins import builtins
-
 
 user_dir = os.path.join(config_dir, 'resources')
 
@@ -100,6 +99,10 @@ def get_image_path(path, data=False, allow_user_override=True):
 
 def set_data(path, data=None):
     return _resolver.set_data(path, data)
+
+
+def get_user_path():
+    return _resolver.user_path
 
 
 builtins.__dict__['P'] = get_path

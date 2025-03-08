@@ -1,17 +1,16 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 
 
 __license__ = 'GPL v3'
 __copyright__ = '2014, Kovid Goyal <kovid at kovidgoyal.net>'
 
-import os, sys
+import os
+import sys
 
-from calibre.ptempfile import TemporaryDirectory
 from calibre.ebooks.conversion.plumber import Plumber
-from calibre.ebooks.oeb.polish.container import Container, OEB_DOCS, OEB_STYLES
 from calibre.ebooks.epub import initialize_container
-
+from calibre.ebooks.oeb.polish.container import OEB_DOCS, OEB_STYLES, Container
+from calibre.ptempfile import TemporaryDirectory
 from calibre.utils.logging import default_log
 from polyglot.builtins import iteritems
 
@@ -27,14 +26,14 @@ def auto_fill_manifest(container):
             mitem = container.generate_item(name, unique_href=False)
             gname = container.href_to_name(mitem.get('href'), container.opf_name)
             if gname != name:
-                raise ValueError('This should never happen (gname=%r, name=%r, href=%r)' % (gname, name, mitem.get('href')))
+                raise ValueError('This should never happen (gname={!r}, name={!r}, href={!r})'.format(gname, name, mitem.get('href')))
             manifest_name_map[name] = mitem.get('id')
             manifest_id_map[mitem.get('id')] = name
 
 
 def import_book_as_epub(srcpath, destpath, log=default_log):
     if not destpath.lower().endswith('.epub'):
-        raise ValueError('Can only import books into the EPUB format, not %s' % (os.path.basename(destpath)))
+        raise ValueError(f'Can only import books into the EPUB format, not {os.path.basename(destpath)}')
     with TemporaryDirectory('eei') as tdir:
         tdir = os.path.abspath(os.path.realpath(tdir))  # Needed to handle the multiple levels of symlinks for /tmp on OS X
         plumber = Plumber(srcpath, tdir, log)

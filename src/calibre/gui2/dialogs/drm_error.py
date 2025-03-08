@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
 
 
 __license__   = 'GPL v3'
@@ -23,7 +22,7 @@ class DRMErrorMessage(QDialog, Ui_Dialog):
                 ' <a href="{0}">click here</a>.'
                 ' </p>').format(localize_website_link('https://manual.calibre-ebook.com/drm.html'))
         if title is not None:
-            msg = '<h2>%s</h2>%s'%(title, msg)
+            msg = f'<h2>{title}</h2>{msg}'
         self.msg.setText(msg)
         self.resize(self.sizeHint())
 
@@ -32,5 +31,5 @@ if __name__ == '__main__':
     from calibre.gui2 import Application
     app = Application([])
     d = DRMErrorMessage(title='testing title')
-    d.exec_()
+    d.exec()
     del d

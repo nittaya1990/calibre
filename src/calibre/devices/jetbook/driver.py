@@ -1,6 +1,3 @@
-# -*- coding: utf-8 -*-
-
-
 __license__   = 'GPL v3'
 __copyright__ = '2009, James Ralston <jralston at mindspring.com>'
 __docformat__ = 'restructuredtext en'
@@ -15,7 +12,6 @@ import re
 from calibre.constants import filesystem_encoding
 from calibre.devices.usbms.driver import USBMS
 from calibre.ebooks.metadata import string_to_authors
-from polyglot.builtins import unicode_type, map
 
 
 class JETBOOK(USBMS):
@@ -42,8 +38,8 @@ class JETBOOK(USBMS):
     MAIN_MEMORY_VOLUME_LABEL  = 'Jetbook Main Memory'
     STORAGE_CARD_VOLUME_LABEL = 'Jetbook Storage Card'
 
-    EBOOK_DIR_MAIN = "Books"
-    EBOOK_DIR_CARD_A = "Books"
+    EBOOK_DIR_MAIN = 'Books'
+    EBOOK_DIR_CARD_A = 'Books'
     SUPPORTS_SUB_DIRS = True
 
     JETBOOK_FILE_NAME_PATTERN = re.compile(
@@ -59,13 +55,13 @@ class JETBOOK(USBMS):
         au = mi.format_authors()
         if not au:
             au = 'Unknown'
-        return '%s#%s%s' % (au, title, fileext)
+        return f'{au}#{title}{fileext}'
 
     @classmethod
     def metadata_from_path(cls, path):
 
         def check_unicode(txt):
-            if not isinstance(txt, unicode_type):
+            if not isinstance(txt, str):
                 txt = txt.decode(filesystem_encoding, 'replace')
             txt = txt.replace('_', ' ')
             return txt
@@ -103,14 +99,13 @@ class MIBUK(USBMS):
 
 
 class JETBOOK_MINI(USBMS):
-
     '''
     ['0x4b8',
-  '0x507',
-  '0x100',
-  'ECTACO',
-  'ECTACO ATA/ATAPI Bridge (Bulk-Only)',
-  'Rev.0.20']
+     '0x507',
+     '0x100',
+     'ECTACO',
+     'ECTACO ATA/ATAPI Bridge (Bulk-Only)',
+     'Rev.0.20']
     '''
     FORMATS     = ['fb2', 'txt']
 
@@ -130,14 +125,13 @@ class JETBOOK_MINI(USBMS):
 
 
 class JETBOOK_COLOR(USBMS):
-
     '''
-set([(u'0x951',
-      u'0x160b',
-      u'0x0',
-      u'Freescale',
-      u'Mass Storage Device',
-      u'0802270905553')])
+    set(['0x951',
+         '0x160b',
+         '0x0',
+         'Freescale',
+         'Mass Storage Device',
+         '0802270905553'])
     '''
 
     FORMATS = ['epub', 'mobi', 'prc', 'fb2', 'rtf', 'txt', 'pdf', 'djvu']

@@ -1,15 +1,14 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 
 
 __license__ = 'GPL v3'
 __copyright__ = '2015, Kovid Goyal <kovid at kovidgoyal.net>'
 
-import os, sys
-
-from polyglot.builtins import reraise
+import os
+import sys
 
 from calibre.constants import iswindows
+from polyglot.builtins import reraise
 
 '''
 This module defines a share_open() function which is a replacement for
@@ -29,15 +28,16 @@ file before deleting it.
 '''
 
 if iswindows:
-    from numbers import Integral
     import msvcrt
+    from numbers import Integral
+
     from calibre_extensions import winutil
 
     _ACCESS_MASK = os.O_RDONLY | os.O_WRONLY | os.O_RDWR
     _ACCESS_MAP  = {
-        os.O_RDONLY : winutil.GENERIC_READ,
-        os.O_WRONLY : winutil.GENERIC_WRITE,
-        os.O_RDWR   : winutil.GENERIC_READ | winutil.GENERIC_WRITE
+        os.O_RDONLY: winutil.GENERIC_READ,
+        os.O_WRONLY: winutil.GENERIC_WRITE,
+        os.O_RDWR  : winutil.GENERIC_READ | winutil.GENERIC_WRITE
     }
 
     _CREATE_MASK = os.O_CREAT | os.O_EXCL | os.O_TRUNC
@@ -62,7 +62,7 @@ if iswindows:
             raise TypeError('mode must be an integer')
 
         if share_flags & ~winutil.FILE_SHARE_VALID_FLAGS:
-            raise ValueError('bad share_flags: %r' % share_flags)
+            raise ValueError(f'bad share_flags: {share_flags!r}')
 
         access_flags = _ACCESS_MAP[flags & _ACCESS_MASK]
         create_flags = _CREATE_MAP[flags & _CREATE_MASK]
@@ -104,6 +104,7 @@ else:
 
 def find_tests():
     import unittest
+
     from calibre.ptempfile import TemporaryDirectory
 
     class SharedFileTest(unittest.TestCase):
@@ -117,20 +118,27 @@ def find_tests():
                     f.write(b'a' * 20 * 1024)
                     eq(fname, f.name)
                 f = share_open(fname, 'rb')
-                eq(f.read(1), b'a')
-                if iswindows:
-                    os.rename(fname, fname+'.moved')
-                    os.remove(fname+'.moved')
-                else:
-                    os.remove(fname)
-                eq(f.read(1), b'a')
-                f2 = share_open(fname, 'w+b')
-                f2.write(b'b' * 10 * 1024)
-                f2.seek(0)
-                eq(f.read(10000), b'a'*10000)
-                eq(f2.read(100), b'b' * 100)
-                f3 = share_open(fname, 'rb')
-                eq(f3.read(100), b'b' * 100)
+                close = [f]
+                try:
+                    eq(f.read(1), b'a')
+                    if iswindows:
+                        os.rename(fname, fname+'.moved')
+                        os.remove(fname+'.moved')
+                    else:
+                        os.remove(fname)
+                    eq(f.read(1), b'a')
+                    f2 = share_open(fname, 'w+b')
+                    close.append(f2)
+                    f2.write(b'b' * 10 * 1024)
+                    f2.seek(0)
+                    eq(f.read(10000), b'a'*10000)
+                    eq(f2.read(100), b'b' * 100)
+                    f3 = share_open(fname, 'rb')
+                    close.append(f3)
+                    eq(f3.read(100), b'b' * 100)
+                finally:
+                    for f in close:
+                        f.close()
 
     return unittest.defaultTestLoader.loadTestsFromTestCase(SharedFileTest)
 

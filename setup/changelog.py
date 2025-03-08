@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 # License: GPL v3 Copyright: 2020, Kovid Goyal <kovid at kovidgoyal.net>
 
 from datetime import date
@@ -139,7 +138,7 @@ def migrate():
         lines = []
         for entry in entries:
             lines.append('')
-            lines.append('{' '{' '{' f' {entry["version"]} {entry["date"]}')
+            lines.append('{' '{' '{'+f' {entry["version"]} {entry["date"]}')
             for w in ('new features', 'bug fixes'):
                 nf = entry.get(w)
                 if nf:

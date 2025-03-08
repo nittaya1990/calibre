@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 # License: GPLv3 Copyright: 2017, Kovid Goyal <kovid at kovidgoyal.net>
 
 
@@ -7,12 +6,12 @@ from calibre.constants import preferred_encoding
 from calibre.ebooks.metadata.book import SERIALIZABLE_FIELDS
 from calibre.ebooks.metadata.book.base import Metadata
 from calibre.utils.imghdr import what
-from polyglot.builtins import iteritems, unicode_type
 from polyglot.binary import as_base64_unicode
+from polyglot.builtins import iteritems
 
 
 def ensure_unicode(obj, enc=preferred_encoding):
-    if isinstance(obj, unicode_type):
+    if isinstance(obj, str):
         return obj
     if isinstance(obj, bytes):
         return obj.decode(enc, 'replace')
@@ -24,7 +23,7 @@ def ensure_unicode(obj, enc=preferred_encoding):
 
 
 def serialize_cover(path):
-    with lopen(path, 'rb') as f:
+    with open(path, 'rb') as f:
         cd = f.read()
     return what(None, cd), cd
 
@@ -35,7 +34,7 @@ def read_cover(mi):
     if mi.cover:
         try:
             mi.cover_data = serialize_cover(mi.cover)
-        except EnvironmentError:
+        except OSError:
             pass
     return mi
 

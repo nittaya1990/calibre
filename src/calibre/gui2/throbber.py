@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
 
 
 __license__   = 'GPL v3'
@@ -8,8 +7,20 @@ __docformat__ = 'restructuredtext en'
 
 
 from qt.core import (
-    QToolButton, QSize, QPropertyAnimation, Qt, QMetaObject, pyqtProperty, QSizePolicy,
-    QWidget, QIcon, QPainter, QStyleOptionToolButton, QStyle, QAbstractAnimation)
+    QAbstractAnimation,
+    QIcon,
+    QMetaObject,
+    QPainter,
+    QPropertyAnimation,
+    QSize,
+    QSizePolicy,
+    QStyle,
+    QStyleOptionToolButton,
+    Qt,
+    QToolButton,
+    QWidget,
+    pyqtProperty,
+)
 
 from calibre.gui2 import config
 
@@ -30,7 +41,7 @@ class ThrobbingButton(QToolButton):
         # toolbar
         self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Expanding)
         self._icon_size = -1
-        QToolButton.setIcon(self, QIcon(I('donate.png')))
+        QToolButton.setIcon(self, QIcon.ic('donate.png'))
         self.setText('\xa0')
         self.animation = QPropertyAnimation(self, b'icon_size', self)
         self.animation.setDuration(int(60/72.*1000))
@@ -57,6 +68,8 @@ class ThrobbingButton(QToolButton):
         if self.animation.state() != QAbstractAnimation.State.Stopped or not self.isVisible():
             return
         size = self.iconSize().width()
+        if size < 1:
+            size = max(0, self.width() - 4)
         smaller = int(0.7 * size)
         self.animation.setStartValue(smaller)
         self.animation.setEndValue(size)
@@ -68,6 +81,7 @@ class ThrobbingButton(QToolButton):
 
     def paintEvent(self, ev):
         size = self._icon_size if self._icon_size > 10 else self.iconSize().width()
+        size = size or max(0, self.width() - 4)
         p = QPainter(self)
         opt = QStyleOptionToolButton()
         self.initStyleOption(opt)
@@ -82,10 +96,10 @@ if __name__ == '__main__':
     w = QWidget()
     w.setLayout(QHBoxLayout())
     b = ThrobbingButton()
-    b.setIcon(QIcon(I('donate.png')))
+    b.setIcon(QIcon.ic('donate.png'))
     w.layout().addWidget(b)
     w.show()
     b.set_normal_icon_size(64, 64)
     b.start_animation()
 
-    app.exec_()
+    app.exec()

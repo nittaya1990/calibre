@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
 
 
 __license__   = 'GPL v3'
@@ -25,46 +24,46 @@ else:
     from multiprocessing.connection import Connection
 
 PARALLEL_FUNCS = {
-    'lrfviewer'    :
+    'lrfviewer':
     ('calibre.gui2.lrf_renderer.main', 'main', None),
 
-    'ebook-viewer'    :
+    'ebook-viewer':
     ('calibre.gui_launch', 'ebook_viewer', None),
 
-    'ebook-edit' :
+    'ebook-edit':
     ('calibre.gui_launch', 'gui_ebook_edit', None),
 
-    'store-dialog' :
+    'store-dialog':
     ('calibre.gui_launch', 'store_dialog', None),
 
-    'toc-dialog' :
+    'toc-dialog':
     ('calibre.gui_launch', 'toc_dialog', None),
 
-    'webengine-dialog' :
+    'webengine-dialog':
     ('calibre.gui_launch', 'webengine_dialog', None),
 
-    'render_pages' :
+    'render_pages':
     ('calibre.ebooks.comic.input', 'render_pages', 'notification'),
 
-    'gui_convert'     :
+    'gui_convert':
     ('calibre.gui2.convert.gui_conversion', 'gui_convert', 'notification'),
 
-    'gui_convert_recipe'     :
+    'gui_convert_recipe':
     ('calibre.gui2.convert.gui_conversion', 'gui_convert_recipe', 'notification'),
 
-    'gui_polish'     :
+    'gui_polish':
     ('calibre.ebooks.oeb.polish.main', 'gui_polish', None),
 
-    'gui_convert_override'     :
+    'gui_convert_override':
     ('calibre.gui2.convert.gui_conversion', 'gui_convert_override', 'notification'),
 
-    'gui_catalog'     :
+    'gui_catalog':
     ('calibre.gui2.convert.gui_conversion', 'gui_catalog', 'notification'),
 
-    'arbitrary' :
+    'arbitrary':
     ('calibre.utils.ipc.worker', 'arbitrary', None),
 
-    'arbitrary_n' :
+    'arbitrary_n':
     ('calibre.utils.ipc.worker', 'arbitrary_n', 'notification'),
 }
 
@@ -216,18 +215,18 @@ def main():
         result = func(*args, **kwargs)
         if result is not None:
             os.makedirs(os.path.dirname(resultf), exist_ok=True)
-            with lopen(resultf, 'wb') as f:
+            with open(resultf, 'wb') as f:
                 f.write(pickle_dumps(result))
 
         notifier.queue.put(None)
 
     try:
         sys.stdout.flush()
-    except EnvironmentError:
+    except OSError:
         pass  # Happens sometimes on OS X for GUI processes (EPIPE)
     try:
         sys.stderr.flush()
-    except EnvironmentError:
+    except OSError:
         pass  # Happens sometimes on OS X for GUI processes (EPIPE)
     return 0
 

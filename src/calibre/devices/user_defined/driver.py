@@ -1,6 +1,3 @@
-# -*- coding: utf-8 -*-
-
-
 __license__   = 'GPL v3'
 __copyright__ = '2009, Kovid Goyal <kovid@kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
@@ -61,7 +58,7 @@ class USER_DEFINED(USBMS):
             'Enter the folder where the books are to be stored. This folder '
             'is prepended to any send_to_device template') + '</p>',
         _('Swap main and card A') + ':::<p>' + _(
-            'Check this box if the device\'s main memory is being seen as '
+            "Check this box if the device's main memory is being seen as "
             'card a and the card is being seen as main memory') + '</p>',
     ]
     EXTRA_CUSTOMIZATION_DEFAULT = [

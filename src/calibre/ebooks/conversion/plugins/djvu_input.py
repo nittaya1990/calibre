@@ -1,6 +1,3 @@
-# -*- coding: utf-8 -*-
-
-
 __license__ = 'GPL 3'
 __copyright__ = '2011, Anthon van der Neut <anthon@mnt.org>'
 __docformat__ = 'restructuredtext en'
@@ -9,7 +6,6 @@ import os
 from io import BytesIO
 
 from calibre.customize.conversion import InputFormatPlugin
-from polyglot.builtins import getcwd
 
 
 class DJVUInput(InputFormatPlugin):
@@ -32,7 +28,7 @@ class DJVUInput(InputFormatPlugin):
             raise ValueError('The DJVU file contains no text, only images, probably page scans.'
                     ' calibre only supports conversion of DJVU files with actual text in them.')
 
-        html = convert_basic(raw_text.replace(b"\n", b' ').replace(
+        html = convert_basic(raw_text.replace(b'\n', b' ').replace(
             b'\037', b'\n\n'))
         # Run the HTMLized text through the html processing plugin.
         from calibre.customize.ui import plugin_for_input_format
@@ -40,12 +36,12 @@ class DJVUInput(InputFormatPlugin):
         for opt in html_input.options:
             setattr(options, opt.option.name, opt.recommended_value)
         options.input_encoding = 'utf-8'
-        base = getcwd()
+        base = os.getcwd()
         htmlfile = os.path.join(base, 'index.html')
         c = 0
         while os.path.exists(htmlfile):
             c += 1
-            htmlfile = os.path.join(base, 'index%d.html'%c)
+            htmlfile = os.path.join(base, f'index{c}.html')
         with open(htmlfile, 'wb') as f:
             f.write(html.encode('utf-8'))
         odi = options.debug_pipeline

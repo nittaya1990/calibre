@@ -1,34 +1,34 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
 
 
 __license__   = 'GPL v3'
 __copyright__ = '2010, Kovid Goyal <kovid@kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
 
-import os, socket, time, textwrap
-from functools import partial
-from threading import Thread
-from itertools import repeat
+import os
+import socket
+import textwrap
+import time
 from collections import defaultdict
+from functools import partial
+from itertools import repeat
+from threading import Thread
 
-from qt.core import (
-    Qt, QDialog, QGridLayout, QIcon, QListWidget, QDialogButtonBox,
-    QListWidgetItem, QLabel, QLineEdit, QPushButton)
+from qt.core import QDialog, QDialogButtonBox, QGridLayout, QIcon, QLabel, QLineEdit, QListWidget, QListWidgetItem, QPushButton, Qt
 
-from calibre.utils.smtp import (compose_mail, sendmail, extract_email_address,
-        config as email_config)
-from calibre.utils.filenames import ascii_filename
+from calibre.constants import preferred_encoding
 from calibre.customize.ui import available_input_formats, available_output_formats
 from calibre.ebooks.metadata import authors_to_string
-from calibre.constants import preferred_encoding
-from calibre.gui2 import config, Dispatcher, warning_dialog, error_dialog, gprefs
-from calibre.library.save_to_disk import get_components
-from calibre.utils.config import tweaks, prefs
-from calibre.utils.icu import primary_sort_key
+from calibre.gui2 import Dispatcher, config, error_dialog, gprefs, warning_dialog
 from calibre.gui2.threaded_jobs import ThreadedJob
-from polyglot.builtins import iteritems, itervalues, unicode_type
+from calibre.library.save_to_disk import get_components
+from calibre.utils.config import prefs, tweaks
+from calibre.utils.icu import primary_sort_key
+from calibre.utils.resources import get_image_path as I
+from calibre.utils.smtp import compose_mail, extract_email_address, sendmail
+from calibre.utils.smtp import config as email_config
 from polyglot.binary import from_hex_unicode
+from polyglot.builtins import iteritems, itervalues
 
 
 class Worker(Thread):
@@ -76,8 +76,7 @@ class Sendmail:
         try_count = 0
         while True:
             if try_count > 0:
-                log('\nRetrying in %d seconds...\n' %
-                        self.rate_limit)
+                log(f'\nRetrying in {self.rate_limit} seconds...\n')
             worker = Worker(self.sendmail,
                     (attachment, aname, to, subject, text, log))
             worker.start()
@@ -90,8 +89,7 @@ class Sendmail:
                 if time.time() - start_time > self.TIMEOUT:
                     log('Sending timed out')
                     raise Exception(
-                            'Sending email %r to %r timed out, aborting'% (subject,
-                                to))
+                            f'Sending email {subject!r} to {to!r} timed out, aborting')
             if worker.exception is None:
                 log('Email successfully sent')
                 return
@@ -105,7 +103,7 @@ class Sendmail:
         logged = False
         while time.time() - self.last_send_time <= self.rate_limit:
             if not logged and self.rate_limit > 0:
-                log('Waiting %s seconds before sending, to avoid being marked as spam.\nYou can control this delay via Preferences->Tweaks' % self.rate_limit)
+                log(f'Waiting {self.rate_limit} seconds before sending, to avoid being marked as spam.\nYou can control this delay via Preferences->Tweaks')
                 logged = True
             time.sleep(1)
         try:
@@ -113,7 +111,7 @@ class Sendmail:
             from_ = opts.from_
             if not from_:
                 from_ = 'calibre <calibre@'+socket.getfqdn()+'>'
-            with lopen(attachment, 'rb') as f:
+            with open(attachment, 'rb') as f:
                 msg = compose_mail(from_, to, text, subject, f, aname)
             efrom = extract_email_address(from_)
             eto = []
@@ -126,9 +124,14 @@ class Sendmail:
                 except Exception:
                     pass
 
+            relay = opts.relay_host
+            if relay and relay == 'smtp.live.com':
+                # Microsoft changed the SMTP server
+                relay = 'smtp-mail.outlook.com'
+
             sendmail(msg, efrom, eto, localhost=None,
                         verbose=1,
-                        relay=opts.relay_host,
+                        relay=relay,
                         username=opts.relay_username,
                         password=from_hex_unicode(opts.relay_password), port=opts.relay_port,
                         encryption=opts.encryption,
@@ -140,11 +143,35 @@ class Sendmail:
 gui_sendmail = Sendmail()
 
 
+def is_for_kindle(to):
+    return isinstance(to, str) and ('@kindle.com' in to or '@kindle.cn' in to or '@free.kindle.com' in to or '@free.kindle.cn' in to)
+
+
 def send_mails(jobnames, callback, attachments, to_s, subjects,
                 texts, attachment_names, job_manager):
     for name, attachment, to, subject, text, aname in zip(jobnames,
             attachments, to_s, subjects, texts, attachment_names):
         description = _('Email %(name)s to %(to)s') % dict(name=name, to=to)
+        if isinstance(to, str) and (is_for_kindle(to) or '@pbsync.com' in to):
+            # The PocketBook service is a total joke. It cant handle
+            # non-ascii, filenames that are long enough to be split up, commas, and
+            # the good lord alone knows what else. So use a random filename
+            # containing only 22 English letters and numbers
+            #
+            # And since this email is only going to be processed by automated
+            # services, make the subject+text random too as at least the amazon
+            # service cant handle non-ascii text. I dont know what baboons
+            # these companies employ to write their code. It's the height of
+            # irony that they are called "tech" companies.
+            # https://bugs.launchpad.net/calibre/+bug/1989282
+            from calibre.utils.short_uuid import uuid4
+            if not is_for_kindle(to):
+                # Amazon nowadays reads metadata from attachment filename instead of
+                # file internal metadata so dont nuke the filename.
+                # https://www.mobileread.com/forums/showthread.php?t=349290
+                aname = f'{uuid4()}.' + aname.rpartition('.')[-1]
+            subject = uuid4()
+            text = uuid4()
         job = ThreadedJob('email', description, gui_sendmail, (attachment, aname, to,
                 subject, text), {}, callback)
         job_manager.run_threaded_job(job)
@@ -168,7 +195,7 @@ def email_news(mi, remove, get_fmts, done, job_manager):
         subjects = [_('News:')+' '+mi.title]
         texts    = [_(
             'Attached is the %s periodical downloaded by calibre.') % (mi.title,)]
-        attachment_names = [ascii_filename(mi.title)+os.path.splitext(attachment)[1]]
+        attachment_names = [mi.title+os.path.splitext(attachment)[1]]
         attachments = [attachment]
         jobnames = [mi.title]
         do_remove = []
@@ -211,7 +238,7 @@ class SelectRecipients(QDialog):  # {{{
         for i, name in enumerate(('address', 'alias', 'formats', 'subject')):
             c = i % 2
             row = l.rowCount() - c
-            self.labels[i].setText(unicode_type(self.labels[i].text()) + ':')
+            self.labels[i].setText(str(self.labels[i].text()) + ':')
             l.addWidget(self.labels[i], row, (2*c))
             le = QLineEdit(self)
             le.setToolTip(tooltips[i])
@@ -233,11 +260,15 @@ class SelectRecipients(QDialog):  # {{{
         self.init_list()
 
     def add_recipient(self):
-        to = unicode_type(self.address.text()).strip()
+        to = str(self.address.text()).strip()
         if not to:
             return error_dialog(
                 self, _('Need address'), _('You must specify an address'), show=True)
-        formats = ','.join([x.strip().upper() for x in unicode_type(self.formats.text()).strip().split(',') if x.strip()])
+        from email.utils import parseaddr
+        if not parseaddr(to)[-1] or '@' not in to:
+            return error_dialog(
+                self, _('Invalid email address'), _('The address {} is invalid').format(to), show=True)
+        formats = ','.join([x.strip().upper() for x in str(self.formats.text()).strip().split(',') if x.strip()])
         if not formats:
             return error_dialog(
                 self, _('Need formats'), _('You must specify at least one format to send'), show=True)
@@ -249,11 +280,11 @@ class SelectRecipients(QDialog):  # {{{
         acc[to] = [formats, False, False]
         c = email_config()
         c.set('accounts', acc)
-        alias = unicode_type(self.alias.text()).strip()
+        alias = str(self.alias.text()).strip()
         if alias:
             opts.aliases[to] = alias
             c.set('aliases', opts.aliases)
-        subject = unicode_type(self.subject.text()).strip()
+        subject = str(self.subject.text()).strip()
         if subject:
             opts.subjects[to] = subject
             c.set('subjects', opts.subjects)
@@ -288,7 +319,7 @@ class SelectRecipients(QDialog):  # {{{
         ans = []
         for i in self.items:
             if i.checkState() == Qt.CheckState.Checked:
-                to = unicode_type(i.data(Qt.ItemDataRole.UserRole) or '')
+                to = str(i.data(Qt.ItemDataRole.UserRole) or '')
                 fmts = tuple(x.strip().upper() for x in (opts.accounts[to][0] or '').split(','))
                 subject = opts.subjects.get(to, '')
                 ans.append((to, fmts, subject))
@@ -297,7 +328,7 @@ class SelectRecipients(QDialog):  # {{{
 
 def select_recipients(parent=None):
     d = SelectRecipients(parent)
-    if d.exec_() == QDialog.DialogCode.Accepted:
+    if d.exec() == QDialog.DialogCode.Accepted:
         return d.ans
     return ()
 # }}}
@@ -309,7 +340,7 @@ class EmailMixin:  # {{{
         pass
 
     def send_multiple_by_mail(self, recipients, delete_from_library):
-        ids = set(self.library_view.model().id(r) for r in self.library_view.selectionModel().selectedRows())
+        ids = {self.library_view.model().id(r) for r in self.library_view.selectionModel().selectedRows()}
         if not ids:
             return
         db = self.current_db
@@ -352,7 +383,7 @@ class EmailMixin:  # {{{
             for to, (ids, nooutput) in iteritems(bad_recipients):
                 msg = _('This recipient has no valid formats defined') if nooutput else \
                         _('These books have no suitable input formats for conversion')
-                det_msg.append('%s - %s' % (to, msg))
+                det_msg.append(f'{to} - {msg}')
                 det_msg.extend('\t' + titles[bid] for bid in ids)
                 det_msg.append('\n')
             warning_dialog(self, _('Could not send'),
@@ -365,12 +396,10 @@ class EmailMixin:  # {{{
         if not ids or len(ids) == 0:
             return
 
-        files, _auto_ids = self.library_view.model().get_preferred_formats_from_ids(ids,
-                                    fmts, set_metadata=True,
-                                    specific_format=specific_format,
-                                    exclude_auto=do_auto_convert,
-                                    use_plugboard=plugboard_email_value,
-                                    plugboard_formats=plugboard_email_formats)
+        modified_metadata = []
+        files, _auto_ids = self.library_view.model().get_preferred_formats_from_ids(
+            ids, fmts, set_metadata=True, specific_format=specific_format, exclude_auto=do_auto_convert,
+            use_plugboard=plugboard_email_value, plugboard_formats=plugboard_email_formats, modified_metadata=modified_metadata)
         if do_auto_convert:
             nids = list(set(ids).difference(_auto_ids))
             ids = [i for i in ids if i in nids]
@@ -382,10 +411,10 @@ class EmailMixin:  # {{{
 
         bad, remove_ids, jobnames = [], [], []
         texts, subjects, attachments, attachment_names = [], [], [], []
-        for f, mi, id in zip(files, full_metadata, ids):
-            t = mi.title
-            if not t:
-                t = _('Unknown')
+        for f, mi, id, newmi in zip(files, full_metadata, ids, modified_metadata):
+            if not newmi:
+                newmi = mi
+            t = mi.title or _('Unknown')
             if f is None:
                 bad.append(t)
             else:
@@ -399,17 +428,23 @@ class EmailMixin:  # {{{
                     if not components:
                         components = [mi.title]
                     subjects.append(os.path.join(*components))
-                a = authors_to_string(mi.authors if mi.authors else
-                        [_('Unknown')])
+                a = authors_to_string(mi.authors or [_('Unknown')])
                 texts.append(_('Attached, you will find the e-book') +
                         '\n\n' + t + '\n\t' + _('by') + ' ' + a + '\n\n' +
                         _('in the %s format.') %
                         os.path.splitext(f)[1][1:].upper())
                 if mi.comments and gprefs['add_comments_to_email']:
+                    from calibre.ebooks.metadata import fmt_sidx
                     from calibre.utils.html2text import html2text
+                    if mi.series:
+                        sidx=fmt_sidx(1.0 if mi.series_index is None else mi.series_index, use_roman=config['use_roman_numerals_for_series_number'])
+                        texts[-1] += '\n\n' + _('{series_index} of {series}').format(series_index=sidx, series=mi.series)
                     texts[-1] += '\n\n' + _('About this book:') + '\n\n' + textwrap.fill(html2text(mi.comments))
-                prefix = ascii_filename(t+' - '+a)
-                if not isinstance(prefix, unicode_type):
+                if is_for_kindle(to):
+                    prefix = str(newmi.title or t)
+                else:
+                    prefix = f'{t} - {a}'
+                if not isinstance(prefix, str):
                     prefix = prefix.decode(preferred_encoding, 'replace')
                 attachment_names.append(prefix + os.path.splitext(f)[1])
         remove = remove_ids if delete_from_library else []
@@ -456,11 +491,11 @@ class EmailMixin:  # {{{
                     self.iactions['Convert Books'].auto_convert_mail(to, fmts, delete_from_library, auto, format, subject)
 
         if bad:
-            bad = '\n'.join('%s'%(i,) for i in bad)
+            bad = '\n'.join(f'{i}' for i in bad)
             d = warning_dialog(self, _('No suitable formats'),
                 _('Could not email the following books '
                 'as no suitable formats were found:'), bad)
-            d.exec_()
+            d.exec()
 
     def email_sent(self, job, remove=[]):
         if job.failed:
@@ -477,6 +512,7 @@ class EmailMixin:  # {{{
                                                             next_id=next_id)
             except:
                 import traceback
+
                 # Probably the user deleted the files, in any case, failing
                 # to delete the book is not catastrophic
                 traceback.print_exc()
@@ -498,12 +534,12 @@ class EmailMixin:  # {{{
                 get_fmts, self.email_sent, self.job_manager)
         if sent_mails:
             self.status_bar.show_message(_('Sent news to')+' '+
-                    ', '.join(sent_mails),  3000)
+                    ', '.join(sent_mails), 3000)
 
 # }}}
 
 
 if __name__ == '__main__':
     from qt.core import QApplication
-    app = QApplication([])  # noqa
+    app = QApplication([])  # noqa: F841
     print(select_recipients())

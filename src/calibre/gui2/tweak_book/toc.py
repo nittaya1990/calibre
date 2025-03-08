@@ -1,22 +1,37 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 
 
 __license__ = 'GPL v3'
 __copyright__ = '2013, Kovid Goyal <kovid at kovidgoyal.net>'
 
+from time import monotonic
+
 from qt.core import (
-    QAction, QApplication, QDialog, QDialogButtonBox, QGridLayout, QIcon, QMenu,
-    QSize, QStackedWidget, QStyledItemDelegate, Qt, QTimer, QTreeWidget,
-    QTreeWidgetItem, QVBoxLayout, QWidget, pyqtSignal
+    QAction,
+    QApplication,
+    QDialog,
+    QDialogButtonBox,
+    QGridLayout,
+    QIcon,
+    QMenu,
+    QSize,
+    QStackedWidget,
+    QStyledItemDelegate,
+    Qt,
+    QTimer,
+    QTreeWidget,
+    QTreeWidgetItem,
+    QVBoxLayout,
+    QWidget,
+    pyqtSignal,
 )
 
+from calibre.constants import ismacos
 from calibre.ebooks.oeb.polish.toc import commit_toc, get_toc
-from calibre.gui2 import error_dialog, make_view_use_window_background
+from calibre.gui2 import error_dialog, info_dialog, make_view_use_window_background
 from calibre.gui2.toc.main import ItemEdit, TOCView
 from calibre.gui2.tweak_book import TOP, actions, current_container, tprefs
 from calibre_extensions.progress_indicator import set_no_activate_on_click
-from polyglot.builtins import range, unicode_type
 
 
 class TOCEditor(QDialog):
@@ -26,11 +41,12 @@ class TOCEditor(QDialog):
 
     def __init__(self, title=None, parent=None):
         QDialog.__init__(self, parent)
+        self.last_reject_at = self.last_accept_at = -1000
 
         t = title or current_container().mi.title
         self.book_title = t
         self.setWindowTitle(_('Edit the ToC in %s')%t)
-        self.setWindowIcon(QIcon(I('toc.png')))
+        self.setWindowIcon(QIcon.ic('toc.png'))
 
         l = self.l = QVBoxLayout()
         self.setLayout(l)
@@ -49,50 +65,64 @@ class TOCEditor(QDialog):
         bb.rejected.connect(self.reject)
         self.undo_button = b = bb.addButton(_('&Undo'), QDialogButtonBox.ButtonRole.ActionRole)
         b.setToolTip(_('Undo the last action, if any'))
-        b.setIcon(QIcon(I('edit-undo.png')))
+        b.setIcon(QIcon.ic('edit-undo.png'))
         b.clicked.connect(self.toc_view.undo)
 
         self.read_toc()
+        self.restore_geometry(tprefs, 'toc_editor_window_geom')
 
-        self.resize(950, 630)
-        geom = tprefs.get('toc_editor_window_geom', None)
-        if geom is not None:
-            QApplication.instance().safe_restore_geometry(self, bytes(geom))
+    def sizeHint(self):
+        return QSize(950, 630)
 
     def add_new_item(self, item, where):
         self.item_edit(item, where)
         self.stacks.setCurrentIndex(1)
+        if ismacos:
+            QTimer.singleShot(0, self.workaround_macos_mouse_with_webview_bug)
+
+    def workaround_macos_mouse_with_webview_bug(self):
+        # macOS is weird: https://bugs.launchpad.net/calibre/+bug/2004639
+        # needed as of Qt 6.4.2
+        d = info_dialog(self, _('Loading...'), _('Loading table of contents view, please wait...'), show_copy_button=False)
+        QTimer.singleShot(0, d.reject)
+        d.exec()
 
     def accept(self):
+        if monotonic() - self.last_accept_at < 1:
+            return
+        self.last_accept_at = monotonic()
         if self.stacks.currentIndex() == 1:
             self.toc_view.update_item(*self.item_edit.result)
             tprefs['toc_edit_splitter_state'] = bytearray(self.item_edit.splitter.saveState())
             self.stacks.setCurrentIndex(0)
         elif self.stacks.currentIndex() == 0:
             self.write_toc()
-            tprefs['toc_editor_window_geom'] = bytearray(self.saveGeometry())
-            super(TOCEditor, self).accept()
+            self.save_geometry(tprefs, 'toc_editor_window_geom')
+            super().accept()
 
     def really_accept(self, tb):
-        tprefs['toc_editor_window_geom'] = bytearray(self.saveGeometry())
+        self.save_geometry(tprefs, 'toc_editor_window_geom')
         if tb:
             error_dialog(self, _('Failed to write book'),
                 _('Could not write %s. Click "Show details" for'
                   ' more information.')%self.book_title, det_msg=tb, show=True)
-            super(TOCEditor, self).reject()
+            super().reject()
             return
 
-        super(TOCEditor, self).accept()
+        super().accept()
 
     def reject(self):
         if not self.bb.isEnabled():
             return
+        if monotonic() - self.last_reject_at < 1:
+            return
+        self.last_reject_at = monotonic()
         if self.stacks.currentIndex() == 1:
             tprefs['toc_edit_splitter_state'] = bytearray(self.item_edit.splitter.saveState())
             self.stacks.setCurrentIndex(0)
         else:
-            tprefs['toc_editor_window_geom'] = bytearray(self.saveGeometry())
-            super(TOCEditor, self).reject()
+            self.save_geometry(tprefs, 'toc_editor_window_geom')
+            super().reject()
 
     def read_toc(self):
         self.toc_view(current_container())
@@ -142,7 +172,7 @@ class TOCViewer(QWidget):
         self.view.itemDoubleClicked.connect(self.emit_navigate)
         l.addWidget(self.view)
 
-        self.refresh_action = QAction(QIcon(I('view-refresh.png')), _('&Refresh'), self)
+        self.refresh_action = QAction(QIcon.ic('view-refresh.png'), _('&Refresh'), self)
         self.refresh_action.triggered.connect(self.refresh)
         self.refresh_timer = t = QTimer(self)
         t.setInterval(1000), t.setSingleShot(True)
@@ -174,10 +204,10 @@ class TOCViewer(QWidget):
     def show_context_menu(self, pos):
         menu = QMenu(self)
         menu.addAction(actions['edit-toc'])
-        menu.addAction(_('&Expand all'), self.view.expandAll)
-        menu.addAction(_('&Collapse all'), self.view.collapseAll)
+        menu.addAction(QIcon.ic('plus.png'), _('&Expand all'), self.view.expandAll)
+        menu.addAction(QIcon.ic('minus.png'), _('&Collapse all'), self.view.collapseAll)
         menu.addAction(self.refresh_action)
-        menu.exec_(self.view.mapToGlobal(pos))
+        menu.exec(self.view.mapToGlobal(pos))
 
     def iter_items(self, parent=None):
         if parent is None:
@@ -185,14 +215,13 @@ class TOCViewer(QWidget):
         for i in range(parent.childCount()):
             child = parent.child(i)
             yield child
-            for gc in self.iter_items(parent=child):
-                yield gc
+            yield from self.iter_items(parent=child)
 
     def emit_navigate(self, *args):
         item = self.view.currentItem()
         if item is not None:
-            dest = unicode_type(item.data(0, DEST_ROLE) or '')
-            frag = unicode_type(item.data(0, FRAG_ROLE) or '')
+            dest = str(item.data(0, DEST_ROLE) or '')
+            frag = str(item.data(0, FRAG_ROLE) or '')
             if not frag:
                 frag = TOP
             self.navigate_requested.emit(dest, frag)
@@ -222,7 +251,7 @@ class TOCViewer(QWidget):
     def showEvent(self, ev):
         if self.toc_name is None or not ev.spontaneous():
             self.build()
-        return super(TOCViewer, self).showEvent(ev)
+        return super().showEvent(ev)
 
     def update_if_visible(self):
         if self.isVisible():

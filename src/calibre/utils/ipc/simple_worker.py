@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
 
 
 __license__   = 'GPL v3'
@@ -17,7 +16,7 @@ from calibre.constants import iswindows
 from calibre.utils.ipc import eintr_retry_call
 from calibre.utils.ipc.launch import Worker
 from calibre.utils.monotonic import monotonic
-from polyglot.builtins import environ_item, string_or_bytes, unicode_type
+from polyglot.builtins import environ_item, string_or_bytes
 
 if iswindows:
     from multiprocessing.connection import PipeConnection as Connection
@@ -71,7 +70,7 @@ class OffloadWorker:
     def shutdown(self):
         try:
             eintr_retry_call(self.conn.send, None)
-        except IOError:
+        except OSError:
             pass
         except:
             import traceback
@@ -127,7 +126,7 @@ def create_worker(env, priority='normal', cwd=None, func='main'):
     with a:
         env.update({
             'CALIBRE_WORKER_FD': str(a.fileno()),
-            'CALIBRE_SIMPLE_WORKER': environ_item('calibre.utils.ipc.simple_worker:%s' % func),
+            'CALIBRE_SIMPLE_WORKER': environ_item(f'calibre.utils.ipc.simple_worker:{func}'),
         })
 
         w = Worker(env)
@@ -144,9 +143,9 @@ def start_pipe_worker(command, env=None, priority='normal', **process_args):
     try:
         if iswindows:
             priority = {
-                    'high'   : subprocess.HIGH_PRIORITY_CLASS,
-                    'normal' : subprocess.NORMAL_PRIORITY_CLASS,
-                    'low'    : subprocess.IDLE_PRIORITY_CLASS}[priority]
+                    'high'  : subprocess.HIGH_PRIORITY_CLASS,
+                    'normal': subprocess.NORMAL_PRIORITY_CLASS,
+                    'low'   : subprocess.IDLE_PRIORITY_CLASS}[priority]
             args['creationflags'] = subprocess.CREATE_NO_WINDOW|priority
             pass_fds = args.pop('pass_fds', None)
             if pass_fds:
@@ -154,7 +153,7 @@ def start_pipe_worker(command, env=None, priority='normal', **process_args):
                     os.set_handle_inheritable(fd, True)
                 args['startupinfo'] = subprocess.STARTUPINFO(lpAttributeList={'handle_list':pass_fds})
         else:
-            niceness = {'normal' : 0, 'low'    : 10, 'high'   : 20}[priority]
+            niceness = {'normal': 0, 'low': 10, 'high': 20}[priority]
             args['env']['CALIBRE_WORKER_NICENESS'] = str(niceness)
 
         exe = w.executable
@@ -268,7 +267,7 @@ def offload_worker(env={}, priority='normal', cwd=None):
 def compile_code(src):
     import io
     import re
-    if not isinstance(src, unicode_type):
+    if not isinstance(src, str):
         match = re.search(br'coding[:=]\s*([-\w.]+)', src[:200])
         enc = match.group(1).decode('utf-8') if match else 'utf-8'
         src = src.decode(enc)

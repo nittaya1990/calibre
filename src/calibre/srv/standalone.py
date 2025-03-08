@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 # License: GPLv3 Copyright: 2015, Kovid Goyal <kovid at kovidgoyal.net>
 
 
@@ -10,7 +9,6 @@ import sys
 
 from calibre import as_unicode
 from calibre.constants import is_running_from_develop, ismacos, iswindows
-from calibre.db.delete_service import shutdown as shutdown_delete_service
 from calibre.db.legacy import LibraryDatabase
 from calibre.srv.bonjour import BonJour
 from calibre.srv.handler import Handler
@@ -22,10 +20,10 @@ from calibre.srv.opts import opts_to_parser
 from calibre.srv.users import connect
 from calibre.srv.utils import HandleInterrupt, RotatingLog
 from calibre.utils.config import prefs
-from calibre.utils.localization import localize_user_manual_link
+from calibre.utils.localization import _, localize_user_manual_link
 from calibre.utils.lock import singleinstance
-from polyglot.builtins import error_message, unicode_type
 from calibre_extensions import speedup
+from polyglot.builtins import error_message
 
 
 def daemonize():  # {{{
@@ -35,10 +33,10 @@ def daemonize():  # {{{
             # exit first parent
             sys.exit(0)
     except OSError as e:
-        raise SystemExit('fork #1 failed: %s' % as_unicode(e))
+        raise SystemExit(f'fork #1 failed: {as_unicode(e)}')
 
     # decouple from parent environment
-    os.chdir("/")
+    os.chdir('/')
     os.setsid()
     os.umask(0)
 
@@ -49,12 +47,10 @@ def daemonize():  # {{{
             # exit from second parent
             sys.exit(0)
     except OSError as e:
-        raise SystemExit('fork #2 failed: %s' % as_unicode(e))
+        raise SystemExit(f'fork #2 failed: {as_unicode(e)}')
 
     # Redirect standard file descriptors.
     speedup.detach(os.devnull)
-
-
 # }}}
 
 
@@ -69,10 +65,10 @@ class Server:
             access_log = RotatingLog(opts.access_log, max_size=log_size)
         self.handler = Handler(libraries, opts)
         if opts.custom_list_template:
-            with lopen(os.path.expanduser(opts.custom_list_template), 'rb') as f:
+            with open(os.path.expanduser(opts.custom_list_template), 'rb') as f:
                 self.handler.router.ctx.custom_list_template = json.load(f)
         if opts.search_the_net_urls:
-            with lopen(os.path.expanduser(opts.search_the_net_urls), 'rb') as f:
+            with open(os.path.expanduser(opts.search_the_net_urls), 'rb') as f:
                 self.handler.router.ctx.search_the_net_urls = json.load(f)
         plugins = []
         if opts.use_bonjour:
@@ -197,7 +193,6 @@ def main(args=sys.argv):
         except NoAutoReload as e:
             raise SystemExit(error_message(e))
 
-    ensure_single_instance()
     if opts.userdb:
         opts.userdb = os.path.abspath(os.path.expandvars(os.path.expanduser(opts.userdb)))
         connect(opts.userdb, exc_class=SystemExit).close()
@@ -207,6 +202,7 @@ def main(args=sys.argv):
         except (KeyboardInterrupt, EOFError):
             raise SystemExit(_('Interrupted by user'))
         raise SystemExit(0)
+    ensure_single_instance()
 
     libraries = args[1:]
     for lib in libraries:
@@ -227,7 +223,7 @@ def main(args=sys.argv):
     try:
         server = Server(libraries, opts)
     except BadIPSpec as e:
-        raise SystemExit('{}'.format(e))
+        raise SystemExit(f'{e}')
     if getattr(opts, 'daemonize', False):
         if not opts.log and not iswindows:
             raise SystemExit(
@@ -235,8 +231,8 @@ def main(args=sys.argv):
             )
         daemonize()
     if opts.pidfile:
-        with lopen(opts.pidfile, 'wb') as f:
-            f.write(unicode_type(os.getpid()).encode('ascii'))
+        with open(opts.pidfile, 'wb') as f:
+            f.write(str(os.getpid()).encode('ascii'))
     signal.signal(signal.SIGTERM, lambda s, f: server.stop())
     if not getattr(opts, 'daemonize', False) and not iswindows:
         signal.signal(signal.SIGHUP, lambda s, f: server.stop())
@@ -244,7 +240,4 @@ def main(args=sys.argv):
     from calibre.gui2 import ensure_app, load_builtin_fonts
     ensure_app(), load_builtin_fonts()
     with HandleInterrupt(server.stop):
-        try:
-            server.serve_forever()
-        finally:
-            shutdown_delete_service()
+        server.serve_forever()

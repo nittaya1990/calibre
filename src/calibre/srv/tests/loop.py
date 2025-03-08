@@ -1,23 +1,25 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 
 
 __license__ = 'GPL v3'
 __copyright__ = '2015, Kovid Goyal <kovid at kovidgoyal.net>'
 
-import ssl, os, socket, time
+import os
+import socket
+import ssl
+import time
 from collections import namedtuple
-from unittest import skipIf
 from glob import glob
 from threading import Event
+from unittest import skipIf
 
+from calibre.ptempfile import TemporaryDirectory
 from calibre.srv.pre_activated import has_preactivated_support
 from calibre.srv.tests.base import BaseTest, TestServer
-from calibre.ptempfile import TemporaryDirectory
 from calibre.utils.certgen import create_server_cert
 from calibre.utils.monotonic import monotonic
-from polyglot.builtins import range, unicode_type, map
 from polyglot import http_client
+
 is_ci = os.environ.get('CI', '').lower() == 'true'
 
 
@@ -25,8 +27,8 @@ class LoopTest(BaseTest):
 
     def test_log_rotation(self):
         'Test log rotation'
-        from calibre.srv.utils import RotatingLog
         from calibre.ptempfile import TemporaryDirectory
+        from calibre.srv.utils import RotatingLog
         with TemporaryDirectory() as tdir:
             fname = os.path.join(tdir, 'log')
             l = RotatingLog(fname, max_size=100)
@@ -82,7 +84,7 @@ class LoopTest(BaseTest):
         self.ae(0, sum(int(w.is_alive()) for w in server.loop.pool.workers))
         # Test shutdown with hung worker
         block = Event()
-        with TestServer(lambda data:block.wait(), worker_count=3, shutdown_timeout=0.1, timeout=0.1) as server:
+        with TestServer(lambda data: block.wait(), worker_count=3, shutdown_timeout=0.1, timeout=0.1) as server:
             pool = server.loop.pool
             self.ae(3, sum(int(w.is_alive()) for w in pool.workers))
             conn = server.connect()
@@ -90,9 +92,8 @@ class LoopTest(BaseTest):
             with self.assertRaises(socket.timeout):
                 res = conn.getresponse()
                 if int(res.status) == int(http_client.REQUEST_TIMEOUT):
-                    raise socket.timeout('Timeout')
-                raise Exception('Got unexpected response: code: %s %s headers: %r data: %r' % (
-                    res.status, res.reason, res.getheaders(), res.read()))
+                    raise TimeoutError('Timeout')
+                raise Exception(f'Got unexpected response: code: {res.status} {res.reason} headers: {res.getheaders()!r} data: {res.read()!r}')
             self.ae(pool.busy, 1)
         self.ae(1, sum(int(w.is_alive()) for w in pool.workers))
         block.set()
@@ -108,8 +109,9 @@ class LoopTest(BaseTest):
     @skipIf(True, 'Disabled as it is failing on the build server, need to investigate')
     def test_bonjour(self):
         'Test advertising via BonJour'
-        from calibre.srv.bonjour import BonJour
         from zeroconf import Zeroconf
+
+        from calibre.srv.bonjour import BonJour
         b = BonJour(wait_for_stop=False)
         with TestServer(lambda data:(data.path[0] + data.read()), plugins=(b,), shutdown_timeout=5) as server:
             self.assertTrue(b.started.wait(5), 'BonJour not started')
@@ -145,7 +147,7 @@ class LoopTest(BaseTest):
                 sz = min(len(mv), len(self.data))
                 mv[:sz] = self.data[:sz]
                 return sz
-        from calibre.srv.loop import ReadBuffer, READ, WRITE
+        from calibre.srv.loop import READ, WRITE, ReadBuffer
         buf = ReadBuffer(100)
 
         def write(data):
@@ -195,9 +197,10 @@ class LoopTest(BaseTest):
         'Test serving over SSL'
         address = '127.0.0.1'
         with TemporaryDirectory('srv-test-ssl') as tdir:
-            cert_file, key_file, ca_file = map(lambda x:os.path.join(tdir, x), 'cka')
+            cert_file, key_file, ca_file = (os.path.join(tdir, x) for x in 'cka')
             create_server_cert(address, ca_file, cert_file, key_file, key_size=2048)
             ctx = ssl.create_default_context(cafile=ca_file)
+            ctx.verify_flags |= ssl.VERIFY_X509_STRICT
             with TestServer(
                     lambda data:(data.path[0] + data.read().decode('utf-8')),
                     ssl_certfile=cert_file, ssl_keyfile=key_file, listen_on=address, port=0) as server:
@@ -216,9 +219,10 @@ class LoopTest(BaseTest):
         os.closerange(3, 4)  # Ensure the socket gets fileno == 3
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM, 0)
         s.bind(('localhost', 0))
+        s.listen()  # pre-activated sockets are already listening
         port = s.getsockname()[1]
         self.ae(s.fileno(), 3)
-        os.environ['LISTEN_PID'] = unicode_type(os.getpid())
+        os.environ['LISTEN_PID'] = str(os.getpid())
         os.environ['LISTEN_FDS'] = '1'
         with TestServer(lambda data:(data.path[0].encode('utf-8') + data.read()), allow_socket_preallocation=True) as server:
             conn = server.connect()

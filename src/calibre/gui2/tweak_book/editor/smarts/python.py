@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 
 
 __license__ = 'GPL v3'
@@ -10,11 +9,13 @@ import re
 from qt.core import Qt
 
 from calibre.gui2.tweak_book.editor.smarts import NullSmarts
-from calibre.gui2.tweak_book.editor.smarts.utils import (
-    get_text_before_cursor, get_leading_whitespace_on_block as lw,
-    smart_home, smart_backspace, smart_tab)
+from calibre.gui2.tweak_book.editor.smarts.utils import get_leading_whitespace_on_block as lw
+from calibre.gui2.tweak_book.editor.smarts.utils import get_text_before_cursor, smart_backspace, smart_home, smart_tab
 
-get_leading_whitespace_on_block = lambda editor, previous=False: expand_tabs(lw(editor, previous=previous))
+
+def get_leading_whitespace_on_block(editor, previous=False):
+    return expand_tabs(lw(editor, previous=previous))
+
 
 tw = 4  # The tab width (hardcoded to the pep8 value)
 
@@ -36,7 +37,7 @@ class Smarts(NullSmarts):
     def handle_key_press(self, ev, editor):
         key = ev.key()
 
-        if key == Qt.Key.Key_Tab:
+        if key in (Qt.Key.Key_Tab, Qt.Key.Key_Backtab):
             mods = ev.modifiers()
             if not mods & Qt.KeyboardModifier.ControlModifier and smart_tab(editor, ev):
                 return True
@@ -74,5 +75,6 @@ class Smarts(NullSmarts):
 
 if __name__ == '__main__':
     import os
+
     from calibre.gui2.tweak_book.editor.widget import launch_editor
     launch_editor(os.path.abspath(__file__), syntax='python')

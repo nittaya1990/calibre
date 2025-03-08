@@ -1,18 +1,17 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
 
 
 __license__   = 'GPL v3'
 __copyright__ = '2011, Kovid Goyal <kovid@kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
 
-import sys, struct
+import struct
+import sys
 
 from calibre.utils.wmf import create_bmp_from_dib, to_png
 
 
 class WMFHeader:
-
     '''
     For header documentation, see
     http://www.skynet.ie/~caolan/publink/libwmf/libwmf/doc/ora-wmf.html
@@ -109,7 +108,6 @@ class WMF:
                 247: 'CreatePalette',
                 248: 'CreateBrush',
                 322: 'DibCreatePatternBrush',
-                496: 'DeleteObject',
                 505: 'CreatePatternBrush',
                 762: 'CreatePenIndirect',
                 763: 'CreateFontIndirect',

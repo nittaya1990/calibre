@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 #   Create a <text:list-style> element from a text string.
 #   Copyright (C) 2008 J. David Eisenberg
 #
@@ -21,11 +20,13 @@
 
 
 import re
-from .style import ListLevelProperties
-from .text import ListStyle,ListLevelStyleNumber,ListLevelStyleBullet
+
 from polyglot.builtins import unicode_type
 
-"""
+from .style import ListLevelProperties
+from .text import ListLevelStyleBullet, ListLevelStyleNumber, ListStyle
+
+'''
 Create a <text:list-style> element from a string or array.
 
 List styles require a lot of code to create one level at a time.
@@ -37,7 +38,7 @@ Each item in the string (or array) represents a list level
  * <p>If an item contains <code>1</code>, <code>I</code>,
  * <code>i</code>, <code>A</code>, or <code>a</code>, then it is presumed
  * to be a numbering style; otherwise it is a bulleted style.</p>
-"""
+'''
 
 _MAX_LIST_LEVEL = 10
 SHOW_ALL_LEVELS = True
@@ -50,16 +51,16 @@ def styleFromString(name, specifiers, delim, spacing, showAllLevels):
 
 
 def styleFromList(styleName, specArray, spacing, showAllLevels):
-    bullet = ""
-    numPrefix = ""
-    numSuffix = ""
+    bullet = ''
+    numPrefix = ''
+    numSuffix = ''
     cssLengthNum = 0
-    cssLengthUnits = ""
+    cssLengthUnits = ''
     numbered = False
     displayLevels = 0
     listStyle = ListStyle(name=styleName)
-    numFormatPattern = re.compile("([1IiAa])")
-    cssLengthPattern = re.compile("([^a-z]+)\\s*([a-z]+)?")
+    numFormatPattern = re.compile(r'([1IiAa])')
+    cssLengthPattern = re.compile(r'([^a-z]+)\s*([a-z]+)?')
     m = cssLengthPattern.search(spacing)
     if (m is not None):
         cssLengthNum = float(m.group(1))
@@ -72,7 +73,7 @@ def styleFromList(styleName, specArray, spacing, showAllLevels):
         if (m is not None):
             numPrefix = specification[0:m.start(1)]
             numSuffix = specification[m.end(1):]
-            bullet = ""
+            bullet = ''
             numbered = True
             if (showAllLevels):
                 displayLevels = i + 1
@@ -80,8 +81,8 @@ def styleFromList(styleName, specArray, spacing, showAllLevels):
                 displayLevels = 1
         else:    # it's a bullet style
             bullet = specification
-            numPrefix = ""
-            numSuffix = ""
+            numPrefix = ''
+            numSuffix = ''
             displayLevels = 1
             numbered = False
         if (numbered):

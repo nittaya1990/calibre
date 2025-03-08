@@ -1,35 +1,35 @@
 #!/usr/bin/env python
-# -*- coding: utf-8 -*-
 
 
-"""
+'''
 Original Perl version by: John Gruber https://daringfireball.net/ 10 May 2008
 Python version by Stuart Colville http://muffinresearch.co.uk
 Modifications to make it work with non-ascii chars by Kovid Goyal
 License: http://www.opensource.org/licenses/mit-license.php
-"""
+'''
 
 import re
 
-from calibre.utils.icu import capitalize, upper
-from polyglot.builtins import unicode_type
+from calibre.utils.icu import capitalize
+from calibre.utils.icu import lower as icu_lower
+from calibre.utils.icu import upper as icu_upper
 
 __all__ = ['titlecase']
 __version__ = '0.5'
 
 SMALL = 'a|an|and|as|at|but|by|en|for|if|in|of|on|or|the|to|v\\.?|via|vs\\.?'
-PUNCT = r"""!"#$%&'‘’()*+,\-‒–—―./:;?@[\\\]_`{|}~"""
+PUNCT = r'''!"#$%&'‘’()*+,\-‒–—―./:;?@[\\\]_`{|}~'''
 
-SMALL_WORDS = re.compile(r'^(%s)$' % SMALL, re.I)
+SMALL_WORDS = re.compile(rf'^({SMALL})$', re.I)
 INLINE_PERIOD = re.compile(r'[a-z][.][a-z]', re.I)
-UC_ELSEWHERE = re.compile(r'[%s]*?[a-zA-Z]+[A-Z]+?' % PUNCT)
-CAPFIRST = re.compile(unicode_type(r"^[%s]*?(\w)" % PUNCT), flags=re.UNICODE)
-SMALL_FIRST = re.compile(r'^([%s]*)(%s)\b' % (PUNCT, SMALL), re.I|re.U)
-SMALL_LAST = re.compile(r'\b(%s)[%s]?$' % (SMALL, PUNCT), re.I|re.U)
+UC_ELSEWHERE = re.compile(rf'[{PUNCT}]*?[a-zA-Z]+[A-Z]+?')
+CAPFIRST = re.compile(str(rf'^[{PUNCT}]*?(\w)'), flags=re.UNICODE)
+SMALL_FIRST = re.compile(fr'^([{PUNCT}]*)({SMALL})\b', re.I|re.U)
+SMALL_LAST = re.compile(fr'\b({SMALL})[{PUNCT}]?$', re.I|re.U)
 SMALL_AFTER_NUM = re.compile(r'(\d+\s+)(a|an|the)\b', re.I|re.U)
-SUBPHRASE = re.compile(r'([:.;?!][ ])(%s)' % SMALL)
+SUBPHRASE = re.compile(rf'([:.;?!][ ])({SMALL})')
 APOS_SECOND = re.compile(r"^[dol]{1}['‘]{1}[a-z]+$", re.I)
-UC_INITIALS = re.compile(r"^(?:[A-Z]{1}\.{1}|[A-Z]{1}\.{1}[A-Z]{1})+$")
+UC_INITIALS = re.compile(r'^(?:[A-Z]{1}\.{1}|[A-Z]{1}\.{1}[A-Z]{1})+$')
 
 _lang = None
 
@@ -43,7 +43,7 @@ def lang():
 
 
 def titlecase(text):
-    """
+    '''
     Titlecases input text
 
     This filter changes all words to Title Caps, and attempts to be clever
@@ -52,9 +52,9 @@ def titlecase(text):
     The list of "SMALL words" which are not capped comes from
     the New York Times Manual of Style, plus 'vs' and 'v'.
 
-    """
+    '''
 
-    all_caps = upper(text) == text
+    all_caps = icu_upper(text) == text
 
     pat = re.compile(r'(\s+)')
     line = []
@@ -86,24 +86,16 @@ def titlecase(text):
         hyphenated = []
         for item in word.split('-'):
             hyphenated.append(CAPFIRST.sub(lambda m: icu_upper(m.group(0)), item))
-        line.append("-".join(hyphenated))
+        line.append('-'.join(hyphenated))
 
-    result = "".join(line)
+    result = ''.join(line)
 
-    result = SMALL_FIRST.sub(lambda m: '%s%s' % (
-        m.group(1),
-        capitalize(m.group(2))
-    ), result)
+    result = SMALL_FIRST.sub(lambda m: f'{m.group(1)}{capitalize(m.group(2))}', result)
 
-    result = SMALL_AFTER_NUM.sub(lambda m: '%s%s' % (m.group(1),
-        capitalize(m.group(2))
-    ), result)
+    result = SMALL_AFTER_NUM.sub(lambda m: f'{m.group(1)}{capitalize(m.group(2))}', result)
 
     result = SMALL_LAST.sub(lambda m: capitalize(m.group(0)), result)
 
-    result = SUBPHRASE.sub(lambda m: '%s%s' % (
-        m.group(1),
-        capitalize(m.group(2))
-    ), result)
+    result = SUBPHRASE.sub(lambda m: f'{m.group(1)}{capitalize(m.group(2))}', result)
 
     return result

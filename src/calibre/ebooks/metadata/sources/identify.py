@@ -1,6 +1,5 @@
 #!/usr/bin/env python
 # vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
-from __future__ import absolute_import, division, print_function, unicode_literals
 
 __license__   = 'GPL v3'
 __copyright__ = '2011, Kovid Goyal <kovid@kovidgoyal.net>'
@@ -8,6 +7,7 @@ __docformat__ = 'restructuredtext en'
 
 import re
 import time
+import unicodedata
 from datetime import datetime
 from io import StringIO
 from operator import attrgetter
@@ -23,7 +23,7 @@ from calibre.utils.date import UNDEFINED_DATE, as_utc, utc_tz
 from calibre.utils.formatter import EvalFormatter
 from calibre.utils.html2text import html2text
 from calibre.utils.icu import lower, primary_sort_key
-from polyglot.builtins import iteritems, itervalues, unicode_type
+from polyglot.builtins import as_unicode, iteritems, itervalues
 from polyglot.queue import Empty, Queue
 from polyglot.urllib import quote, urlparse
 
@@ -62,8 +62,8 @@ def is_worker_alive(workers):
 
 # }}}
 
-# Merge results from different sources {{{
 
+# Merge results from different sources {{{
 
 class xISBN(Thread):
 
@@ -400,7 +400,7 @@ def identify(log, abort,  # {{{
     results = {}
     for p in plugins:
         results[p] = []
-    logs = dict([(w.plugin, w.buf) for w in workers])
+    logs = {w.plugin: w.buf for w in workers}
 
     def get_results():
         found = False
@@ -470,7 +470,7 @@ def identify(log, abort,  # {{{
         for r in presults:
             log('\n\n---')
             try:
-                log(unicode_type(r))
+                log(str(r))
             except TypeError:
                 log(repr(r))
         if plog:
@@ -501,13 +501,31 @@ def identify(log, abort,  # {{{
     log('We have %d merged results, merging took: %.2f seconds' %
             (len(results), time.time() - start_time))
     tm_rules = msprefs['tag_map_rules']
-    if tm_rules:
+    pm_rules = msprefs['publisher_map_rules']
+    s_rules = msprefs['series_map_rules']
+    if tm_rules or pm_rules or s_rules:
         from calibre.ebooks.metadata.tag_mapper import map_tags
     am_rules = msprefs['author_map_rules']
     if am_rules:
         from calibre.ebooks.metadata.author_mapper import compile_rules, map_authors
         am_rules = compile_rules(am_rules)
 
+    # normalize unicode strings
+    def n(x):
+        return unicodedata.normalize('NFC', as_unicode(x or '', errors='replace'))
+    for r in results:
+        if r.tags:
+            r.tags = list(map(n, r.tags))
+        if r.authors:
+            r.authors = list(map(n, r.authors))
+        if r.author_sort:
+            r.author_sort = n(r.author_sort)
+        if r.title:
+            r.title = n(r.title)
+        if r.publisher:
+            r.publisher = n(r.publisher)
+        if r.comments:
+            r.comments = n(r.comments)
     max_tags = msprefs['max_tags']
     for r in results:
         if tm_rules:
@@ -515,6 +533,12 @@ def identify(log, abort,  # {{{
         r.tags = r.tags[:max_tags]
         if getattr(r.pubdate, 'year', 2000) <= UNDEFINED_DATE.year:
             r.pubdate = None
+        if pm_rules and r.publisher:
+            pubs = map_tags([r.publisher], pm_rules)
+            r.publisher = pubs[0] if pubs else ''
+        if s_rules and r.series:
+            ss = map_tags([r.series], s_rules)
+            r.series = ss[0] if ss else ''
 
     if msprefs['swap_author_names']:
         for r in results:
@@ -554,7 +578,7 @@ def urls_from_identifiers(identifiers, sort_results=False):  # {{{
         for k, val in iteritems(identifiers):
             val = val.replace('|', ',')
             vals = {
-                'id':unicode_type(quote(val if isinstance(val, bytes) else val.encode('utf-8'))),
+                'id':str(quote(val if isinstance(val, bytes) else val.encode('utf-8'))),
                 'id_unquoted': str(val),
             }
             items = rules.get(k) or ()
@@ -618,12 +642,9 @@ def urls_from_identifiers(identifiers, sort_results=False):  # {{{
 # }}}
 
 
-if __name__ == '__main__':  # tests {{{
-    # To run these test use: calibre-debug -e
-    # src/calibre/ebooks/metadata/sources/identify.py
-    from calibre.ebooks.metadata.sources.test import (
-        authors_test, test_identify, title_test
-    )
+def tests(start=0, limit=256):  # tests {{{
+    # To run these test use: calibre-debug -c "from calibre.ebooks.metadata.sources.identify import tests; tests()"
+    from calibre.ebooks.metadata.sources.test import authors_test, test_identify, title_test
     tests = [
             (
                 {'title':'Magykal Papers',
@@ -663,5 +684,5 @@ if __name__ == '__main__':  # tests {{{
 
         ]
     # test_identify(tests[1:2])
-    test_identify(tests)
+    test_identify(tests[start:limit])
 # }}}

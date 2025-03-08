@@ -1,4 +1,3 @@
-
 '''
 HTML-TOC-adding transform.
 '''
@@ -6,17 +5,15 @@ HTML-TOC-adding transform.
 __license__   = 'GPL v3'
 __copyright__ = '2008, Marshall T. Vandegrift <llasram@gmail.com>'
 
-from calibre.ebooks.oeb.base import XML, XHTML, XHTML_NS
-from calibre.ebooks.oeb.base import XHTML_MIME, CSS_MIME
-from calibre.ebooks.oeb.base import element, XPath
-from polyglot.builtins import unicode_type
+from calibre.ebooks.oeb.base import CSS_MIME, XHTML, XHTML_MIME, XHTML_NS, XML, XPath, element
+from calibre.utils.localization import __
 
 __all__ = ['HTMLTOCAdder']
 
 DEFAULT_TITLE = __('Table of Contents')
 
 STYLE_CSS = {
-    'nested': """
+    'nested': '''
 .calibre_toc_header {
   text-align: center;
 }
@@ -30,9 +27,9 @@ STYLE_CSS = {
 .calibre_toc_block .calibre_toc_block .calibre_toc_block {
   margin-left: 3.6em;
 }
-""",
+''',
 
-    'centered': """
+    'centered': '''
 .calibre_toc_header {
   text-align: center;
 }
@@ -42,7 +39,7 @@ STYLE_CSS = {
 body > .calibre_toc_block {
   margin-top: 1.2em;
 }
-"""
+'''
     }
 
 
@@ -57,7 +54,7 @@ class HTMLTOCAdder:
     def config(cls, cfg):
         group = cfg.add_group('htmltoc', _('HTML TOC generation options.'))
         group('toc_title', ['--toc-title'], default=None,
-              help=_('Title for any generated in-line table of contents.'))
+              help=_('Title for any generated inline table of contents.'))
         return cfg
 
     @classmethod
@@ -91,11 +88,11 @@ class HTMLTOCAdder:
         title = self.title or oeb.translate(DEFAULT_TITLE)
         style = self.style
         if style not in STYLE_CSS:
-            oeb.logger.error('Unknown TOC style %r' % style)
+            oeb.logger.error(f'Unknown TOC style {style!r}')
             style = 'nested'
         id, css_href = oeb.manifest.generate('tocstyle', 'tocstyle.css')
         oeb.manifest.add(id, css_href, CSS_MIME, data=STYLE_CSS[style])
-        language = unicode_type(oeb.metadata.language[0])
+        language = str(oeb.metadata.language[0])
         contents = element(None, XHTML('html'), nsmap={None: XHTML_NS},
                            attrib={XML('lang'): language})
         head = element(contents, XHTML('head'))

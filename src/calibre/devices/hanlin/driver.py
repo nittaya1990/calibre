@@ -1,6 +1,3 @@
-# -*- coding: utf-8 -*-
-
-
 __license__   = 'GPL v3'
 __copyright__ = '2009, Tijmen Ruizendaal <tijmen at mybebook.com>'
 __docformat__ = 'restructuredtext en'
@@ -100,8 +97,8 @@ class HANLINV5(HANLINV3):
     gui_name       = 'Hanlin V5'
     description    = _('Communicate with Hanlin V5 e-book readers.')
 
-    VENDOR_ID	= [0x0492]
-    PRODUCT_ID	= [0x8813]
+    VENDOR_ID   = [0x0492]
+    PRODUCT_ID  = [0x8813]
     BCD         = [0x319]
 
     OSX_MAIN_MEM = 'Hanlin V5 Internal Memory'
@@ -122,7 +119,7 @@ class BOOX(HANLINV3):
     supported_platforms = ['windows', 'osx', 'linux']
     METADATA_CACHE = '.metadata.calibre'
     DRIVEINFO = '.driveinfo.calibre'
-    icon           = I('devices/boox.png')
+    icon           = 'devices/boox.png'
 
     # Ordered list of supported formats
     FORMATS     = ['epub', 'fb2', 'djvu', 'pdf', 'html', 'txt', 'rtf', 'mobi',

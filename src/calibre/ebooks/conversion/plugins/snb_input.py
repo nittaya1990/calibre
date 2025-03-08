@@ -1,6 +1,3 @@
-# -*- coding: utf-8 -*-
-
-
 __license__ = 'GPL 3'
 __copyright__ = '2010, Li Fanxi <lifanxi@freemindworld.com>'
 __docformat__ = 'restructuredtext en'
@@ -10,13 +7,12 @@ import os
 from calibre.customize.conversion import InputFormatPlugin
 from calibre.ptempfile import TemporaryDirectory
 from calibre.utils.filenames import ascii_filename
-from polyglot.builtins import unicode_type
 
 HTML_TEMPLATE = '<html><head><meta http-equiv="Content-Type" content="text/html; charset=utf-8"/><title>%s</title></head><body>\n%s\n</body></html>'
 
 
 def html_encode(s):
-    return s.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;').replace("'", '&apos;').replace('\n', '<br/>').replace(' ', '&nbsp;')  # noqa
+    return s.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;').replace("'", '&apos;').replace('\n', '<br/>').replace(' ', '&nbsp;')  # noqa: E501
 
 
 class SNBInput(InputFormatPlugin):
@@ -37,28 +33,30 @@ class SNBInput(InputFormatPlugin):
         from calibre.ebooks.snb.snbfile import SNBFile
         from calibre.utils.xml_parse import safe_xml_fromstring
 
-        log.debug("Parsing SNB file...")
+        log.debug('Parsing SNB file...')
         snbFile = SNBFile()
         try:
             snbFile.Parse(stream)
         except:
-            raise ValueError("Invalid SNB file")
+            raise ValueError('Invalid SNB file')
         if not snbFile.IsValid():
-            log.debug("Invalid SNB file")
-            raise ValueError("Invalid SNB file")
-        log.debug("Handle meta data ...")
+            log.debug('Invalid SNB file')
+            raise ValueError('Invalid SNB file')
+        log.debug('Handle meta data ...')
         from calibre.ebooks.conversion.plumber import create_oebbook
         oeb = create_oebbook(log, None, options,
                 encoding=options.input_encoding, populate=False)
         meta = snbFile.GetFileStream('snbf/book.snbf')
         if meta is not None:
             meta = safe_xml_fromstring(meta)
-            l = {'title'    : './/head/name',
+            l = {
+                  'title'    : './/head/name',
                   'creator'  : './/head/author',
                   'language' : './/head/language',
                   'generator': './/head/generator',
                   'publisher': './/head/publisher',
-                  'cover'    : './/head/cover', }
+                  'cover'    : './/head/cover',
+            }
             d = {}
             for item in l:
                 node = meta.find(l[item])
@@ -75,7 +73,7 @@ class SNBInput(InputFormatPlugin):
             if d['cover'] != '':
                 oeb.guide.add('cover', 'Cover', d['cover'])
 
-        bookid = unicode_type(uuid.uuid4())
+        bookid = str(uuid.uuid4())
         oeb.metadata.add('identifier', bookid, id='uuid_id', scheme='uuid')
         for ident in oeb.metadata.identifier:
             if 'id' in ident.attrib:
@@ -92,7 +90,7 @@ class SNBInput(InputFormatPlugin):
                 for ch in toc.find('.//body'):
                     chapterName = ch.text
                     chapterSrc = ch.get('src')
-                    fname = 'ch_%d.htm' % i
+                    fname = f'ch_{i}.htm'
                     data = snbFile.GetFileStream('snbc/' + chapterSrc)
                     if data is None:
                         continue
@@ -100,9 +98,9 @@ class SNBInput(InputFormatPlugin):
                     lines = []
                     for line in snbc.find('.//body'):
                         if line.tag == 'text':
-                            lines.append('<p>%s</p>' % html_encode(line.text))
+                            lines.append(f'<p>{html_encode(line.text)}</p>')
                         elif line.tag == 'img':
-                            lines.append('<p><img src="%s" /></p>' % html_encode(line.text))
+                            lines.append(f'<p><img src="{html_encode(line.text)}" /></p>')
                     with open(os.path.join(tdir, fname), 'wb') as f:
                         f.write((HTML_TEMPLATE % (chapterName, '\n'.join(lines))).encode('utf-8', 'replace'))
                     oeb.toc.add(ch.text, fname)

@@ -1,6 +1,3 @@
-# -*- coding: utf-8 -*-
-
-
 __license__ = 'GPL 3'
 __copyright__ = '2009, John Schember <john@nachtimwald.com>'
 __docformat__ = 'restructuredtext en'
@@ -10,11 +7,10 @@ import struct
 import zlib
 
 from calibre import CurrentDir
-from calibre.ebooks.rb import HEADER
-from calibre.ebooks.rb import RocketBookError
-from calibre.ebooks.metadata.rb import get_metadata
 from calibre.ebooks.metadata.opf2 import OPFCreator
-from polyglot.builtins import range, as_unicode
+from calibre.ebooks.metadata.rb import get_metadata
+from calibre.ebooks.rb import HEADER, RocketBookError
+from polyglot.builtins import as_unicode
 from polyglot.urllib import unquote
 
 
@@ -47,7 +43,7 @@ class Reader:
     def verify_file(self):
         self.stream.seek(0)
         if self.stream.read(14) != HEADER:
-            raise RocketBookError('Could not read file: %s. Does not contain a valid RocketBook Header.' % self.stream.name)
+            raise RocketBookError(f'Could not read file: {self.stream.name}. Does not contain a valid RocketBook Header.')
 
         self.stream.seek(28)
         size = self.read_i32()
@@ -112,11 +108,11 @@ class Reader:
         for item in self.toc:
             iname = as_unicode(item.name)
             if iname.lower().endswith('html'):
-                self.log.debug('HTML item %s found...' % iname)
+                self.log.debug(f'HTML item {iname} found...')
                 html.append(iname)
                 self.get_text(item, output_dir)
             if iname.lower().endswith('png'):
-                self.log.debug('PNG item %s found...' % iname)
+                self.log.debug(f'PNG item {iname} found...')
                 images.append(iname)
                 self.get_image(item, output_dir)
 

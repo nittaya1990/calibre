@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 
 
 __license__ = 'GPL v3'
@@ -8,16 +7,12 @@ __copyright__ = '2014, Kovid Goyal <kovid at kovidgoyal.net>'
 from collections import defaultdict, namedtuple
 from operator import itemgetter
 
-from qt.core import (
-    QDialog, QFormLayout, QHBoxLayout, QLineEdit, QToolButton, QIcon,
-    QDialogButtonBox, Qt, QSpinBox, QCheckBox)
-
 from lxml import etree
+from qt.core import QCheckBox, QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout, QIcon, QLineEdit, QSpinBox, Qt, QToolButton
 
 from calibre.gui2 import choose_files, error_dialog
-from calibre.utils.xml_parse import safe_xml_fromstring
 from calibre.utils.icu import sort_key
-from polyglot.builtins import unicode_type
+from calibre.utils.xml_parse import safe_xml_fromstring
 
 Group = namedtuple('Group', 'title feeds')
 
@@ -60,7 +55,7 @@ class ImportOPML(QDialog):
         self.l = l = QFormLayout(self)
         self.setLayout(l)
         self.setWindowTitle(_('Import OPML file'))
-        self.setWindowIcon(QIcon(I('opml.png')))
+        self.setWindowIcon(QIcon.ic('opml.png'))
 
         self.h = h = QHBoxLayout()
         self.path = p = QLineEdit(self)
@@ -68,7 +63,7 @@ class ImportOPML(QDialog):
         p.setPlaceholderText(_('Path to OPML file'))
         h.addWidget(p)
         self.cfb = b = QToolButton(self)
-        b.setIcon(QIcon(I('document_open.png')))
+        b.setIcon(QIcon.ic('document_open.png'))
         b.setToolTip(_('Browse for OPML file'))
         b.clicked.connect(self.choose_file)
         h.addWidget(b)
@@ -126,7 +121,7 @@ class ImportOPML(QDialog):
             self.path.setText(opml_files[0])
 
     def accept(self):
-        path = unicode_type(self.path.text())
+        path = str(self.path.text())
         if not path:
             return error_dialog(self, _('Path not specified'), _(
                 'You must specify the path to the OPML file to import'), show=True)
@@ -145,5 +140,5 @@ if __name__ == '__main__':
     for group in import_opml(open(sys.argv[-1], 'rb').read()):
         print(group.title)
         for title, url in group.feeds:
-            print('\t%s - %s' % (title, url))
+            print(f'\t{title} - {url}')
         print()

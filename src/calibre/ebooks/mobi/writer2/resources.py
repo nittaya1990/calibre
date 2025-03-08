@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
 
 
 __license__   = 'GPL v3'
@@ -7,19 +6,19 @@ __copyright__ = '2012, Kovid Goyal <kovid@kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
 
 import os
-from PIL import Image, ImageOps
 from io import BytesIO
 
-from calibre.ebooks.mobi import MAX_THUMB_DIMEN, MAX_THUMB_SIZE
-from calibre.ebooks.mobi.utils import (rescale_image, mobify_image,
-        write_font_record)
+from PIL import Image, ImageOps
+
 from calibre.ebooks import generate_masthead
+from calibre.ebooks.mobi import MAX_THUMB_DIMEN, MAX_THUMB_SIZE
+from calibre.ebooks.mobi.utils import mobify_image, rescale_image, write_font_record
 from calibre.ebooks.oeb.base import OEB_RASTER_IMAGES
 from calibre.ptempfile import PersistentTemporaryFile
 from calibre.utils.imghdr import what
-from polyglot.builtins import iteritems, unicode_type
+from polyglot.builtins import iteritems
 
-PLACEHOLDER_GIF = b'GIF89a\x01\x00\x01\x00\xf0\x00\x00\x00\x00\x00\xff\xff\xff!\xf9\x04\x01\x00\x00\x00\x00!\xfe calibre-placeholder-gif-for-azw3\x00,\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02D\x01\x00;'  # noqa
+PLACEHOLDER_GIF = b'GIF89a\x01\x00\x01\x00\xf0\x00\x00\x00\x00\x00\xff\xff\xff!\xf9\x04\x01\x00\x00\x00\x00!\xfe calibre-placeholder-gif-for-azw3\x00,\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02D\x01\x00;'  # noqa: E501
 
 
 def process_jpegs_for_amazon(data: bytes) -> bytes:
@@ -28,10 +27,14 @@ def process_jpegs_for_amazon(data: bytes) -> bytes:
         # Amazon's MOBI renderer can't render JPEG images without JFIF metadata
         # and images with EXIF data dont get displayed on the cover screen
         changed = not img.info
-        if hasattr(img, '_getexif') and img._getexif():
-            changed = True
-            img = ImageOps.exif_transpose(img)
-        if changed:
+        has_exif = False
+        if hasattr(img, 'getexif'):
+            exif = img.getexif()
+            has_exif = bool(exif)
+            if exif.get(0x0112) in (2,3,4,5,6,7,8):
+                changed = True
+                img = ImageOps.exif_transpose(img)
+        if changed or has_exif:
             out = BytesIO()
             img.save(out, 'JPEG')
             data = out.getvalue()
@@ -71,7 +74,7 @@ class Resources:
             try:
                 from calibre.utils.img import optimize_png
                 optimize_png(pt.name)
-                data = lopen(pt.name, 'rb').read()
+                data = open(pt.name, 'rb').read()
             finally:
                 os.remove(pt.name)
             return func(data)
@@ -90,7 +93,7 @@ class Resources:
             self.image_indices.add(0)
         elif self.is_periodical:
             # Generate a default masthead
-            data = generate_masthead(unicode_type(self.oeb.metadata['title'][0]))
+            data = generate_masthead(str(self.oeb.metadata['title'][0]))
             self.records.append(data)
             self.used_image_indices.add(0)
             self.image_indices.add(0)
@@ -98,8 +101,8 @@ class Resources:
 
         cover_href = self.cover_offset = self.thumbnail_offset = None
         if (oeb.metadata.cover and
-                unicode_type(oeb.metadata.cover[0]) in oeb.manifest.ids):
-            cover_id = unicode_type(oeb.metadata.cover[0])
+                str(oeb.metadata.cover[0]) in oeb.manifest.ids):
+            cover_id = str(oeb.metadata.cover[0])
             item = oeb.manifest.ids[cover_id]
             cover_href = item.href
 
@@ -111,7 +114,7 @@ class Resources:
             try:
                 data = self.process_image(item.data)
             except Exception:
-                self.log.warn('Bad image file %r' % item.href)
+                self.log.warn(f'Bad image file {item.href!r}')
                 continue
             else:
                 if mh_href and item.href == mh_href:
@@ -121,7 +124,7 @@ class Resources:
                 self.image_indices.add(len(self.records))
                 self.records.append(data)
                 self.item_map[item.href] = index
-                self.mime_map[item.href] = 'image/%s'%what(None, data)
+                self.mime_map[item.href] = f'image/{what(None, data)}'
                 index += 1
 
                 if cover_href and item.href == cover_href:
@@ -166,7 +169,7 @@ class Resources:
             try:
                 data = self.process_image(item.data)
             except:
-                self.log.warn('Bad image file %r' % item.href)
+                self.log.warn(f'Bad image file {item.href!r}')
             else:
                 self.records.append(data)
                 self.item_map[item.href] = len(self.records)

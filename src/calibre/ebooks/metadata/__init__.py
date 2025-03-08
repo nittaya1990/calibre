@@ -1,22 +1,22 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 
 
 __license__   = 'GPL v3'
 __copyright__ = '2008, Kovid Goyal kovid@kovidgoyal.net'
 __docformat__ = 'restructuredtext en'
 
-"""
+'''
 Provides abstraction for metadata reading.writing from a variety of ebook formats.
-"""
-import os, sys, re
+'''
+import os
+import re
+import sys
 from contextlib import suppress
 
-from calibre import relpath, guess_type, prints, force_unicode
+from calibre import force_unicode, guess_type, prints, relpath
 from calibre.utils.config_base import tweaks
-from polyglot.builtins import codepoint_to_chr, unicode_type, range, map, zip, getcwd, iteritems, as_unicode
+from polyglot.builtins import as_unicode, iteritems
 from polyglot.urllib import quote, unquote, urlparse
-
 
 try:
     _author_pat = re.compile(tweaks['authors_split_regex'])
@@ -161,21 +161,41 @@ def get_title_sort_pat(lang=None):
     except AttributeError:
         ans = None  # invalid tweak value
     try:
-        ans = frozenset(ans) if ans else frozenset(data['eng'])
-    except:
+        ans = frozenset(ans) if ans is not None else frozenset(data['eng'])
+    except Exception:
         ans = frozenset((r'A\s+', r'The\s+', r'An\s+'))
-    ans = '|'.join(ans)
-    ans = '^(%s)'%ans
-    try:
-        ans = re.compile(ans, re.IGNORECASE)
-    except:
-        ans = re.compile(r'^(A|The|An)\s+', re.IGNORECASE)
+    if ans:
+        ans = '|'.join(ans)
+        ans = f'^({ans})'
+        try:
+            ans = re.compile(ans, re.IGNORECASE)
+        except:
+            ans = re.compile(r'^(A|The|An)\s+', re.IGNORECASE)
+    else:
+        ans = re.compile(r'^$')  # matches only the empty string
     _title_pats[lang] = ans
     return ans
 
 
-_ignore_starts = '\'"'+''.join(codepoint_to_chr(x) for x in
-        list(range(0x2018, 0x201e))+[0x2032, 0x2033])
+quote_pairs = {
+    # https://en.wikipedia.org/wiki/Quotation_mark
+    '"': ('"',),
+    "'": ("'",),
+    '“': ('”','“'),
+    '”': ('”','”'),
+    '„': ('”','“'),
+    '‚': ('’','‘'),
+    '’': ('’','‘'),
+    '‘': ('’','‘'),
+    '‹': ('›',),
+    '›': ('‹',),
+    '《': ('》',),
+    '〈': ('〉',),
+    '»': ('«', '»'),
+    '«': ('«', '»'),
+    '「': ('」',),
+    '『': ('』',),
+}
 
 
 def title_sort(title, order=None, lang=None):
@@ -184,8 +204,11 @@ def title_sort(title, order=None, lang=None):
     title = title.strip()
     if order == 'strictly_alphabetic':
         return title
-    if title and title[0] in _ignore_starts:
+    if title and title[0] in quote_pairs:
+        q = title[0]
         title = title[1:]
+        if title and title[-1] in quote_pairs[q]:
+            title = title[:-1]
     match = get_title_sort_pat(lang).search(title)
     if match:
         try:
@@ -193,21 +216,25 @@ def title_sort(title, order=None, lang=None):
         except IndexError:
             pass
         else:
-            title = title[len(prep):] + ', ' + prep
-            if title[0] in _ignore_starts:
-                title = title[1:]
+            if prep:
+                title = title[len(prep):] + ', ' + prep
+                if title[0] in quote_pairs:
+                    q = title[0]
+                    title = title[1:]
+                    if title and title[-1] in quote_pairs[q]:
+                        title = title[:-1]
     return title.strip()
 
 
 coding = list(zip(
 [1000,900,500,400,100,90,50,40,10,9,5,4,1],
-["M","CM","D","CD","C","XC","L","XL","X","IX","V","IV","I"]
+['M','CM','D','CD','C','XC','L','XL','X','IX','V','IV','I']
 ))
 
 
 def roman(num):
     if num <= 0 or num >= 4000 or int(num) != num:
-        return unicode_type(num)
+        return str(num)
     result = []
     for d, r in coding:
         while num >= d:
@@ -222,14 +249,16 @@ def fmt_sidx(i, fmt='%.2f', use_roman=False):
     try:
         i = float(i)
     except Exception:
-        return unicode_type(i)
-    if int(i) == float(i):
-        return roman(int(i)) if use_roman else '%d'%int(i)
-    return fmt%i
+        return str(i)
+    if int(i) == i:
+        return roman(int(i)) if use_roman else str(int(i))
+    ans = fmt%i
+    if '.' in ans:
+        ans = ans.rstrip('0')
+    return ans
 
 
 class Resource:
-
     '''
     Represents a resource (usually a file on the filesystem or a URL pointing
     to the web. Such resources are commonly referred to in OPF files.
@@ -242,7 +271,7 @@ class Resource:
 
     '''
 
-    def __init__(self, href_or_path, basedir=getcwd(), is_path=True):
+    def __init__(self, href_or_path, basedir=os.getcwd(), is_path=True):
         self._href = None
         self._basedir = basedir
         self.path = None
@@ -266,7 +295,7 @@ class Resource:
                 self._href = href_or_path
             else:
                 pc = url[2]
-                if isinstance(pc, unicode_type):
+                if isinstance(pc, str):
                     pc = pc.encode('utf-8')
                 pc = unquote(pc).decode('utf-8')
                 self.path = os.path.abspath(os.path.join(basedir, pc.replace('/', os.sep)))
@@ -284,10 +313,10 @@ class Resource:
             if self._basedir:
                 basedir = self._basedir
             else:
-                basedir = getcwd()
+                basedir = os.getcwd()
         if self.path is None:
             return self._href
-        f = self.fragment.encode('utf-8') if isinstance(self.fragment, unicode_type) else self.fragment
+        f = self.fragment.encode('utf-8') if isinstance(self.fragment, str) else self.fragment
         frag = '#'+as_unicode(quote(f)) if self.fragment else ''
         if self.path == basedir:
             return ''+frag
@@ -295,7 +324,7 @@ class Resource:
             rpath = relpath(self.path, basedir)
         except OSError:  # On windows path and basedir could be on different drives
             rpath = self.path
-        if isinstance(rpath, unicode_type):
+        if isinstance(rpath, str):
             rpath = rpath.encode('utf-8')
         return as_unicode(quote(rpath.replace(os.sep, '/')))+frag
 
@@ -306,7 +335,7 @@ class Resource:
         return self._basedir
 
     def __repr__(self):
-        return 'Resource(%s, %s)'%(repr(self.path), repr(self.href()))
+        return f'Resource({self.path!r}, {self.href()!r})'
 
 
 class ResourceCollection:
@@ -315,8 +344,7 @@ class ResourceCollection:
         self._resources = []
 
     def __iter__(self):
-        for r in self._resources:
-            yield r
+        yield from self._resources
 
     def __len__(self):
         return len(self._resources)
@@ -329,10 +357,10 @@ class ResourceCollection:
 
     def __str__(self):
         resources = map(repr, self)
-        return '[%s]'%', '.join(resources)
+        return '[{}]'.format(', '.join(resources))
 
     def __repr__(self):
-        return unicode_type(self)
+        return str(self)
 
     def append(self, resource):
         if not isinstance(resource, Resource):

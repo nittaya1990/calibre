@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
 
 
 __license__   = 'GPL v3'
@@ -9,42 +8,23 @@ __docformat__ = 'restructuredtext en'
 import os
 from functools import partial
 
-from qt.core import QModelIndex, QTimer
+from qt.core import QModelIndex
 
-from calibre.gui2 import error_dialog, Dispatcher, gprefs
-from calibre.gui2.tools import convert_single_ebook, convert_bulk_ebook
+from calibre.customize.ui import plugin_for_input_format, run_plugins_on_postconvert
+from calibre.gui2 import Dispatcher, error_dialog, gprefs
+from calibre.gui2.actions import InterfaceActionWithLibraryDrop
+from calibre.gui2.tools import convert_bulk_ebook, convert_single_ebook
 from calibre.utils.config import prefs, tweaks
-from calibre.gui2.actions import InterfaceAction
-from calibre.customize.ui import plugin_for_input_format
+from calibre.utils.localization import ngettext
 
 
-class ConvertAction(InterfaceAction):
+class ConvertAction(InterfaceActionWithLibraryDrop):
 
     name = 'Convert Books'
     action_spec = (_('Convert books'), 'convert.png', _('Convert books between different e-book formats'), _('C'))
     dont_add_to = frozenset(('context-menu-device',))
     action_type = 'current'
     action_add_menu = True
-
-    accepts_drops = True
-
-    def accept_enter_event(self, event, mime_data):
-        if mime_data.hasFormat("application/calibre+from_library"):
-            return True
-        return False
-
-    def accept_drag_move_event(self, event, mime_data):
-        if mime_data.hasFormat("application/calibre+from_library"):
-            return True
-        return False
-
-    def drop_event(self, event, mime_data):
-        mime = 'application/calibre+from_library'
-        if mime_data.hasFormat(mime):
-            self.dropped_ids = tuple(map(int, mime_data.data(mime).data().split()))
-            QTimer.singleShot(1, self.do_drop)
-            return True
-        return False
 
     def do_drop(self):
         book_ids = self.dropped_ids
@@ -91,7 +71,7 @@ class ConvertAction(InterfaceAction):
         of = prefs['output_format'].lower()
         for book_id in book_ids:
             fmts = db.formats(book_id, index_is_id=True)
-            fmts = set(x.lower() for x in fmts.split(',')) if fmts else set()
+            fmts = {x.lower() for x in fmts.split(',')} if fmts else set()
             if gprefs['auto_convert_same_fmt'] or of not in fmts:
                 needed.add(book_id)
         if needed:
@@ -150,7 +130,7 @@ class ConvertAction(InterfaceAction):
         if not rows or len(rows) == 0:
             d = error_dialog(self.gui, _('Cannot convert'),
                     _('No books selected'))
-            d.exec_()
+            d.exec()
             return None
         return [self.gui.library_view.model().db.id(r) for r in rows]
 
@@ -197,7 +177,7 @@ class ConvertAction(InterfaceAction):
             converted_func, extra_job_args=[], rows_are_ids=False):
         for func, args, desc, fmt, id, temp_files in jobs:
             func, _, parts = func.partition(':')
-            parts = {x for x in parts.split(';')}
+            parts = set(parts.split(';'))
             input_file = args[0]
             input_fmt = os.path.splitext(input_file)[1]
             core_usage = 1
@@ -275,6 +255,7 @@ class ConvertAction(InterfaceAction):
 
             with open(temp_files[-1].name, 'rb') as data:
                 db.add_format(book_id, fmt, data, index_is_id=True)
+            run_plugins_on_postconvert(db, book_id, fmt)
             self.gui.book_converted.emit(book_id, fmt)
             self.gui.status_bar.show_message(job.description + ' ' +
                     _('completed'), 2000)

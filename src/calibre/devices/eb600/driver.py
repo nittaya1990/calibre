@@ -1,6 +1,3 @@
-# -*- coding: utf-8 -*-
-
-
 __license__   = 'GPL v3'
 __copyright__ = '2009, Kovid Goyal <kovid@kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
@@ -10,9 +7,9 @@ Device driver for the Netronix EB600
 
 Windows PNP strings:
  ('USBSTOR\\DISK&VEN_NETRONIX&PROD_EBOOK&REV_062E\\6&1A275569&0&EB6001009
-2W00000&0', 2, u'F:\\')
+2W00000&0', 2, 'F:\\')
         ('USBSTOR\\DISK&VEN_NETRONIX&PROD_EBOOK&REV_062E\\6&1A275569&0&EB6001009
-2W00000&1', 3, u'G:\\')
+2W00000&1', 3, 'G:\\')
 
 '''
 import re
@@ -55,18 +52,26 @@ class EB600(USBMS):
 class TOLINO(EB600):
 
     name = 'Tolino Shine Device Interface'
-    gui_name = 'tolino shine'
-    description    = _('Communicate with the tolino shine and vision readers')
+    gui_name = 'Tolino Shine'
+    description    = _('Communicate with the Tolino Shine and Vision readers')
     FORMATS = ['epub', 'pdf', 'txt']
-    PRODUCT_ID  = EB600.PRODUCT_ID + [0x6033, 0x6052, 0x6053]
+
+    EPOS_PRODUCT_ID         = [0x6053]
+    VISION6_PRODUCT_ID      = [0x8000]
+    OTHER_TOLINO_PRODUCT_ID = [0x6033, 0x6052]
+    PRODUCT_ID = EB600.PRODUCT_ID + OTHER_TOLINO_PRODUCT_ID + EPOS_PRODUCT_ID + VISION6_PRODUCT_ID
+
+    KOBO_VENDOR_ID = [0x4173]   # Some newer Tolino devices have the Kobo Vendor ID. But, they still use different software.
+    VENDOR_ID   = EB600.VENDOR_ID + KOBO_VENDOR_ID
     BCD         = [0x226, 0x9999]
     VENDOR_NAME      = ['DEUTSCHE', 'LINUX']
     WINDOWS_MAIN_MEM = WINDOWS_CARD_A_MEM = ['_TELEKOMTOLINO', 'FILE-CD_GADGET']
+    EBOOK_DIR_MAIN = ''
 
     EXTRA_CUSTOMIZATION_MESSAGE = [
         _('Swap main and card A') +
         ':::' +
-        _('Check this box if the device\'s main memory is being seen as card a and the card '
+        _("Check this box if the device's main memory is being seen as card a and the card "
             'is being seen as main memory. Some tolino devices may need this option.'),
     ]
 
@@ -75,6 +80,10 @@ class TOLINO(EB600):
     ]
 
     OPT_SWAP_MEMORY = 0
+
+    def get_device_information(self, end_session=True):
+        self.set_device_name()
+        return super().get_device_information(end_session)
 
     # There are apparently two versions of this device, one with swapped
     # drives and one without, see https://bugs.launchpad.net/bugs/1240504
@@ -123,6 +132,21 @@ class TOLINO(EB600):
             return getattr(self, 'ebook_dir_for_upload', self.EBOOK_DIR_MAIN)
         return self.EBOOK_DIR_MAIN
 
+    def isEpos(self):
+        return self.detected_device.idProduct in self.EPOS_PRODUCT_ID
+
+    def isVision6(self):
+        return self.detected_device.idProduct in self.VISION6_PRODUCT_ID
+
+    def set_device_name(self):
+        device_name = self.gui_name
+        if self.isEpos():
+            device_name = 'tolino epos'
+        elif self.isVision6():
+            device_name = 'tolino vision 6'
+        self.__class__.gui_name = device_name
+        return device_name
+
 
 class COOL_ER(EB600):
 
@@ -160,7 +184,7 @@ class SHINEBOOK(EB600):
 class POCKETBOOK360(EB600):
 
     # Device info on OS X
-    # (8069L, 5768L, 272L, u'', u'', u'1.00')
+    # (8069L, 5768L, 272L,'', '', '1.00')
 
     name = 'PocketBook 360 Device Interface'
 
@@ -172,10 +196,10 @@ class POCKETBOOK360(EB600):
     FORMATS = ['epub', 'fb2', 'prc', 'mobi', 'pdf', 'djvu', 'rtf', 'chm', 'txt']
 
     VENDOR_NAME = ['PHILIPS', '__POCKET', 'POCKETBO']
-    WINDOWS_MAIN_MEM = WINDOWS_CARD_A_MEM = ['MASS_STORGE', 'BOOK_USB_STORAGE',
+    WINDOWS_MAIN_MEM = WINDOWS_CARD_A_MEM = ['MASS_STORAGE', 'BOOK_USB_STORAGE',
             'OK_POCKET_611_61', 'OK_POCKET_360+61']
 
-    OSX_MAIN_MEM = OSX_CARD_A_MEM = 'Philips Mass Storge Media'
+    OSX_MAIN_MEM = OSX_CARD_A_MEM = 'Philips Mass Storage Media'
     OSX_MAIN_MEM_VOL_PAT = re.compile(r'/Pocket')
 
     @classmethod
@@ -212,7 +236,7 @@ class ITALICA(EB600):
 
     name = 'Italica Device Interface'
     gui_name = 'Italica'
-    icon = I('devices/italica.png')
+    icon = 'devices/italica.png'
 
     FORMATS = ['epub', 'rtf', 'fb2', 'html', 'prc', 'mobi', 'pdf', 'txt']
 
@@ -269,7 +293,7 @@ class INVESBOOK(EB600):
 
 class BOOQ(EB600):
     name = 'Booq Device Interface'
-    gui_name = 'bq Reader'
+    gui_name = 'Bq Reader'
 
     FORMATS = ['epub', 'mobi', 'prc', 'fb2', 'pdf', 'doc', 'rtf', 'txt', 'html']
 
@@ -306,6 +330,7 @@ class ELONEX(EB600):
 class POCKETBOOK301(USBMS):
 
     name           = 'PocketBook 301 Device Interface'
+    gui_name = 'PocketBook 301'
     description    = _('Communicate with the PocketBook 301 Reader.')
     author         = 'Kovid Goyal'
     supported_platforms = ['windows', 'osx', 'linux']
@@ -324,7 +349,7 @@ class POCKETBOOK301(USBMS):
 class POCKETBOOK602(USBMS):
 
     name = 'PocketBook Pro 602/902 Device Interface'
-    gui_name = 'PocketBook'
+    gui_name = 'PocketBook Pro'
     description    = _('Communicate with the PocketBook 515/602/603/902/903/Pro 912 reader.')
     author         = 'Kovid Goyal'
     supported_platforms = ['windows', 'osx', 'linux']
@@ -347,6 +372,7 @@ class POCKETBOOK602(USBMS):
 class POCKETBOOK622(POCKETBOOK602):
 
     name = 'PocketBook 622 Device Interface'
+    gui_name = 'PocketBook 622'
     description    = _('Communicate with the PocketBook 622 and 623 readers.')
     EBOOK_DIR_MAIN = ''
 
@@ -361,6 +387,7 @@ class POCKETBOOK622(POCKETBOOK602):
 class POCKETBOOK360P(POCKETBOOK602):
 
     name = 'PocketBook 360+ Device Interface'
+    gui_name = 'PocketBook 360+'
     description    = _('Communicate with the PocketBook 360+ reader.')
     BCD         = [0x0323]
     EBOOK_DIR_MAIN = ''
@@ -372,7 +399,7 @@ class POCKETBOOK360P(POCKETBOOK602):
 class POCKETBOOK701(USBMS):
 
     name = 'PocketBook 701 Device Interface'
-    gui_name = 'PocketBook'
+    gui_name = 'PocketBook 701'
     description = _('Communicate with the PocketBook 701')
     author = _('Kovid Goyal')
 
@@ -403,8 +430,8 @@ class POCKETBOOK701(USBMS):
 
 class POCKETBOOK740(USBMS):
 
-    name = 'PocketBook 701 Device Interface'
-    gui_name = 'PocketBook'
+    name = 'PocketBook 740 Device Interface'
+    gui_name = 'PocketBook 740'
     description = _('Communicate with the PocketBook 740')
     supported_platforms = ['windows', 'osx', 'linux']
     FORMATS = ['epub', 'fb2', 'prc', 'mobi', 'pdf', 'djvu', 'rtf', 'chm',

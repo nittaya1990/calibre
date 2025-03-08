@@ -1,23 +1,36 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 # License: GPL v3 Copyright: 2013, Kovid Goyal <kovid at kovidgoyal.net>
 
 
 import json
 from operator import itemgetter
+
 from qt.core import (
-    QAction, QComboBox, QGridLayout, QHBoxLayout, QIcon, QInputDialog,
-    QItemSelectionModel, QLabel, QListWidget, QListWidgetItem, QPushButton, Qt,
-    QWidget, pyqtSignal
+    QAbstractItemView,
+    QAction,
+    QComboBox,
+    QGridLayout,
+    QHBoxLayout,
+    QIcon,
+    QInputDialog,
+    QItemSelectionModel,
+    QLabel,
+    QListWidget,
+    QListWidgetItem,
+    QPushButton,
+    Qt,
+    QWidget,
+    pyqtSignal,
 )
 
-from calibre.gui2 import choose_files, choose_save_file
+from calibre.gui2 import choose_files, choose_save_file, error_dialog
 from calibre.gui2.dialogs.confirm_delete import confirm
+from calibre.gui2.gestures import GestureManager
 from calibre.gui2.viewer.shortcuts import get_shortcut_for
 from calibre.gui2.viewer.web_view import vprefs
 from calibre.utils.date import EPOCH, utcnow
 from calibre.utils.icu import primary_sort_key
-from polyglot.builtins import range, unicode_type
+from calibre.utils.localization import _
 
 
 class BookmarksList(QListWidget):
@@ -30,10 +43,19 @@ class BookmarksList(QListWidget):
         self.setAlternatingRowColors(True)
         self.setStyleSheet('QListView::item { padding: 0.5ex }')
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.ActionsContextMenu)
-        self.ac_edit = ac = QAction(QIcon(I('edit_input.png')), _('Rename this bookmark'), self)
+        self.ac_edit = ac = QAction(QIcon.ic('edit_input.png'), _('Rename this bookmark'), self)
         self.addAction(ac)
-        self.ac_delete = ac = QAction(QIcon(I('trash.png')), _('Remove this bookmark'), self)
+        self.ac_delete = ac = QAction(QIcon.ic('trash.png'), _('Remove this bookmark'), self)
         self.addAction(ac)
+        self.gesture_manager = GestureManager(self)
+        self.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
+
+    def viewportEvent(self, ev):
+        if hasattr(self, 'gesture_manager'):
+            ret = self.gesture_manager.handle_event(ev)
+            if ret is not None:
+                return ret
+        return super().viewportEvent(ev)
 
     @property
     def current_non_removed_item(self):
@@ -99,7 +121,7 @@ class BookmarkManager(QWidget):
         l.addWidget(bl, 0, 0, 1, -1)
         bl.itemClicked.connect(self.item_activated)
         bl.bookmark_activated.connect(self.item_activated)
-        bl.changed.connect(lambda : self.edited.emit(self.get_bookmarks()))
+        bl.changed.connect(lambda: self.edited.emit(self.get_bookmarks()))
         bl.ac_edit.triggered.connect(self.edit_bookmark)
         bl.ac_delete.triggered.connect(self.delete_bookmark)
 
@@ -108,21 +130,21 @@ class BookmarkManager(QWidget):
         la.setWordWrap(True)
         l.addWidget(la, l.rowCount(), 0, 1, -1)
 
-        self.button_new = b = QPushButton(QIcon(I('bookmarks.png')), _('&New'), self)
+        self.button_new = b = QPushButton(QIcon.ic('bookmarks.png'), _('&New'), self)
         b.clicked.connect(self.create_requested)
         b.setToolTip(_('Create a new bookmark at the current location'))
         l.addWidget(b)
 
-        self.button_delete = b = QPushButton(QIcon(I('trash.png')), _('&Remove'), self)
+        self.button_delete = b = QPushButton(QIcon.ic('trash.png'), _('&Remove'), self)
         b.setToolTip(_('Remove the currently selected bookmark'))
         b.clicked.connect(self.delete_bookmark)
         l.addWidget(b, l.rowCount() - 1, 1)
 
-        self.button_prev = b = QPushButton(QIcon(I('back.png')), _('Pre&vious'), self)
+        self.button_prev = b = QPushButton(QIcon.ic('back.png'), _('Pre&vious'), self)
         b.clicked.connect(self.bookmarks_list.previous_bookmark)
         l.addWidget(b)
 
-        self.button_next = b = QPushButton(QIcon(I('forward.png')), _('Nex&t'), self)
+        self.button_next = b = QPushButton(QIcon.ic('forward.png'), _('Nex&t'), self)
         b.clicked.connect(self.bookmarks_list.next_bookmark)
         l.addWidget(b, l.rowCount() - 1, 1)
 
@@ -164,7 +186,8 @@ class BookmarkManager(QWidget):
     def set_bookmarks(self, bookmarks=()):
         csb = self.current_sort_by
         if csb in ('name', 'title'):
-            sk = lambda x: primary_sort_key(x['title'])
+            def sk(x):
+                return primary_sort_key(x['title'])
         elif csb == 'timestamp':
             sk = itemgetter('timestamp')
         else:
@@ -236,12 +259,12 @@ class BookmarkManager(QWidget):
         q = base
         while q in all_titles:
             c += 1
-            q = '{} #{}'.format(base, c)
+            q = f'{base} #{c}'
         return q
 
     def item_changed(self, item):
         self.bookmarks_list.blockSignals(True)
-        title = unicode_type(item.data(Qt.ItemDataRole.DisplayRole)) or _('Unknown')
+        title = str(item.data(Qt.ItemDataRole.DisplayRole)) or _('Unknown')
         title = self.uniqify_bookmark_title(title)
         item.setData(Qt.ItemDataRole.DisplayRole, title)
         item.setData(Qt.ItemDataRole.ToolTipRole, title)
@@ -291,7 +314,7 @@ class BookmarkManager(QWidget):
             data = json.dumps({'type': 'bookmarks', 'entries': bm}, indent=True)
             if not isinstance(data, bytes):
                 data = data.encode('utf-8')
-            with lopen(filename, 'wb') as fileobj:
+            with open(filename, 'wb') as fileobj:
                 fileobj.write(data)
 
     def import_bookmarks(self):
@@ -302,7 +325,7 @@ class BookmarkManager(QWidget):
         filename = files[0]
 
         imported = None
-        with lopen(filename, 'rb') as fileobj:
+        with open(filename, 'rb') as fileobj:
             imported = json.load(fileobj)
 
         def import_old_bookmarks(imported):
@@ -346,17 +369,20 @@ class BookmarkManager(QWidget):
         c = 0
         while True:
             c += 1
-            default_title = '{} #{}'.format(base_default_title, c)
+            default_title = f'{base_default_title} #{c}'
             if default_title not in all_titles:
                 break
 
         title, ok = QInputDialog.getText(self, _('Add bookmark'),
                 _('Enter title for bookmark:'), text=pos_data.get('selected_text') or default_title)
-        title = unicode_type(title).strip()
+        title = str(title).strip()
         if not ok or not title:
             return
         title = self.uniqify_bookmark_title(title)
         cfi = (pos_data.get('selection_bounds') or {}).get('start') or pos_data['cfi']
+        if not cfi:
+            error_dialog(self, _('Failed to bookmark'), _('Could not calculate position in book'), show=True)
+            return
         bm = {
             'title': title,
             'pos_type': 'epubcfi',

@@ -8,13 +8,13 @@ __copyright__ = '2011, John Schember <john@nachtimwald.com>'
 __docformat__ = 'restructuredtext en'
 
 from contextlib import closing
+
 try:
     from urllib.parse import quote_plus
 except ImportError:
     from urllib import quote_plus
 
 from lxml import html
-
 from qt.core import QUrl
 
 from calibre import browser, url_slash_cleaner
@@ -36,7 +36,7 @@ class WeightlessBooksStore(BasicStoreConfig, StorePlugin):
             d = WebStoreDialog(self.gui, url, parent, detail_item)
             d.setWindowTitle(self.name)
             d.set_tags(self.config.get('tags', ''))
-            d.exec_()
+            d.exec()
 
     def search(self, query, max_results=10, timeout=60):
         url = 'http://weightlessbooks.com/?s=' + quote_plus(query)

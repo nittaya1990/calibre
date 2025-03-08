@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 # License: GPLv3 Copyright: 2018, Kovid Goyal <kovid at kovidgoyal.net>
 
 
@@ -13,7 +12,7 @@ from calibre.constants import cache_dir, iswindows
 from calibre.ptempfile import remove_dir
 from calibre.utils.monotonic import monotonic
 
-TDIR_LOCK = u'tdir-lock'
+TDIR_LOCK = 'tdir-lock'
 
 if iswindows:
     from calibre.utils.lock import windows_open
@@ -32,16 +31,17 @@ if iswindows:
         try:
             with windows_open(os.path.join(path, TDIR_LOCK)):
                 pass
-        except EnvironmentError:
+        except OSError:
             return True
         return False
 else:
     import fcntl
+
     from calibre.utils.ipc import eintr_retry_call
 
     def lock_tdir(path):
         lf = os.path.join(path, TDIR_LOCK)
-        f = lopen(lf, 'w')
+        f = open(lf, 'w')
         eintr_retry_call(fcntl.lockf, f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         return f
 
@@ -56,12 +56,12 @@ else:
 
     def is_tdir_locked(path):
         lf = os.path.join(path, TDIR_LOCK)
-        f = lopen(lf, 'w')
+        f = open(lf, 'w')
         try:
             eintr_retry_call(fcntl.lockf, f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
             eintr_retry_call(fcntl.lockf, f.fileno(), fcntl.LOCK_UN)
             return False
-        except EnvironmentError:
+        except OSError:
             return True
         finally:
             f.close()
@@ -70,7 +70,7 @@ else:
 def tdirs_in(b):
     try:
         tdirs = os.listdir(b)
-    except EnvironmentError as e:
+    except OSError as e:
         if e.errno != errno.ENOENT:
             raise
         tdirs = ()
@@ -105,7 +105,7 @@ def tdir_in_cache(base):
     b = os.path.join(os.path.realpath(cache_dir()), base)
     try:
         os.makedirs(b)
-    except EnvironmentError as e:
+    except OSError as e:
         if e.errno != errno.EEXIST:
             raise
     global_lock = retry_lock_tdir(b)

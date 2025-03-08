@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 
 
 __license__ = 'GPL v3'
@@ -9,24 +8,38 @@ import os
 import uuid
 from contextlib import suppress
 from functools import partial
-from qt.core import (
-    QAction, QBuffer, QByteArray, QIcon, QInputDialog, QKeySequence, QLabel,
-    QListWidget, QListWidgetItem, QPixmap, QSize, QStackedLayout, Qt, QVBoxLayout,
-    QWidget, pyqtSignal, QIODevice, QDialogButtonBox
-)
 from threading import Thread
+
+from qt.core import (
+    QAction,
+    QBuffer,
+    QByteArray,
+    QDialogButtonBox,
+    QIcon,
+    QInputDialog,
+    QIODevice,
+    QKeySequence,
+    QLabel,
+    QListWidget,
+    QListWidgetItem,
+    QPixmap,
+    QSize,
+    QStackedLayout,
+    Qt,
+    QVBoxLayout,
+    QWidget,
+    pyqtSignal,
+)
 
 from calibre import as_unicode
 from calibre.constants import ismacos, iswindows
-from calibre.gui2 import (
-    Application, choose_files, choose_images, choose_osx_app, elided_text,
-    error_dialog, sanitize_env_vars
-)
+from calibre.gui2 import Application, choose_files, choose_images, choose_osx_app, elided_text, error_dialog, sanitize_env_vars
 from calibre.gui2.progress_indicator import ProgressIndicator
 from calibre.gui2.widgets2 import Dialog
 from calibre.utils.config import JSONConfig
 from calibre.utils.icu import numeric_sort_key as sort_key
-from polyglot.builtins import iteritems, range, string_or_bytes, unicode_type
+from calibre.utils.resources import get_image_path as I
+from polyglot.builtins import iteritems, string_or_bytes
 
 ENTRY_ROLE = Qt.ItemDataRole.UserRole
 
@@ -50,7 +63,7 @@ def run_program(entry, path, parent):
         return error_dialog(
             parent, _('Failed to run'), _(
             'Failed to run program, click "Show details" for more information'),
-            det_msg='Command line: %r\n%s' %(cmdline, as_unicode(err)))
+            det_msg=f'Command line: {cmdline!r}\n{as_unicode(err)}')
     t = Thread(name='WaitProgram', target=process.wait)
     t.daemon = True
     t.start()
@@ -65,12 +78,12 @@ def entry_to_icon_text(entry, only_text=False):
             from base64 import standard_b64decode
             data = bytearray(standard_b64decode(data))
     if not isinstance(data, (bytearray, bytes)):
-        icon = QIcon(I('blank.png'))
+        icon = QIcon.ic('blank.png')
     else:
         pmap = QPixmap()
         pmap.loadFromData(bytes(data))
         if pmap.isNull():
-            icon = QIcon(I('blank.png'))
+            icon = QIcon.ic('blank.png')
         else:
             icon = QIcon(pmap)
     return icon, entry.get('name', entry.get('Name')) or _('Unknown')
@@ -80,12 +93,8 @@ if iswindows:
     # Windows {{{
     import subprocess
 
-    from calibre.utils.open_with.windows import (
-        load_icon_for_cmdline, load_icon_resource
-    )
-    from calibre.utils.winreg.default_programs import (
-        find_programs, friendly_app_name
-    )
+    from calibre.utils.open_with.windows import load_icon_for_cmdline, load_icon_resource
+    from calibre.utils.winreg.default_programs import find_programs, friendly_app_name
     from calibre_extensions import winutil
     oprefs = JSONConfig('windows_open_with')
 
@@ -143,7 +152,7 @@ if iswindows:
                 return
             qans = ans.replace('"', r'\"')
             name = friendly_app_name(exe=ans) or os.path.splitext(os.path.basename(ans))[0]
-            return {'cmdline':'"%s" "%%1"' % qans, 'name':name}
+            return {'cmdline':f'"{qans}" "%1"', 'name':name}
 
     def entry_to_cmdline(entry, path):
         cmdline = entry['cmdline']
@@ -152,7 +161,7 @@ if iswindows:
 
     del run_program
 
-    def run_program(entry, path, parent):  # noqa
+    def run_program(entry, path, parent):
         import re
         cmdline = entry_to_cmdline(entry, path)
         flags = subprocess.CREATE_DEFAULT_ERROR_MODE | subprocess.CREATE_NEW_PROCESS_GROUP
@@ -162,7 +171,7 @@ if iswindows:
         else:
             flags |= subprocess.DETACHED_PROCESS
             console = ''
-        print('Running Open With commandline%s:' % console, repr(entry['cmdline']), ' |==> ', repr(cmdline))
+        print(f'Running Open With commandline{console}:', repr(entry['cmdline']), ' |==> ', repr(cmdline))
         try:
             with sanitize_env_vars():
                 winutil.run_cmdline(cmdline, flags, 2000)
@@ -170,15 +179,13 @@ if iswindows:
             return error_dialog(
                 parent, _('Failed to run'), _(
                 'Failed to run program, click "Show details" for more information'),
-                det_msg='Command line: %r\n%s' %(cmdline, as_unicode(err)))
+                det_msg=f'Command line: {cmdline!r}\n{as_unicode(err)}')
     # }}}
 
 elif ismacos:
     # macOS {{{
     oprefs = JSONConfig('osx_open_with')
-    from calibre.utils.open_with.osx import (
-        entry_to_cmdline, find_programs, get_bundle_data, get_icon
-    )
+    from calibre.utils.open_with.osx import entry_to_cmdline, find_programs, get_bundle_data, get_icon
 
     def entry_sort_key(entry):
         return sort_key(entry.get('name') or '')
@@ -226,9 +233,7 @@ elif ismacos:
 else:
     # XDG {{{
     oprefs = JSONConfig('xdg_open_with')
-    from calibre.utils.open_with.linux import (
-        entry_sort_key, entry_to_cmdline, find_programs
-    )
+    from calibre.utils.open_with.linux import entry_sort_key, entry_to_cmdline, find_programs
 
     def change_name_in_entry(entry, newname):
         entry['Name'] = newname
@@ -358,11 +363,11 @@ def choose_program(file_type='jpeg', parent=None, prefs=oprefs):
     oft = file_type = file_type.lower()
     file_type = {'cover_image':'jpeg'}.get(oft, oft)
     d = ChooseProgram(file_type, parent, prefs)
-    d.exec_()
+    d.exec()
     entry = choose_manually(file_type, parent) if d.select_manually else d.selected_entry
     if entry is not None:
         entry = finalize_entry(entry)
-        entry['uuid'] = unicode_type(uuid.uuid4())
+        entry['uuid'] = str(uuid.uuid4())
         entries = oprefs['entries']
         if oft not in entries:
             entries[oft] = []
@@ -402,11 +407,11 @@ class EditPrograms(Dialog):  # {{{
 
         self.bb.clear(), self.bb.setStandardButtons(QDialogButtonBox.StandardButton.Close)
         self.rb = b = self.bb.addButton(_('&Remove'), QDialogButtonBox.ButtonRole.ActionRole)
-        b.clicked.connect(self.remove), b.setIcon(QIcon(I('list_remove.png')))
+        b.clicked.connect(self.remove), b.setIcon(QIcon.ic('list_remove.png'))
         self.cb = b = self.bb.addButton(_('Change &icon'), QDialogButtonBox.ButtonRole.ActionRole)
-        b.clicked.connect(self.change_icon), b.setIcon(QIcon(I('icon_choose.png')))
+        b.clicked.connect(self.change_icon), b.setIcon(QIcon.ic('icon_choose.png'))
         self.cb = b = self.bb.addButton(_('Change &name'), QDialogButtonBox.ButtonRole.ActionRole)
-        b.clicked.connect(self.change_name), b.setIcon(QIcon(I('modified.png')))
+        b.clicked.connect(self.change_name), b.setIcon(QIcon.ic('modified.png'))
         l.addWidget(self.bb)
 
         self.populate()
@@ -471,7 +476,7 @@ class EditPrograms(Dialog):  # {{{
 
 def edit_programs(file_type, parent):
     d = EditPrograms(file_type, parent)
-    d.exec_()
+    d.exec()
 # }}}
 
 

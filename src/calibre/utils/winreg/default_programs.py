@@ -1,20 +1,22 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 
 
 __license__ = 'GPL v3'
 __copyright__ = '2015, Kovid Goyal <kovid at kovidgoyal.net>'
 
-import os, sys, time, traceback
+import os
+import sys
+import time
+import traceback
 from threading import Thread
 
-
 from calibre import guess_type, prints
-from calibre.constants import is64bit, isportable, isfrozen, __version__, DEBUG
-from calibre.utils.winreg.lib import Key, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE
+from calibre.constants import DEBUG, __version__, isfrozen, isportable
+from calibre.utils.localization import _
 from calibre.utils.lock import singleinstance
-from polyglot.builtins import iteritems, itervalues
+from calibre.utils.winreg.lib import HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, Key
 from calibre_extensions import winutil
+from polyglot.builtins import iteritems, itervalues
 
 # See https://msdn.microsoft.com/en-us/library/windows/desktop/cc144154(v=vs.85).aspx
 
@@ -24,25 +26,25 @@ def default_programs():
         'calibre.exe': {
             'icon_id':'main_icon',
             'description': _('The main calibre program, used to manage your collection of e-books'),
-            'capability_name': 'calibre' + ('64bit' if is64bit else ''),
-            'name': 'calibre' + (' 64-bit' if is64bit else ''),
-            'assoc_name': 'calibre' + ('64bit' if is64bit else ''),
+            'capability_name': 'calibre64bit',
+            'name': 'calibre 64-bit',
+            'assoc_name': 'calibre64bit',
         },
 
         'ebook-edit.exe': {
             'icon_id':'editor_icon',
             'description': _('The calibre E-book editor. It can be used to edit common e-book formats.'),
-            'capability_name': 'Editor' + ('64bit' if is64bit else ''),
-            'name': 'calibre Editor' + (' 64-bit' if is64bit else ''),
-            'assoc_name': 'calibreEditor' + ('64bit' if is64bit else ''),
+            'capability_name': 'Editor64bit',
+            'name': 'calibre Editor 64-bit',
+            'assoc_name': 'calibreEditor64bit',
         },
 
         'ebook-viewer.exe': {
             'icon_id':'viewer_icon',
             'description': _('The calibre E-book viewer. It can view most known e-book formats.'),
-            'capability_name': 'Viewer' + ('64bit' if is64bit else ''),
-            'name': 'calibre Viewer' + (' 64-bit' if is64bit else ''),
-            'assoc_name': 'calibreViewer' + ('64bit' if is64bit else ''),
+            'capability_name': 'Viewer64bit',
+            'name': 'calibre Viewer 64-bit',
+            'assoc_name': 'calibreViewer64bit',
         },
     }
 
@@ -50,6 +52,7 @@ def default_programs():
 def extensions(basename):
     if basename == 'calibre.exe':
         from calibre.ebooks import BOOK_EXTENSIONS
+
         # We remove rar and zip as they interfere with 7-zip associations
         # https://www.mobileread.com/forums/showthread.php?t=256459
         return set(BOOK_EXTENSIONS) - {'rar', 'zip'}
@@ -57,8 +60,8 @@ def extensions(basename):
         from calibre.customize.ui import all_input_formats
         return set(all_input_formats())
     if basename == 'ebook-edit.exe':
-        from calibre.ebooks.oeb.polish.main import SUPPORTED
         from calibre.ebooks.oeb.polish.import_book import IMPORTABLE
+        from calibre.ebooks.oeb.polish.main import SUPPORTED
         return SUPPORTED | IMPORTABLE
 
 
@@ -78,28 +81,28 @@ def check_allowed():
 
 
 def create_prog_id(ext, prog_id, ext_map, exe):
-    with Key(r'Software\Classes\%s' % prog_id) as key:
+    with Key(rf'Software\Classes\{prog_id}') as key:
         type_name = _('%s Document') % ext.upper()
         key.set(value=type_name)
         key.set('FriendlyTypeName', type_name)
         key.set('PerceivedType', 'Document')
         key.set(sub_key='DefaultIcon', value=exe+',0')
-        key.set_default_value(r'shell\open\command', '"%s" "%%1"' % exe)
+        key.set_default_value(r'shell\open\command', f'"{exe}" "%1"')
         # contrary to the msdn docs, this key prevents calibre programs
         # from appearing in the initial open with list, see
         # https://www.mobileread.com/forums/showthread.php?t=313668
         # key.set('AllowSilentDefaultTakeOver')
 
-    with Key(r'Software\Classes\.%s\OpenWithProgIDs' % ext) as key:
+    with Key(rf'Software\Classes\.{ext}\OpenWithProgIDs') as key:
         key.set(prog_id)
 
 
 def progid_name(assoc_name, ext):
-    return '%s.AssocFile.%s' % (assoc_name, ext.upper())
+    return f'{assoc_name}.AssocFile.{ext.upper()}'
 
 
 def cap_path(data):
-    return r'Software\calibre\%s\Capabilities' % data['capability_name']
+    return r'Software\calibre\{}\Capabilities'.format(data['capability_name'])
 
 
 def register():
@@ -116,8 +119,8 @@ def register():
         with Key(capabilities_path) as key:
             for k, v in iteritems({'ApplicationDescription':'description', 'ApplicationName':'name'}):
                 key.set(k, data[v])
-            key.set('ApplicationIcon', '%s,0' % exe)
-            key.set_default_value(r'shell\open\command', '"%s" "%%1"' % exe)
+            key.set('ApplicationIcon', f'{exe},0')
+            key.set_default_value(r'shell\open\command', f'"{exe}" "%1"')
 
             with Key('FileAssociations', root=key) as fak, Key('MimeAssociations', root=key) as mak:
                 # previous_associations = set(fak.values())
@@ -146,7 +149,7 @@ def unregister():
         with Key(parent) as key:
             key.delete_tree(sk)
         for ext, prog_id in iteritems(prog_id_map):
-            with Key(r'Software\Classes\.%s\OpenWithProgIDs' % ext) as key:
+            with Key(rf'Software\Classes\.{ext}\OpenWithProgIDs') as key:
                 key.delete_value(prog_id)
             with Key(r'Software\Classes') as key:
                 key.delete_tree(prog_id)
@@ -180,7 +183,7 @@ class Register(Thread):
                     prints('Registering with default programs...')
                 register()
                 if DEBUG:
-                    prints('Registered with default programs in %.1f seconds' % (time.monotonic() - st))
+                    prints(f'Registered with default programs in {time.monotonic()-st:.1f} seconds')
 
     def __enter__(self):
         return self
@@ -210,7 +213,7 @@ def get_prog_id_map(base, key_path):
 
 def get_open_data(base, prog_id):
     try:
-        k = Key(open_at=r'Software\Classes\%s' % prog_id, root=base)
+        k = Key(open_at=rf'Software\Classes\{prog_id}', root=base)
     except OSError as err:
         if err.winerror == winutil.ERROR_FILE_NOT_FOUND:
             return None, None, None
@@ -271,7 +274,7 @@ def find_programs(extensions):
     # Default Programs (for example, FoxIt PDF reader)
     for ext in extensions:
         try:
-            k = Key(open_at=r'Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\.%s\OpenWithProgIDs' % ext, root=HKEY_CURRENT_USER)
+            k = Key(open_at=rf'Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\.{ext}\OpenWithProgIDs', root=HKEY_CURRENT_USER)
         except OSError as err:
             if err.winerror == winutil.ERROR_FILE_NOT_FOUND:
                 continue

@@ -1,19 +1,21 @@
-
-
 __license__   = 'GPL v3'
 __copyright__ = '2008, Kovid Goyal <kovid at kovidgoyal.net>'
 ''''''
 
-import sys, array, os, re, codecs, logging
+import array
+import codecs
+import logging
+import os
+import re
+import sys
 from itertools import chain
 
 from calibre import setup_cli_handlers
+from calibre.ebooks.lrf.meta import LRFMetaFile
+from calibre.ebooks.lrf.objects import BookAttr, Font, PageTree, StyleObject, Text, TOCObject, get_object, ruby_tags
 from calibre.utils.config import OptionParser
 from calibre.utils.filenames import ascii_filename
-from calibre.ebooks.lrf.meta import LRFMetaFile
-from calibre.ebooks.lrf.objects import get_object, PageTree, StyleObject, \
-                                         Font, Text, TOCObject, BookAttr, ruby_tags
-from polyglot.builtins import unicode_type, itervalues
+from polyglot.builtins import itervalues
 
 
 class LRFDocument(LRFMetaFile):
@@ -47,8 +49,8 @@ class LRFDocument(LRFMetaFile):
     def _parse_objects(self):
         self.objects = {}
         self._file.seek(self.object_index_offset)
-        obj_array = array.array("I", self._file.read(4*4*self.number_of_objects))
-        if ord(array.array("i",[1]).tobytes()[0:1])==0:  # big-endian
+        obj_array = array.array('I', self._file.read(4*4*self.number_of_objects))
+        if ord(array.array('i',[1]).tobytes()[0:1])==0:  # big-endian
             obj_array.byteswap()
         for i in range(self.number_of_objects):
             if not self.keep_parsing:
@@ -76,8 +78,7 @@ class LRFDocument(LRFMetaFile):
                     self.ruby_tags[attr] = getattr(obj, attr)
 
     def __iter__(self):
-        for pt in self.page_trees:
-            yield pt
+        yield from self.page_trees
 
     def write_files(self):
         for obj in chain(itervalues(self.image_map), itervalues(self.font_map)):
@@ -86,25 +87,25 @@ class LRFDocument(LRFMetaFile):
 
     def to_xml(self, write_files=True):
         bookinfo = '<BookInformation>\n<Info version="1.1">\n<BookInfo>\n'
-        bookinfo += '<Title reading="%s">%s</Title>\n'%(self.metadata.title_reading, self.metadata.title)
-        bookinfo += '<Author reading="%s">%s</Author>\n'%(self.metadata.author_reading, self.metadata.author)
-        bookinfo += '<BookID>%s</BookID>\n'%(self.metadata.book_id,)
-        bookinfo += '<Publisher reading="">%s</Publisher>\n'%(self.metadata.publisher,)
-        bookinfo += '<Label reading="">%s</Label>\n'%(self.metadata.label,)
-        bookinfo += '<Category reading="">%s</Category>\n'%(self.metadata.category,)
-        bookinfo += '<Classification reading="">%s</Classification>\n'%(self.metadata.classification,)
-        bookinfo += '<FreeText reading="">%s</FreeText>\n</BookInfo>\n<DocInfo>\n'%(self.metadata.free_text,)
+        bookinfo += f'<Title reading="{self.metadata.title_reading}">{self.metadata.title}</Title>\n'
+        bookinfo += f'<Author reading="{self.metadata.author_reading}">{self.metadata.author}</Author>\n'
+        bookinfo += f'<BookID>{self.metadata.book_id}</BookID>\n'
+        bookinfo += f'<Publisher reading="">{self.metadata.publisher}</Publisher>\n'
+        bookinfo += f'<Label reading="">{self.metadata.label}</Label>\n'
+        bookinfo += f'<Category reading="">{self.metadata.category}</Category>\n'
+        bookinfo += f'<Classification reading="">{self.metadata.classification}</Classification>\n'
+        bookinfo += f'<FreeText reading="">{self.metadata.free_text}</FreeText>\n</BookInfo>\n<DocInfo>\n'
         th = self.doc_info.thumbnail
         if th:
             prefix = ascii_filename(self.metadata.title)
-            bookinfo += '<CThumbnail file="%s" />\n'%(prefix+'_thumbnail.'+self.doc_info.thumbnail_extension,)
+            bookinfo += '<CThumbnail file="{}" />\n'.format(prefix+'_thumbnail.'+self.doc_info.thumbnail_extension)
             if write_files:
                 with open(prefix+'_thumbnail.'+self.doc_info.thumbnail_extension, 'wb') as f:
                     f.write(th)
-        bookinfo += '<Language reading="">%s</Language>\n'%(self.doc_info.language,)
-        bookinfo += '<Creator reading="">%s</Creator>\n'%(self.doc_info.creator,)
-        bookinfo += '<Producer reading="">%s</Producer>\n'%(self.doc_info.producer,)
-        bookinfo += '<SumPage>%s</SumPage>\n</DocInfo>\n</Info>\n%s</BookInformation>\n'%(self.doc_info.page,self.toc)
+        bookinfo += f'<Language reading="">{self.doc_info.language}</Language>\n'
+        bookinfo += f'<Creator reading="">{self.doc_info.creator}</Creator>\n'
+        bookinfo += f'<Producer reading="">{self.doc_info.producer}</Producer>\n'
+        bookinfo += f'<SumPage>{self.doc_info.page}</SumPage>\n</DocInfo>\n</Info>\n{self.toc}</BookInformation>\n'
         pages = ''
         done_main = False
         pt_id = -1
@@ -115,10 +116,10 @@ class LRFDocument(LRFMetaFile):
                 close = '</Main>\n'
                 pt_id = page_tree.id
             else:
-                pages += '<PageTree objid="%d">\n'%(page_tree.id,)
+                pages += f'<PageTree objid="{page_tree.id}">\n'
                 close = '</PageTree>\n'
             for page in page_tree:
-                pages += unicode_type(page)
+                pages += str(page)
             pages += close
         traversed_objects = [int(i) for i in re.findall(r'objid="(\w+)"', pages)] + [pt_id]
 
@@ -131,9 +132,9 @@ class LRFDocument(LRFMetaFile):
             if isinstance(obj, (Font, Text, TOCObject)):
                 continue
             if isinstance(obj, StyleObject):
-                styles += unicode_type(obj)
+                styles += str(obj)
             else:
-                objects += unicode_type(obj)
+                objects += str(obj)
         styles += '</Style>\n'
         objects += '</Objects>\n'
         if write_files:
@@ -162,7 +163,7 @@ def main(args=sys.argv, logger=None):
         parser.print_help()
         return 1
     if opts.out is None:
-        opts.out = os.path.join(os.path.dirname(args[1]), os.path.splitext(os.path.basename(args[1]))[0]+".lrs")
+        opts.out = os.path.join(os.path.dirname(args[1]), os.path.splitext(os.path.basename(args[1]))[0]+'.lrs')
     logger.info(_('Parsing LRF...'))
     d = LRFDocument(open(args[1], 'rb'))
     d.parse()

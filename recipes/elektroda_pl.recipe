@@ -1,5 +1,5 @@
-from calibre.web.feeds.news import BasicNewsRecipe
 from calibre.ebooks.BeautifulSoup import BeautifulSoup
+from calibre.web.feeds.news import BasicNewsRecipe
 
 
 class Elektroda(BasicNewsRecipe):
@@ -29,5 +29,5 @@ class Elektroda(BasicNewsRecipe):
         feeds = BasicNewsRecipe.parse_feeds(self)
         for feed in feeds:
             for article in feed.articles[:]:
-                article.title = article.title[article.title.find("::") + 3:]
+                article.title = article.title[article.title.find('::') + 3:]
         return feeds

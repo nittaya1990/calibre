@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
 
 
 __license__   = 'GPL v3'
@@ -12,8 +11,8 @@ from functools import partial
 from qt.core import Qt
 
 from calibre.gui2 import Dispatcher
-from calibre.gui2.tools import fetch_scheduled_recipe
 from calibre.gui2.actions import InterfaceAction
+from calibre.gui2.tools import fetch_scheduled_recipe
 
 
 class FetchNewsAction(InterfaceAction):
@@ -29,16 +28,13 @@ class FetchNewsAction(InterfaceAction):
     def genesis(self):
         self.conversion_jobs = {}
 
-    def init_scheduler(self, db):
+    def init_scheduler(self):
         from calibre.gui2.dialogs.scheduler import Scheduler
-        self.scheduler = Scheduler(self.gui, db)
+        self.scheduler = Scheduler(self.gui)
         self.scheduler.start_recipe_fetch.connect(self.download_scheduled_recipe, type=Qt.ConnectionType.QueuedConnection)
         self.qaction.setMenu(self.scheduler.news_menu)
         self.qaction.triggered.connect(
                 self.scheduler.show_dialog)
-
-    def library_changed(self, db):
-        self.scheduler.database_changed(db)
 
     def initialization_complete(self):
         self.connect_scheduler()

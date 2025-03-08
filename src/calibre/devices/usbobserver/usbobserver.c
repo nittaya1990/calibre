@@ -20,6 +20,8 @@
  */
 
 #define _DARWIN_USE_64_BIT_INODE
+#define PY_SSIZE_T_CLEAN
+
 #include <Python.h>
 
 #include <stdio.h>
@@ -103,7 +105,7 @@ usbobserver_get_usb_devices(PyObject *self, PyObject *args) {
     }
 
     io_iterator_t iter;
-    kr = IOServiceGetMatchingServices(kIOMasterPortDefault, matchingDict, &iter);
+    kr = IOServiceGetMatchingServices(kIOMainPortDefault, matchingDict, &iter);
     if (KERN_SUCCESS != kr) {
             printf("IOServiceGetMatchingServices returned 0x%08x\n", kr);
             PyErr_SetString(PyExc_RuntimeError, "Could not run IO Matching");
@@ -215,7 +217,7 @@ usbobserver_get_usb_drives(PyObject *self, PyObject *args) {
     ans = PyList_New(0);
     if (ans == NULL) return PyErr_NoMemory();
 
-    kr = IOServiceGetMatchingServices(kIOMasterPortDefault, matchingDict, &iter);
+    kr = IOServiceGetMatchingServices(kIOMainPortDefault, matchingDict, &iter);
     if (KERN_SUCCESS != kr) {
             printf("IOServiceGetMatchingServices returned 0x%08x\n", kr);
             PyErr_SetString(PyExc_RuntimeError, "Could not run IO Matching");
@@ -281,7 +283,11 @@ usbobserver_get_mounted_filesystems(PyObject *self, PyObject *args) {
 
     for (i = 0 ; i < num; i++) {
         val = PyUnicode_FromString(buf[i].f_mntonname);
-		if (!val) { NUKE(ans); goto end; }
+		if (!val) {
+            PyErr_Clear();
+            val = PyUnicode_DecodeLocale(buf[i].f_mntonname, "surrogateescape");
+            if (!val) { NUKE(ans); goto end; }
+        }
 		if (PyDict_SetItemString(ans, buf[i].f_mntfromname, val) != 0) { NUKE(ans); NUKE(val); goto end; }
         NUKE(val);
     }
@@ -370,7 +376,7 @@ usbobserver_has_mtp_interface(io_service_t usb_device) {
 
 static PyObject*
 usbobserver_is_mtp(PyObject *self, PyObject * args) {
-    int serial_sz = 0;
+    Py_ssize_t serial_sz = 0;
     long vendor_id = 0, product_id = 0, bcd = 0;
     char *serial = NULL, buf[500] = {0};
     CFNumberRef num = NULL;
@@ -405,7 +411,7 @@ usbobserver_is_mtp(PyObject *self, PyObject * args) {
     CFDictionarySetValue(matching_dict, CFSTR(kUSBDeviceReleaseNumber), num);
     CFRelease(num); num = NULL;
 
-    kr = IOServiceGetMatchingServices(kIOMasterPortDefault, matching_dict, &iter);
+    kr = IOServiceGetMatchingServices(kIOMainPortDefault, matching_dict, &iter);
     matching_dict = NULL;
     if (KERN_SUCCESS != kr) {
         PyErr_Format(PyExc_RuntimeError, "IOServiceGetMatchingServices returned 0x%x", kr);

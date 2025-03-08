@@ -11,6 +11,7 @@ try:
 except ImportError:
     from urllib import quote_plus
 
+from css_selectors import Select
 from html5_parser import parse
 from lxml import etree
 
@@ -19,7 +20,6 @@ from calibre.gui2 import open_url
 from calibre.gui2.store import StorePlugin
 from calibre.gui2.store.search_result import SearchResult
 from calibre.gui2.store.web_store_dialog import WebStoreDialog
-from css_selectors import Select
 
 
 def absurl(href):
@@ -55,7 +55,7 @@ def search(query, max_results=10, timeout=60, write_raw_to=None):
         try:
             s.author = etree.tostring(next(CSSSelect('span.subtitle', li)), method='text', encoding='unicode').strip()
         except StopIteration:
-            s.author = ""
+            s.author = ''
         for img in CSSSelect('img.cover-thumb', li):
             s.cover_url = absurl(img.get('src'))
             break
@@ -95,7 +95,7 @@ class GutenbergStore(StorePlugin):
             return
         d = WebStoreDialog(self.gui, url, parent, detail_item)
         d.setWindowTitle(self.name)
-        d.exec_()
+        d.exec()
 
 
 if __name__ == '__main__':

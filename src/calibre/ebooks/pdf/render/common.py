@@ -1,19 +1,20 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:fdm=marker:ai
 
 
 __license__   = 'GPL v3'
 __copyright__ = '2012, Kovid Goyal <kovid at kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
 
-import codecs, zlib, numbers
-from io import BytesIO
+import codecs
+import numbers
+import zlib
 from datetime import datetime
+from io import BytesIO
 
 from calibre.utils.logging import default_log
-from polyglot.builtins import iteritems, unicode_type, codepoint_to_chr
-from polyglot.binary import as_hex_bytes
 from calibre_extensions.speedup import pdf_float
+from polyglot.binary import as_hex_bytes
+from polyglot.builtins import codepoint_to_chr, iteritems
 
 EOL = b'\n'
 
@@ -57,7 +58,7 @@ PAPER_SIZES = {k:globals()[k.upper()] for k in ('a0 a1 a2 a3 a4 a5 a6 b0 b1 b2'
 def fmtnum(o):
     if isinstance(o, float):
         return pdf_float(o)
-    return unicode_type(o)
+    return str(o)
 
 
 def serialize(o, stream):
@@ -67,31 +68,31 @@ def serialize(o, stream):
         # Must check bool before int as bools are subclasses of int
         stream.write_raw(b'true' if o else b'false')
     elif isinstance(o, numbers.Integral):
-        stream.write_raw(unicode_type(o).encode('ascii'))
+        stream.write_raw(str(o).encode('ascii'))
     elif hasattr(o, 'pdf_serialize'):
         o.pdf_serialize(stream)
     elif o is None:
         stream.write_raw(b'null')
     elif isinstance(o, datetime):
-        val = o.strftime("D:%Y%m%d%H%M%%02d%z")%min(59, o.second)
+        val = o.strftime('D:%Y%m%d%H%M%%02d%z')%min(59, o.second)
         if datetime.tzinfo is not None:
-            val = "(%s'%s')"%(val[:-2], val[-2:])
+            val = f"({val[:-2]}'{val[-2:]}')"
         stream.write(val.encode('ascii'))
     else:
-        raise ValueError('Unknown object: %r'%o)
+        raise ValueError(f'Unknown object: {o!r}')
 
 
-class Name(unicode_type):
+class Name(str):
 
     def pdf_serialize(self, stream):
         raw = self.encode('ascii')
         if len(raw) > 126:
-            raise ValueError('Name too long: %r'%self)
+            raise ValueError(f'Name too long: {self!r}')
         raw = bytearray(raw)
         sharp = ord(b'#')
         buf = (
             codepoint_to_chr(x).encode('ascii') if 33 < x < 126 and x != sharp else
-            '#{:x}'.format(x).encode('ascii') for x in raw)
+            f'#{x:x}'.encode('ascii') for x in raw)
         stream.write(b'/'+b''.join(buf))
 
 
@@ -118,7 +119,7 @@ def escape_pdf_string(bytestring):
     return bytes(ba)
 
 
-class String(unicode_type):
+class String(str):
 
     def pdf_serialize(self, stream):
         try:
@@ -130,7 +131,7 @@ class String(unicode_type):
         stream.write(b'('+escape_pdf_string(raw)+b')')
 
 
-class UTF16String(unicode_type):
+class UTF16String(str):
 
     def pdf_serialize(self, stream):
         raw = codecs.BOM_UTF16_BE + self.encode('utf-16-be')
@@ -212,7 +213,7 @@ class Stream(BytesIO):
         self.write(EOL)
 
     def write(self, raw):
-        super(Stream, self).write(raw if isinstance(raw, bytes) else
+        super().write(raw if isinstance(raw, bytes) else
                                   raw.encode('ascii'))
 
     def write_raw(self, raw):
@@ -225,11 +226,11 @@ class Reference:
         self.num, self.obj = num, obj
 
     def pdf_serialize(self, stream):
-        raw = '%d 0 R'%self.num
+        raw = f'{self.num} 0 R'
         stream.write(raw.encode('ascii'))
 
     def __repr__(self):
-        return '%d 0 R'%self.num
+        return f'{self.num} 0 R'
 
     def __str__(self):
         return repr(self)

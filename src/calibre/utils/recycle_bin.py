@@ -1,23 +1,24 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
 
 
 __license__   = 'GPL v3'
 __copyright__ = '2010, Kovid Goyal <kovid@kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
 
-import os, shutil, time, sys
+import os
+import shutil
+import sys
+import time
 
 from calibre import isbytestring
-from calibre.constants import (iswindows, ismacos, filesystem_encoding,
-        islinux)
-from polyglot.builtins import unicode_type
+from calibre.constants import filesystem_encoding, islinux, ismacos, iswindows
 
 recycle = None
 
 if iswindows:
-    from calibre.utils.ipc import eintr_retry_call
     from threading import Lock
+
+    from calibre.utils.ipc import eintr_retry_call
     from calibre_extensions import winutil
     recycler = None
     rlock = Lock()
@@ -29,7 +30,7 @@ if iswindows:
             recycler = start_pipe_worker('from calibre.utils.recycle_bin import recycler_main; recycler_main()')
 
     def recycle_path(path):
-        winutil.move_to_trash(unicode_type(path))
+        winutil.move_to_trash(str(path))
 
     def recycler_main():
         stdin = getattr(sys.stdin, 'buffer', sys.stdin)
@@ -58,7 +59,7 @@ if iswindows:
 
     def delegate_recycle(path):
         if '\n' in path:
-            raise ValueError('Cannot recycle paths that have newlines in them (%r)' % path)
+            raise ValueError(f'Cannot recycle paths that have newlines in them ({path!r})')
         with rlock:
             start_recycler()
             recycler.stdin.write(path.encode('utf-8'))
@@ -69,7 +70,7 @@ if iswindows:
             # so I am leaving it as blocking.
             result = eintr_retry_call(recycler.stdout.readline)
             if result.rstrip() != b'OK':
-                raise RuntimeError('recycler failed to recycle: %r' % path)
+                raise RuntimeError(f'recycler failed to recycle: {path!r}')
 
     def recycle(path):
         # We have to run the delete to recycle bin in a separate process as the

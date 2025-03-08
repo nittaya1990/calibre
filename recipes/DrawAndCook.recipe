@@ -1,6 +1,8 @@
 from __future__ import print_function
-from calibre.web.feeds.news import BasicNewsRecipe
+
 import re
+
+from calibre.web.feeds.news import BasicNewsRecipe
 
 
 class DrawAndCook(BasicNewsRecipe):
@@ -26,7 +28,7 @@ class DrawAndCook(BasicNewsRecipe):
     def parse_index(self):
         feeds = []
         for title, url in [
-            ("They Draw and Cook", "http://www.theydrawandcook.com/")
+            ('They Draw and Cook', 'http://www.theydrawandcook.com/')
         ]:
             articles = self.make_links(url)
             if articles:

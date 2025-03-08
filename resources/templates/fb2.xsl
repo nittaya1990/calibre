@@ -55,7 +55,7 @@
                     
                     .epigraph{width:75%; margin-left : 25%; font-style: italic;}
                     
-                    div.paragraph { text-indent: 2em; }
+                    div.paragraph, p.paragraph { text-indent: 2em; margin-top: 0; margin-bottom: 0; }
 
                     .subtitle { text-align: center; }
                 </style>
@@ -99,7 +99,7 @@
         <xsl:value-of select="fb:last-name"/>
         <br/>
     </xsl:template>
-    <!-- secuence template -->
+    <!-- sequence template -->
     <xsl:template name="sequence">
         <li/>
         <xsl:value-of select="@name"/>
@@ -291,7 +291,7 @@
                 <xsl:attribute name="name"><xsl:value-of select="@id"/></xsl:attribute>
             </xsl:element>
         </xsl:if>
-        <h3>Annotation</h3>
+        <h1>Annotation</h1>
         <xsl:apply-templates/>
     </xsl:template>
     <!-- tables -->

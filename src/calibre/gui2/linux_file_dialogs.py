@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 # License: GPLv3 Copyright: 2017, Kovid Goyal <kovid at kovidgoyal.net>
 
 import functools
@@ -14,7 +13,7 @@ from qt.core import QEventLoop
 from calibre import force_unicode
 from calibre.constants import DEBUG, filesystem_encoding, preferred_encoding
 from calibre.utils.config import dynamic
-from polyglot.builtins import getenv, reraise, string_or_bytes, unicode_type
+from polyglot.builtins import reraise, string_or_bytes
 
 
 def dialog_name(name, title):
@@ -26,21 +25,34 @@ def get_winid(widget=None):
         return widget.effectiveWinId()
 
 
-def detect_desktop_environment():
-    de = getenv('XDG_CURRENT_DESKTOP')
-    if de:
-        return de.upper().split(':', 1)[0]
-    if getenv('KDE_FULL_SESSION') == 'true':
+def to_known_dialog_provider_name(q: str) -> str:
+    uq = q.upper()
+    if uq in ('KDE', 'LXQT', 'LXDE'):
         return 'KDE'
-    if getenv('GNOME_DESKTOP_SESSION_ID'):
+    if uq in ('GNOME', 'GNOME-FLASHBACK', 'GNOME-FLASHBACK:GNOME', 'MATE', 'XFCE'):
         return 'GNOME'
-    ds = getenv('DESKTOP_SESSION')
+    return ''
+
+
+def detect_desktop_environment():
+    de = os.getenv('XDG_CURRENT_DESKTOP')
+    if de:
+        for x in de.split(':'):
+            q = to_known_dialog_provider_name(x)
+            if q:
+                return q
+    if os.getenv('KDE_FULL_SESSION') == 'true':
+        return 'KDE'
+    if os.getenv('GNOME_DESKTOP_SESSION_ID'):
+        return 'GNOME'
+    ds = os.getenv('DESKTOP_SESSION')
     if ds and ds.upper() in {'GNOME', 'XFCE'}:
-        return ds.upper()
+        return 'GNOME'
+    return ''
 
 
 def is_executable_present(name):
-    PATH = getenv('PATH') or ''
+    PATH = os.getenv('PATH') or ''
     for path in PATH.split(os.pathsep):
         if os.access(os.path.join(path, name), os.X_OK):
             return True
@@ -82,7 +94,7 @@ def save_initial_dir(name, title, ans, no_save_dir, is_file=False):
 
 
 def encode_arg(title):
-    if isinstance(title, unicode_type):
+    if isinstance(title, str):
         try:
             title = title.encode(preferred_encoding)
         except UnicodeEncodeError:
@@ -122,9 +134,11 @@ def run(cmd):
 def kdialog_supports_desktopfile():
     ans = getattr(kdialog_supports_desktopfile, 'ans', None)
     if ans is None:
+        from calibre.gui2 import sanitize_env_vars
         try:
-            raw = subprocess.check_output(['kdialog', '--help'])
-        except EnvironmentError:
+            with sanitize_env_vars():
+                raw = subprocess.check_output(['kdialog', '--help'])
+        except (subprocess.CalledProcessError, FileNotFoundError, OSError):
             raw = b'--desktopfile'
         ans = kdialog_supports_desktopfile.ans = b'--desktopfile' in raw
     return ans
@@ -136,7 +150,7 @@ def kde_cmd(window, title, *rest):
         ans += ['--desktopfile', 'calibre-gui']
     winid = get_winid(window)
     if winid is not None:
-        ans += ['--attach', unicode_type(int(winid))]
+        ans += ['--attach', str(int(winid))]
     return ans + list(rest)
 
 
@@ -145,7 +159,7 @@ def run_kde(cmd):
     if ret == 1:
         return  # canceled
     if ret != 0:
-        raise ValueError('KDE file dialog aborted with return code: {} and stderr: {}'.format(ret, stderr))
+        raise ValueError(f'KDE file dialog aborted with return code: {ret} and stderr: {stderr}')
     ans = stdout.splitlines()
     return ans
 
@@ -161,7 +175,10 @@ def kdialog_choose_dir(window, name, title, default_dir='~', no_save_dir=False):
 def kdialog_filters(filters, all_files=True):
     ans = []
     for name, exts in filters:
-        ans.append('{} ({})'.format(name, ' '.join('*.' + x for x in exts)))
+        if not exts or (len(exts) == 1 and exts[0] == '*'):
+            ans.append(name + ' (*)')
+        else:
+            ans.append('{} ({})'.format(name, ' '.join('*.' + x for x in exts)))
     if all_files:
         ans.append(_('All files') + ' (*)')
     return '\n'.join(ans)
@@ -174,14 +191,17 @@ def kdialog_choose_files(
     filters=[],
     all_files=True,
     select_only_single_file=False,
-    default_dir='~'):
-    initial_dir = get_initial_dir(name, title, default_dir, False)
+    default_dir='~',
+    no_save_dir=False,
+):
+    initial_dir = get_initial_dir(name, title, default_dir, no_save_dir)
     args = []
     if not select_only_single_file:
         args += '--multiple --separate-output'.split()
     args += ['--getopenfilename', initial_dir, kdialog_filters(filters, all_files)]
     ans = run_kde(kde_cmd(window, title, *args))
-    save_initial_dir(name, title, ans[0] if ans else None, False, is_file=True)
+    if not no_save_dir:
+        save_initial_dir(name, title, ans[0] if ans else None, False, is_file=True)
     return ans
 
 
@@ -213,7 +233,7 @@ def zenity_cmd(window, title, *rest):
     ans = ['zenity', '--modal', '--file-selection', '--title=' + title, '--separator=\n']
     winid = get_winid(window)
     if winid is not None:
-        ans += ['--attach=%d' % int(winid)]
+        ans += [f'--attach={int(winid)}']
     return ans + list(rest)
 
 
@@ -222,7 +242,7 @@ def run_zenity(cmd):
     if ret == 1:
         return  # canceled
     if ret != 0:
-        raise ValueError('GTK file dialog aborted with return code: {} and stderr: {}'.format(ret, stderr))
+        raise ValueError(f'GTK file dialog aborted with return code: {ret} and stderr: {stderr}')
     ans = stdout.splitlines()
     return ans
 
@@ -238,7 +258,10 @@ def zenity_choose_dir(window, name, title, default_dir='~', no_save_dir=False):
 def zenity_filters(filters, all_files=True):
     ans = []
     for name, exts in filters:
-        ans.append('--file-filter={} | {}'.format(name, ' '.join('*.' + x for x in exts)))
+        if not exts or (len(exts) == 1 and exts[0] == '*'):
+            ans.append('--file-filter={} | {}'.format(name, '*'))
+        else:
+            ans.append('--file-filter={} | {}'.format(name, ' '.join('*.' + x for x in exts)))
     if all_files:
         ans.append('--file-filter={} | {}'.format(_('All files'), '*'))
     return ans
@@ -251,14 +274,17 @@ def zenity_choose_files(
     filters=[],
     all_files=True,
     select_only_single_file=False,
-    default_dir='~'):
-    initial_dir = get_initial_dir(name, title, default_dir, False)
+    default_dir='~',
+    no_save_dir=False,
+):
+    initial_dir = get_initial_dir(name, title, default_dir, no_save_dir)
     args = ['--filename=' + os.path.join(initial_dir, '.fgdfg.gdfhjdhf*&^839')]
     args += zenity_filters(filters, all_files)
     if not select_only_single_file:
         args.append('--multiple')
     ans = run_zenity(zenity_cmd(window, title, *args))
-    save_initial_dir(name, title, ans[0] if ans else None, False, is_file=True)
+    if not no_save_dir:
+        save_initial_dir(name, title, ans[0] if ans else None, False, is_file=True)
     return ans
 
 
@@ -286,7 +312,7 @@ def zenity_choose_images(window, name, title, select_only_single_file=True, form
 
 def linux_native_dialog(name):
     prefix = check_for_linux_native_dialogs()
-    func = globals()['{}_choose_{}'.format(prefix, name)]
+    func = globals()[f'{prefix}_choose_{name}']
 
     @functools.wraps(func)
     def looped(window, *args, **kwargs):
@@ -312,7 +338,7 @@ def linux_native_dialog(name):
             t = Thread(name='FileDialogHelper', target=r)
             t.daemon = True
             t.start()
-            loop.exec_(QEventLoop.ProcessEventsFlag.ExcludeUserInputEvents)
+            loop.exec(QEventLoop.ProcessEventsFlag.ExcludeUserInputEvents)
             if ret[1] is not None:
                 reraise(*ret[1])
             return ret[0]
@@ -330,9 +356,9 @@ def check_for_linux_native_dialogs():
     if ans is None:
         de = detect_desktop_environment()
         order = ('zenity', 'kdialog')
-        if de in {'GNOME', 'UNITY', 'MATE', 'XFCE'}:
+        if de == 'GNOME':
             order = ('zenity',)
-        elif de in {'KDE', 'LXDE'}:
+        elif de == 'KDE':
             order = ('kdialog',)
         for exe in order:
             if is_executable_present(exe):

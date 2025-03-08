@@ -11,7 +11,7 @@ from session import get_interface_data
 from utils import parse_url_params
 
 load_status = {'loading':True, 'ok':False, 'error_html':None, 'current_fetch': None, 'http_error_code': 0}
-library_data = {'metadata':{}, 'previous_book_ids': v'[]', 'force_refresh': False}
+library_data = {'metadata':{}, 'previous_book_ids': v'[]', 'force_refresh': False, 'bools_are_tristate': True}
 
 
 def current_library_id():
@@ -83,7 +83,7 @@ def update_library_data(data):
     if library_data.for_library is not current_library_id():
         library_data.field_names = {}
     library_data.for_library = current_library_id()
-    for key in 'search_result sortable_fields field_metadata metadata virtual_libraries book_display_fields'.split(' '):
+    for key in 'search_result sortable_fields field_metadata metadata virtual_libraries book_display_fields bools_are_tristate book_details_vertical_categories fts_enabled fields_that_support_notes categories_using_hierarchy'.split(' '):
         library_data[key] = data[key]
     sr = library_data.search_result
     if sr:
@@ -203,11 +203,12 @@ def field_names_for(field, proceed):
 
 
 def thumbnail_url(book_id, width, height):
-    return absolute_path(
-        'get/thumb/{}/{}?sz={}x{}'.format(
-            book_id, loaded_books_query().library_id,
-            Math.ceil(width * window.devicePixelRatio), Math.ceil(height * window.devicePixelRatio)
-        ))
+    query = f'sz={Math.ceil(width * window.devicePixelRatio)}x{Math.ceil(height * window.devicePixelRatio)}'
+    prefix = f'get/thumb/{book_id}'
+    lid = loaded_books_query().library_id or current_library_id()
+    if lid:
+        prefix += f'/{lid}'
+    return absolute_path(f'{prefix}?{query}')
 
 
 def cover_url(book_id):
@@ -215,9 +216,25 @@ def cover_url(book_id):
     return absolute_path(f'get/cover/{book_id}/{lid}')
 
 
-def download_url(book_id, fmt):
+def download_url(book_id, fmt, content_disposition):
     lid = current_library_id()
-    return absolute_path(f'get/{fmt}/{book_id}/{lid}')
+    ans = absolute_path(f'get/{fmt}/{book_id}/{lid}')
+    if content_disposition:
+        ans += f'?content_disposition={content_disposition}'
+    return ans
+
+
+def download_data_file_url(book_id, relpath, content_disposition):
+    lid = current_library_id()
+    rpath = encodeURIComponent(relpath)
+    ans = absolute_path(f'data-files/get/{book_id}/{rpath}/{lid}')
+    if content_disposition:
+        ans += f'?content_disposition={content_disposition}'
+    return ans
+
+
+def web_search_url(book_id, field, item_val):
+    return absolute_path(f'web-search/{book_id}/{encodeURIComponent(field)}/{encodeURIComponent(item_val)}?library_id={encodeURIComponent(current_library_id())}')
 
 
 def book_metadata(book_id):
@@ -266,7 +283,7 @@ class ThumbnailCache:
     # Cache to prevent browser from issuing HTTP requests when thumbnails pages
     # are destroyed/rebuilt.
 
-    def __init__(self, size=250):
+    def __init__(self, size=256):
         self.cache = LRUCache(size)
 
     def get(self, book_id, width, height, callback):
@@ -278,7 +295,7 @@ class ThumbnailCache:
             img.onerror = self.load_finished.bind(None, item, 'error')
             img.onload = self.load_finished.bind(None, item, 'load')
             img.onabort = self.load_finished.bind(None, item, 'abort')
-            img.dataset.bookId = str(book_id)
+            img.dataset.bookId = book_id + ''
             img.src = url
             self.cache.set(url, item)
             return img

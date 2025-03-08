@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:fdm=marker:ai
 
 
 __license__   = 'GPL v3'
@@ -7,21 +6,38 @@ __copyright__ = '2013, Kovid Goyal <kovid at kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
 
 import copy
+from collections import OrderedDict
 from functools import partial
-from polyglot.builtins import iteritems, unicode_type, map, native_string_type
 
 from calibre.ebooks.metadata import author_to_author_sort
-from calibre.utils.config_base import tweaks
-from calibre.utils.icu import sort_key, collation_order
+from calibre.utils.config_base import prefs, tweaks
+from calibre.utils.icu import collation_order, sort_key
+from calibre.utils.icu import lower as icu_lower
+from calibre.utils.icu import upper as icu_upper
+from polyglot.builtins import iteritems, native_string_type
 
 CATEGORY_SORTS = ('name', 'popularity', 'rating')  # This has to be a tuple not a set
 
 
 class Tag:
 
-    __slots__ = ('name', 'original_name', 'id', 'count', 'state', 'is_hierarchical',
-            'is_editable', 'is_searchable', 'id_set', 'avg_rating', 'sort',
-            'use_sort_as_name', 'category', 'search_expression', 'original_categories')
+    __slots__ = (
+        'avg_rating',
+        'category',
+        'count',
+        'id',
+        'id_set',
+        'is_editable',
+        'is_hierarchical',
+        'is_searchable',
+        'name',
+        'original_categories',
+        'original_name',
+        'search_expression',
+        'sort',
+        'state',
+        'use_sort_as_name',
+    )
 
     def __init__(self, name, id=None, count=0, state=0, avg=0, sort=None,
                  category=None, id_set=None, search_expression=None,
@@ -44,7 +60,7 @@ class Tag:
 
     @property
     def string_representation(self):
-        return u'%s:%s:%s:%s:%s'%(self.name, self.count, self.id, self.state, self.category)
+        return f'{self.name}:{self.count}:{self.id}:{self.state}:{self.category}:{self.original_categories}'
 
     def __str__(self):
         return self.string_representation
@@ -101,8 +117,8 @@ def clean_user_categories(dbcache):
         if len(comps) == 0:
             i = 1
             while True:
-                if unicode_type(i) not in user_cats:
-                    new_cats[unicode_type(i)] = user_cats[k]
+                if str(i) not in user_cats:
+                    new_cats[str(i)] = user_cats[k]
                     break
                 i += 1
         else:
@@ -115,26 +131,92 @@ def clean_user_categories(dbcache):
     return new_cats
 
 
+def is_standard_category(key):
+    return not (key.startswith('@') or key == 'search')
+
+
+def category_display_order(ordered_cats, all_cats):
+    # ordered_cats is the desired order. all_cats is the list of keys returned
+    # by get_categories, which is in the default order
+    cat_ord = []
+    all_cat_set = frozenset(all_cats)
+    # Do the standard categories first
+    # Verify all the columns in ordered_cats are actually in all_cats
+    for key in ordered_cats:
+        if is_standard_category(key) and key in all_cat_set:
+            cat_ord.append(key)
+    # Add any new standard cats at the end of the list
+    for key in all_cats:
+        if key not in cat_ord and is_standard_category(key):
+            cat_ord.append(key)
+    # Now add the non-standard cats (user cats and search). As these are always
+    # hierarchical, only keep the prefix.
+    user_cat_prefixes = set()
+    for key in all_cats:
+        if not is_standard_category(key):
+            prefix = key.partition('.')[0]
+            if prefix not in user_cat_prefixes:
+                cat_ord.append(prefix)
+                user_cat_prefixes.add(prefix)
+    return cat_ord
+
+
+numeric_collation = prefs['numeric_collation']
+
+
+def sort_key_for_popularity(x, hierarchical_categories=None):
+    return (-getattr(x, 'count', 0), sort_key(x.sort or x.name))
+
+
+def sort_key_for_rating(x, hierarchical_categories=None):
+    return (-getattr(x, 'avg_rating', 0.0), sort_key(x.sort or x.name))
+
+
+# When sorting by name, treat the period in hierarchical categories as a tab so
+# that the value sorts above similarly-named items. Example: "foo.bar" should
+# sort above "foo a.bar". Without this substitution "foo.bar" sorts below "foo
+# a.bar" because '.' sorts higher than space.
+
+def sort_key_for_name_and_first_letter(x, hierarchical_categories=()):
+    v1 = icu_upper(x.sort or x.name)
+    if x.category in hierarchical_categories:
+        v1 = v1.replace('.', '\t')
+    v2 = v1 or ' '
+    # The idea is that '9999999999' is larger than any digit so all digits
+    # will sort in front. Non-digits will sort according to their ICU first letter
+    c = v2[0]
+    return (c if numeric_collation and c.isdigit() else '9999999999',
+            collation_order(v2), sort_key(v1))
+
+
+def sort_key_for_name(x, hierarchical_categories=()):
+    v = x.sort or x.name
+    if x.category not in hierarchical_categories:
+        return sort_key(v)
+    return sort_key(v.replace('.', '\t'))
+
+
 category_sort_keys = {True:{}, False: {}}
-category_sort_keys[True]['popularity'] = category_sort_keys[False]['popularity'] = \
-    lambda x:(-getattr(x, 'count', 0), sort_key(x.sort or x.name))
-category_sort_keys[True]['rating'] = category_sort_keys[False]['rating'] = \
-    lambda x:(-getattr(x, 'avg_rating', 0.0), sort_key(x.sort or x.name))
-category_sort_keys[True]['name'] = \
-    lambda x:(collation_order(icu_upper(x.sort or x.name or ' ')), sort_key(x.sort or x.name))
-category_sort_keys[False]['name'] = \
-    lambda x:sort_key(x.sort or x.name)
+category_sort_keys[True]['popularity'] = category_sort_keys[False]['popularity'] = sort_key_for_popularity
+category_sort_keys[True]['rating'] = category_sort_keys[False]['rating'] = sort_key_for_rating
+category_sort_keys[True]['name'] = sort_key_for_name_and_first_letter
+category_sort_keys[False]['name'] = sort_key_for_name
 
 
-def get_categories(dbcache, sort='name', book_ids=None, first_letter_sort=False):
+# Various parts of calibre depend on the order of fields in the returned
+# dict being in the default display order: standard fields, custom in alpha order,
+# user categories, then saved searches. This works because the backend adds
+# custom columns to field metadata in the right order.
+def get_categories(dbcache, sort='name', book_ids=None, first_letter_sort=False, uncollapsed_categories=None):
     if sort not in CATEGORY_SORTS:
         raise ValueError('sort ' + sort + ' not a valid value')
 
+    hierarchical_categories = frozenset(dbcache.pref('categories_using_hierarchy', ()))
     fm = dbcache.field_metadata
     book_rating_map = dbcache.fields['rating'].book_value_map
     lang_map = dbcache.fields['languages'].book_value_map
 
-    categories = {}
+    categories = OrderedDict()
     book_ids = frozenset(book_ids) if book_ids else book_ids
     pm_cache = {}
 
@@ -145,9 +227,10 @@ def get_categories(dbcache, sort='name', book_ids=None, first_letter_sort=False)
         return ans
 
     bids = None
-    first_letter_sort = bool(first_letter_sort)
+    uncollapsed_categories = () if uncollapsed_categories is None else uncollapsed_categories
 
     for category, is_multiple, is_composite in find_categories(fm):
+        fl_sort = False if category in uncollapsed_categories else bool(first_letter_sort)
         tag_class = create_tag_class(category, fm)
         sort_on, reverse = sort, False
         if is_composite:
@@ -172,7 +255,9 @@ def get_categories(dbcache, sort='name', book_ids=None, first_letter_sort=False)
                 cat['is_multiple'] and cat['display'].get('is_names', False)):
                 for item in cats:
                     item.sort = author_to_author_sort(item.sort)
-        cats.sort(key=category_sort_keys[first_letter_sort][sort_on], reverse=reverse)
+        cats.sort(key=partial(category_sort_keys[fl_sort][sort_on],
+                              hierarchical_categories=hierarchical_categories),
+                  reverse=reverse)
         categories[category] = cats
 
     # Needed for legacy databases that have multiple ratings that
@@ -194,10 +279,11 @@ def get_categories(dbcache, sort='name', book_ids=None, first_letter_sort=False)
     for c in gst:
         if c not in muc:
             continue
-        user_categories[c] = []
+        uc = []
         for sc in gst[c]:
             for t in categories.get(sc, ()):
-                user_categories[c].append([t.name, sc, 0])
+                uc.append([t.name, sc, 0])
+        user_categories[c] = uc
 
     if user_categories:
         # We want to use same node in the user category as in the source
@@ -207,7 +293,7 @@ def get_categories(dbcache, sort='name', book_ids=None, first_letter_sort=False)
         # temporarily duplicating the categories lists.
         taglist = {}
         for c, items in iteritems(categories):
-            taglist[c] = dict(map(lambda t:(icu_lower(t.name), t), items))
+            taglist[c] = {icu_lower(t.name): t for t in items}
 
         # Add the category values to the user categories
         for user_cat in sorted(user_categories, key=sort_key):
@@ -249,7 +335,8 @@ def get_categories(dbcache, sort='name', book_ids=None, first_letter_sort=False)
                         items.append(taglist[label][n])
                 # else: do nothing, to not include nodes w zero counts
             cat_name = '@' + user_cat  # add the '@' to avoid name collision
-            items.sort(key=category_sort_keys[False][sort])
+            items.sort(key=partial(category_sort_keys[False][sort],
+                                   hierarchical_categories=hierarchical_categories))
             categories[cat_name] = items
 
     # ### Finally, the saved searches category ####

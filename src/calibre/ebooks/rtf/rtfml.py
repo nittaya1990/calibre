@@ -1,6 +1,3 @@
-# -*- coding: utf-8 -*-
-
-
 __license__ = 'GPL 3'
 __copyright__ = '2009, John Schember <john@nachtimwald.com>'
 __docformat__ = 'restructuredtext en'
@@ -9,9 +6,9 @@ __docformat__ = 'restructuredtext en'
 Transform OEB content into RTF markup
 '''
 
+import io
 import os
 import re
-import io
 from binascii import hexlify
 
 from lxml import etree
@@ -19,7 +16,7 @@ from lxml import etree
 from calibre.ebooks.metadata import authors_to_string
 from calibre.utils.img import save_cover_data_to
 from calibre.utils.imghdr import identify
-from polyglot.builtins import unicode_type, string_or_bytes
+from polyglot.builtins import string_or_bytes
 
 TAGS = {
     'b': '\\b',
@@ -78,7 +75,7 @@ def txt2rtf(text):
     text = text.replace('}', r'\'7d')
     text = text.replace('\\', r'\'5c')
 
-    if not isinstance(text, unicode_type):
+    if not isinstance(text, str):
         return text
 
     buf = io.StringIO()
@@ -90,7 +87,7 @@ def txt2rtf(text):
             buf.write(x)
         else:
             # python2 and ur'\u' does not work
-            c = '\\u{0:d}?'.format(val)
+            c = f'\\u{val:d}?'
             buf.write(c)
     return buf.getvalue()
 
@@ -121,10 +118,10 @@ class RTFMLizer:
                 output += self.dump_text(item.data.find(XHTML('body')), stylizer)
                 output += r'{\page }'
         for item in self.oeb_book.spine:
-            self.log.debug('Converting %s to RTF markup...' % item.href)
+            self.log.debug(f'Converting {item.href} to RTF markup...')
             # Removing comments is needed as comments with -- inside them can
             # cause fromstring() to fail
-            content = re.sub('<!--.*?-->', '', etree.tostring(item.data, encoding='unicode'), flags=re.DOTALL)
+            content = re.sub(r'<!--.*?-->', '', etree.tostring(item.data, encoding='unicode'), flags=re.DOTALL)
             content = self.remove_newlines(content)
             content = self.remove_tabs(content)
             content = safe_xml_fromstring(content)
@@ -153,17 +150,16 @@ class RTFMLizer:
         return text
 
     def header(self):
-        header = '{\\rtf1{\\info{\\title %s}{\\author %s}}\\ansi\\ansicpg1252\\deff0\\deflang1033\n' % (
-            self.oeb_book.metadata.title[0].value, authors_to_string([x.value for x in self.oeb_book.metadata.creator]))
+        header = f'{{\\rtf1{{\\info{{\\title {self.oeb_book.metadata.title[0].value}}}{{\\author {authors_to_string([x.value for x in self.oeb_book.metadata.creator])}}}}}\\ansi\\ansicpg1252\\deff0\\deflang1033\n'  # noqa: E501
         return header + (
-            '{\\fonttbl{\\f0\\froman\\fprq2\\fcharset128 Times New Roman;}{\\f1\\froman\\fprq2\\fcharset128 Times New Roman;}{\\f2\\fswiss\\fprq2\\fcharset128 Arial;}{\\f3\\fnil\\fprq2\\fcharset128 Arial;}{\\f4\\fnil\\fprq2\\fcharset128 MS Mincho;}{\\f5\\fnil\\fprq2\\fcharset128 Tahoma;}{\\f6\\fnil\\fprq0\\fcharset128 Tahoma;}}\n'  # noqa
-            '{\\stylesheet{\\ql \\li0\\ri0\\nowidctlpar\\wrapdefault\\faauto\\rin0\\lin0\\itap0 \\rtlch\\fcs1 \\af25\\afs24\\alang1033 \\ltrch\\fcs0 \\fs24\\lang1033\\langfe255\\cgrid\\langnp1033\\langfenp255 \\snext0 Normal;}\n'  # noqa
-            '{\\s1\\ql \\li0\\ri0\\sb240\\sa120\\keepn\\nowidctlpar\\wrapdefault\\faauto\\outlinelevel0\\rin0\\lin0\\itap0 \\rtlch\\fcs1 \\ab\\af0\\afs32\\alang1033 \\ltrch\\fcs0 \\b\\fs32\\lang1033\\langfe255\\loch\\f1\\hich\\af1\\dbch\\af26\\cgrid\\langnp1033\\langfenp255 \\sbasedon15 \\snext16 \\slink21 heading 1;}\n'  # noqa
-            '{\\s2\\ql \\li0\\ri0\\sb240\\sa120\\keepn\\nowidctlpar\\wrapdefault\\faauto\\outlinelevel1\\rin0\\lin0\\itap0 \\rtlch\\fcs1 \\ab\\ai\\af0\\afs28\\alang1033 \\ltrch\\fcs0 \\b\\i\\fs28\\lang1033\\langfe255\\loch\\f1\\hich\\af1\\dbch\\af26\\cgrid\\langnp1033\\langfenp255 \\sbasedon15 \\snext16 \\slink22 heading 2;}\n'  # noqa
-            '{\\s3\\ql \\li0\\ri0\\sb240\\sa120\\keepn\\nowidctlpar\\wrapdefault\\faauto\\outlinelevel2\\rin0\\lin0\\itap0 \\rtlch\\fcs1 \\ab\\af0\\afs28\\alang1033 \\ltrch\\fcs0 \\b\\fs28\\lang1033\\langfe255\\loch\\f1\\hich\\af1\\dbch\\af26\\cgrid\\langnp1033\\langfenp255 \\sbasedon15 \\snext16 \\slink23 heading 3;}\n'  # noqa
-            '{\\s4\\ql \\li0\\ri0\\sb240\\sa120\\keepn\\nowidctlpar\\wrapdefault\\faauto\\outlinelevel3\\rin0\\lin0\\itap0 \\rtlch\\fcs1 \\ab\\ai\\af0\\afs23\\alang1033 \\ltrch\\fcs0\\b\\i\\fs23\\lang1033\\langfe255\\loch\\f1\\hich\\af1\\dbch\\af26\\cgrid\\langnp1033\\langfenp255 \\sbasedon15 \\snext16 \\slink24 heading 4;}\n'  # noqa
-            '{\\s5\\ql \\li0\\ri0\\sb240\\sa120\\keepn\\nowidctlpar\\wrapdefault\\faauto\\outlinelevel4\\rin0\\lin0\\itap0 \\rtlch\\fcs1 \\ab\\af0\\afs23\\alang1033 \\ltrch\\fcs0 \\b\\fs23\\lang1033\\langfe255\\loch\\f1\\hich\\af1\\dbch\\af26\\cgrid\\langnp1033\\langfenp255 \\sbasedon15 \\snext16 \\slink25 heading 5;}\n'  # noqa
-            '{\\s6\\ql \\li0\\ri0\\sb240\\sa120\\keepn\\nowidctlpar\\wrapdefault\\faauto\\outlinelevel5\\rin0\\lin0\\itap0 \\rtlch\\fcs1 \\ab\\af0\\afs21\\alang1033 \\ltrch\\fcs0 \\b\\fs21\\lang1033\\langfe255\\loch\\f1\\hich\\af1\\dbch\\af26\\cgrid\\langnp1033\\langfenp255 \\sbasedon15 \\snext16 \\slink26 heading 6;}}\n'  # noqa
+            '{\\fonttbl{\\f0\\froman\\fprq2\\fcharset128 Times New Roman;}{\\f1\\froman\\fprq2\\fcharset128 Times New Roman;}{\\f2\\fswiss\\fprq2\\fcharset128 Arial;}{\\f3\\fnil\\fprq2\\fcharset128 Arial;}{\\f4\\fnil\\fprq2\\fcharset128 MS Mincho;}{\\f5\\fnil\\fprq2\\fcharset128 Tahoma;}{\\f6\\fnil\\fprq0\\fcharset128 Tahoma;}}\n'  # noqa: E501
+            '{\\stylesheet{\\ql \\li0\\ri0\\nowidctlpar\\wrapdefault\\faauto\\rin0\\lin0\\itap0 \\rtlch\\fcs1 \\af25\\afs24\\alang1033 \\ltrch\\fcs0 \\fs24\\lang1033\\langfe255\\cgrid\\langnp1033\\langfenp255 \\snext0 Normal;}\n'  # noqa: E501
+            '{\\s1\\ql \\li0\\ri0\\sb240\\sa120\\keepn\\nowidctlpar\\wrapdefault\\faauto\\outlinelevel0\\rin0\\lin0\\itap0 \\rtlch\\fcs1 \\ab\\af0\\afs32\\alang1033 \\ltrch\\fcs0 \\b\\fs32\\lang1033\\langfe255\\loch\\f1\\hich\\af1\\dbch\\af26\\cgrid\\langnp1033\\langfenp255 \\sbasedon15 \\snext16 \\slink21 heading 1;}\n'  # noqa: E501
+            '{\\s2\\ql \\li0\\ri0\\sb240\\sa120\\keepn\\nowidctlpar\\wrapdefault\\faauto\\outlinelevel1\\rin0\\lin0\\itap0 \\rtlch\\fcs1 \\ab\\ai\\af0\\afs28\\alang1033 \\ltrch\\fcs0 \\b\\i\\fs28\\lang1033\\langfe255\\loch\\f1\\hich\\af1\\dbch\\af26\\cgrid\\langnp1033\\langfenp255 \\sbasedon15 \\snext16 \\slink22 heading 2;}\n'  # noqa: E501
+            '{\\s3\\ql \\li0\\ri0\\sb240\\sa120\\keepn\\nowidctlpar\\wrapdefault\\faauto\\outlinelevel2\\rin0\\lin0\\itap0 \\rtlch\\fcs1 \\ab\\af0\\afs28\\alang1033 \\ltrch\\fcs0 \\b\\fs28\\lang1033\\langfe255\\loch\\f1\\hich\\af1\\dbch\\af26\\cgrid\\langnp1033\\langfenp255 \\sbasedon15 \\snext16 \\slink23 heading 3;}\n'  # noqa: E501
+            '{\\s4\\ql \\li0\\ri0\\sb240\\sa120\\keepn\\nowidctlpar\\wrapdefault\\faauto\\outlinelevel3\\rin0\\lin0\\itap0 \\rtlch\\fcs1 \\ab\\ai\\af0\\afs23\\alang1033 \\ltrch\\fcs0\\b\\i\\fs23\\lang1033\\langfe255\\loch\\f1\\hich\\af1\\dbch\\af26\\cgrid\\langnp1033\\langfenp255 \\sbasedon15 \\snext16 \\slink24 heading 4;}\n'  # noqa: E501
+            '{\\s5\\ql \\li0\\ri0\\sb240\\sa120\\keepn\\nowidctlpar\\wrapdefault\\faauto\\outlinelevel4\\rin0\\lin0\\itap0 \\rtlch\\fcs1 \\ab\\af0\\afs23\\alang1033 \\ltrch\\fcs0 \\b\\fs23\\lang1033\\langfe255\\loch\\f1\\hich\\af1\\dbch\\af26\\cgrid\\langnp1033\\langfenp255 \\sbasedon15 \\snext16 \\slink25 heading 5;}\n'  # noqa: E501
+            '{\\s6\\ql \\li0\\ri0\\sb240\\sa120\\keepn\\nowidctlpar\\wrapdefault\\faauto\\outlinelevel5\\rin0\\lin0\\itap0 \\rtlch\\fcs1 \\ab\\af0\\afs21\\alang1033 \\ltrch\\fcs0 \\b\\fs21\\lang1033\\langfe255\\loch\\f1\\hich\\af1\\dbch\\af26\\cgrid\\langnp1033\\langfenp255 \\sbasedon15 \\snext16 \\slink26 heading 6;}}\n'  # noqa: E501
         )
 
     def footer(self):
@@ -178,11 +174,11 @@ class RTFMLizer:
                 try:
                     data, width, height = self.image_to_hexstring(item.data)
                 except Exception:
-                    self.log.exception('Image %s is corrupted, ignoring'%item.href)
+                    self.log.exception(f'Image {item.href} is corrupted, ignoring')
                     repl = '\n\n'
                 else:
-                    repl = '\n\n{\\*\\shppict{\\pict\\jpegblip\\picw%i\\pich%i \n%s\n}}\n\n' % (width, height, data)
-                text = text.replace('SPECIAL_IMAGE-%s-REPLACE_ME' % src, repl)
+                    repl = '\n\n{\\*\\shppict{\\pict\\jpegblip\\picw%i\\pich%i \n%s\n}}\n\n' % (width, height, data)  # noqa: UP031
+                text = text.replace(f'SPECIAL_IMAGE-{src}-REPLACE_ME', repl)
         return text
 
     def image_to_hexstring(self, data):
@@ -198,12 +194,12 @@ class RTFMLizer:
 
     def clean_text(self, text):
         # Remove excessive newlines
-        text = re.sub('%s{3,}' % os.linesep, '%s%s' % (os.linesep, os.linesep), text)
+        text = re.sub(rf'{os.linesep}{{3,}}', f'{os.linesep}{os.linesep}', text)
 
         # Remove excessive spaces
-        text = re.sub('[ ]{2,}', ' ', text)
-        text = re.sub('\t{2,}', '\t', text)
-        text = re.sub('\t ', '\t', text)
+        text = re.sub(r'[ ]{2,}', ' ', text)
+        text = re.sub(r'\t{2,}', '\t', text)
+        text = text.replace('\t ', '\t')
 
         # Remove excessive line breaks
         text = re.sub(r'(\{\\line \}\s*){3,}', r'{\\line }{\\line }', text)
@@ -215,8 +211,7 @@ class RTFMLizer:
         return text
 
     def dump_text(self, elem, stylizer, tag_stack=[]):
-        from calibre.ebooks.oeb.base import (XHTML_NS, namespace, barename,
-                urlnormalize)
+        from calibre.ebooks.oeb.base import XHTML_NS, barename, namespace, urlnormalize
 
         if not isinstance(elem.tag, string_or_bytes) \
            or namespace(elem.tag) != XHTML_NS:
@@ -255,7 +250,7 @@ class RTFMLizer:
                 if 'block' not in tag_stack:
                     block_start = r'{\par\pard\hyphpar '
                     block_end = '}'
-                text += '%s SPECIAL_IMAGE-%s-REPLACE_ME %s' % (block_start, src, block_end)
+                text += f'{block_start} SPECIAL_IMAGE-{src}-REPLACE_ME {block_end}'
 
         single_tag = SINGLE_TAGS.get(tag, None)
         if single_tag:
@@ -264,7 +259,7 @@ class RTFMLizer:
         rtf_tag = TAGS.get(tag, None)
         if rtf_tag and rtf_tag not in tag_stack:
             tag_count += 1
-            text += '{%s\n' % rtf_tag
+            text += f'{{{rtf_tag}\n'
             tag_stack.append(rtf_tag)
 
         # Processes style information
@@ -272,7 +267,7 @@ class RTFMLizer:
             style_tag = s[1].get(style[s[0]], None)
             if style_tag and style_tag not in tag_stack:
                 tag_count += 1
-                text += '{%s\n' % style_tag
+                text += f'{{{style_tag}\n'
                 tag_stack.append(style_tag)
 
         # Process tags that contain text.
@@ -282,8 +277,8 @@ class RTFMLizer:
         for item in elem:
             text += self.dump_text(item, stylizer, tag_stack)
 
-        for i in range(0, tag_count):
-            end_tag =  tag_stack.pop()
+        for i in range(tag_count):
+            end_tag = tag_stack.pop()
             if end_tag != 'block':
                 if tag in BLOCK_TAGS:
                     text += r'\par\pard\plain\hyphpar}'
@@ -292,8 +287,8 @@ class RTFMLizer:
 
         if hasattr(elem, 'tail') and elem.tail:
             if 'block' in tag_stack:
-                text += '%s' % txt2rtf(elem.tail)
+                text += f'{txt2rtf(elem.tail)}'
             else:
-                text += r'{\par\pard\hyphpar %s}' % txt2rtf(elem.tail)
+                text += rf'{{\par\pard\hyphpar {txt2rtf(elem.tail)}}}'
 
         return text

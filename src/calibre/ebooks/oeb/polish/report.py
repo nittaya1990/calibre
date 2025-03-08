@@ -1,24 +1,28 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 
 
 __license__ = 'GPL v3'
 __copyright__ = '2015, Kovid Goyal <kovid at kovidgoyal.net>'
 
-import posixpath, os, time, types
-from collections import namedtuple, defaultdict
+import os
+import posixpath
+import time
+import types
+from collections import defaultdict, namedtuple
 from itertools import chain
 
-from calibre import prepare_string_for_xml, force_unicode
+from css_selectors import Select, SelectorError
+
+from calibre import force_unicode, prepare_string_for_xml
 from calibre.ebooks.oeb.base import XPath, xml2text
-from calibre.ebooks.oeb.polish.container import OEB_DOCS, OEB_STYLES, OEB_FONTS
-from calibre.ebooks.oeb.polish.spell import get_all_words, count_all_chars
+from calibre.ebooks.oeb.polish.container import OEB_DOCS, OEB_STYLES
+from calibre.ebooks.oeb.polish.spell import count_all_chars, get_all_words
+from calibre.ebooks.oeb.polish.utils import OEB_FONTS
 from calibre.utils.icu import numeric_sort_key, safe_chr
 from calibre.utils.imghdr import identify
-from css_selectors import Select, SelectorError
 from polyglot.builtins import iteritems
 
-File = namedtuple('File', 'name dir basename size category')
+File = namedtuple('File', 'name dir basename size category word_count')
 
 
 def get_category(name, mt):
@@ -32,7 +36,7 @@ def get_category(name, mt):
     elif mt in OEB_DOCS:
         category = 'text'
     ext = name.rpartition('.')[-1].lower()
-    if ext in {'ttf', 'otf', 'woff'}:
+    if ext in {'ttf', 'otf', 'woff', 'woff2'}:
         # Probably wrong mimetype in the OPF
         category = 'font'
     elif ext == 'opf':
@@ -60,9 +64,10 @@ def safe_img_data(container, name, mt):
 
 
 def files_data(container, *args):
+    fwc = file_words_counts or {}
     for name, path in iteritems(container.name_path_map):
         yield File(name, posixpath.dirname(name), posixpath.basename(name), safe_size(container, name),
-                   get_category(name, container.mime_map.get(name, '')))
+                   get_category(name, container.mime_map.get(name, '')), fwc.get(name, -1))
 
 
 Image = namedtuple('Image', 'name mime_type usage size basename id width height')
@@ -165,13 +170,13 @@ def links_data(container, *args):
             for a in link_pat(root):
                 href = a.get('href')
                 text = description_for_anchor(a)
+                location = LinkLocation(name, a.sourceline, href)
                 if href:
                     base, frag = href.partition('#')[0::2]
                     if frag and not base:
                         dest = name
                     else:
                         dest = safe_href_to_name(container, href, name)
-                    location = LinkLocation(name, a.sourceline, href)
                     links.append((base, frag, dest, location, text))
                 else:
                     links.append(('', '', None, location, text))
@@ -198,8 +203,11 @@ def links_data(container, *args):
 Word = namedtuple('Word', 'id word locale usage')
 
 
+file_words_counts = None
+
+
 def words_data(container, book_locale, *args):
-    count, words = get_all_words(container, book_locale, get_word_count=True)
+    count, words = get_all_words(container, book_locale, get_word_count=True, file_words_counts=file_words_counts)
     return (count, tuple(Word(i, word, locale, v) for i, ((word, locale), v) in enumerate(iteritems(words))))
 
 
@@ -230,7 +238,7 @@ ClassElement = namedtuple('ClassElement', 'name line_number text_on_line tag mat
 
 def css_data(container, book_locale, result_data, *args):
     import tinycss
-    from tinycss.css21 import RuleSet, ImportRule
+    from tinycss.css21 import ImportRule, RuleSet
 
     def css_rules(file_name, rules, sourceline=0):
         ans = []
@@ -262,7 +270,7 @@ def css_data(container, book_locale, result_data, *args):
                     html_sheets[name].append(
                         css_rules(name, parser.parse_stylesheet(force_unicode(style.text, 'utf-8')).rules, style.sourceline - 1))
 
-    rule_map = defaultdict(lambda : defaultdict(list))
+    rule_map = defaultdict(lambda: defaultdict(list))
 
     def rules_in_sheet(sheet):
         for rule in sheet:
@@ -271,8 +279,7 @@ def css_data(container, book_locale, result_data, *args):
             else:  # @import rule
                 isheet = importable_sheets.get(rule)
                 if isheet is not None:
-                    for irule in rules_in_sheet(isheet):
-                        yield irule
+                    yield from rules_in_sheet(isheet)
 
     def sheets_for_html(name, root):
         for href in link_path(root):
@@ -288,9 +295,9 @@ def css_data(container, book_locale, result_data, *args):
         if ans is None:
             tag = elem.tag.rpartition('}')[-1]
             if elem.attrib:
-                attribs = ' '.join('%s="%s"' % (k, prepare_string_for_xml(elem.get(k, ''), True)) for k in elem.keys())
-                return '<%s %s>' % (tag, attribs)
-            ans = tt_cache[elem] = '<%s>' % tag
+                attribs = ' '.join('{}="{}"'.format(k, prepare_string_for_xml(elem.get(k, ''), True)) for k in elem.keys())
+                return f'<{tag} {attribs}>'
+            ans = tt_cache[elem] = f'<{tag}>'
 
     def matches_for_selector(selector, select, class_map, rule):
         lsel = selector.lower()
@@ -298,18 +305,29 @@ def css_data(container, book_locale, result_data, *args):
             matches = tuple(select(selector))
         except SelectorError:
             return ()
-        for elem in matches:
-            for cls in elem.get('class', '').split():
-                if '.' + cls.lower() in lsel:
-                    class_map[cls][elem].append(rule)
+        seen = set()
+
+        def get_elem_and_ancestors(elem):
+            p = elem
+            while p is not None:
+                if p not in seen:
+                    yield p
+                    seen.add(p)
+                p = p.getparent()
+
+        for e in matches:
+            for elem in get_elem_and_ancestors(e):
+                for cls in elem.get('class', '').split():
+                    if '.' + cls.lower() in lsel:
+                        class_map[cls][elem].append(rule)
 
         return (MatchLocation(tag_text(elem), elem.sourceline) for elem in matches)
 
-    class_map = defaultdict(lambda : defaultdict(list))
+    class_map = defaultdict(lambda: defaultdict(list))
 
     for name, inline_sheets in iteritems(html_sheets):
         root = container.parsed(name)
-        cmap = defaultdict(lambda : defaultdict(list))
+        cmap = defaultdict(lambda: defaultdict(list))
         for elem in root.xpath('//*[@class]'):
             for cls in elem.get('class', '').split():
                 cmap[cls][elem] = []
@@ -339,12 +357,24 @@ def css_data(container, book_locale, result_data, *args):
 
 
 def gather_data(container, book_locale):
+    global file_words_counts
     timing = {}
     data = {}
-    for x in 'files chars images links words css'.split():
+    file_words_counts = {}
+    for x in 'chars images links words css files'.split():
         st = time.time()
         data[x] = globals()[x + '_data'](container, book_locale, data)
         if isinstance(data[x], types.GeneratorType):
             data[x] = tuple(data[x])
         timing[x] = time.time() - st
+    file_words_counts = None
     return data, timing
+
+
+def debug_data_gather():
+    import sys
+
+    from calibre.gui2.tweak_book import dictionaries
+    from calibre.gui2.tweak_book.boss import get_container
+    c = get_container(sys.argv[-1])
+    gather_data(c, dictionaries.default_locale)

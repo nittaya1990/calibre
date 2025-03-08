@@ -3,7 +3,7 @@ from (https://wiki.mobileread.com/wiki/MOBI)
 About
 -----
 
-MOBI is the format used by the the MobiPocket Reader. It may have a .mobi
+MOBI is the format used by the MobiPocket Reader. It may have a .mobi
 extension or it may have a .prc extension. The extension can be changed by the
 user to either of the accepted forms. In either case it may be DRM protected or
 non-DRM. The .prc extension is used because the PalmOS doesn't support any file
@@ -145,7 +145,7 @@ The following records are only present if the mobi header is long enough.
 174     4       DRM Size                Number of bytes in DRM info.
 176     4       DRM Flags               Some flags concerning the DRM info.
 180     6       ?
-186     2       Last Image record       Possible vaule with the last image
+186     2       Last Image record       Possible value with the last image
                                         record. If there are no images in the
                                         book this will be 0xffff.
 188     4       ?
@@ -316,7 +316,7 @@ In the PalmDoc format, a length-distance pair is always encoded by a two-byte
 sequence. Of the 16 bits that make up these two bytes, 11 bits go to encoding
 the distance, 3 go to encoding the length, and the remaining two are used to
 make sure the decoder can identify the first byte as the beginning of such a
-two-byte sequence. The exact alforithm needed to decode the compressed text can
+two-byte sequence. The exact algorithm needed to decode the compressed text can
 be found on the PalmDOC page.
 
 PalmDOC data is always divided into 4096 byte blocks and the blocks are acted

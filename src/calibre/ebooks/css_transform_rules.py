@@ -1,18 +1,18 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 # License: GPLv3 Copyright: 2016, Kovid Goyal <kovid at kovidgoyal.net>
 
 
-from functools import partial
+import numbers
+import operator
 from collections import OrderedDict
-import operator, numbers
+from functools import partial
 
-from css_parser.css import Property, CSSRule
+from css_parser.css import CSSRule, Property
 
 from calibre import force_unicode
 from calibre.ebooks import parse_css_length
 from calibre.ebooks.oeb.normalize_css import normalizers, safe_parser
-from polyglot.builtins import iteritems, unicode_type
+from polyglot.builtins import iteritems
 
 
 def compile_pat(pat):
@@ -161,7 +161,7 @@ def transform_number(val, op, raw):
     v = op(v, val)
     if int(v) == v:
         v = int(v)
-    return unicode_type(v) + u
+    return str(v) + u
 
 
 class Rule:
@@ -342,7 +342,7 @@ def export_rules(serialized_rules):
     lines = []
     for rule in serialized_rules:
         lines.extend('# ' + l for l in rule_to_text(rule).splitlines())
-        lines.extend('%s: %s' % (k, v.replace('\n', ' ')) for k, v in iteritems(rule) if k in allowed_keys)
+        lines.extend('{}: {}'.format(k, v.replace('\n', ' ')) for k, v in iteritems(rule) if k in allowed_keys)
         lines.append('')
     return '\n'.join(lines).encode('utf-8')
 
@@ -379,7 +379,7 @@ def test(return_tests=False):  # {{{
         r = Rule(**rule)
         decl = StyleDeclaration(safe_parser().parseStyle(style))
         r.process_declaration(decl)
-        return unicode_type(decl)
+        return str(decl).rstrip(';')
 
     class TestTransforms(unittest.TestCase):
         longMessage = True

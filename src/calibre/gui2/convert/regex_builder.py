@@ -1,24 +1,22 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 # License: GPLv3 Copyright: 2009, John Schember <john@nachtimwald.com>
 
 import os
 from contextlib import suppress
-from qt.core import (
-    QApplication, QBrush, QByteArray, QDialog, QDialogButtonBox, Qt, QTextCursor,
-    QTextEdit, QWidget, pyqtSignal
-)
+
+from qt.core import QBrush, QDialog, QDialogButtonBox, Qt, QTextCursor, QTextEdit, pyqtSignal
 
 from calibre.constants import iswindows
 from calibre.ebooks.conversion.search_replace import compile_regular_expression
 from calibre.gui2 import choose_files, error_dialog, gprefs
 from calibre.gui2.convert.regex_builder_ui import Ui_RegexBuilder
-from calibre.gui2.convert.xexp_edit_ui import Ui_Form as Ui_Edit
+from calibre.gui2.convert.xpath_wizard import XPathEdit
 from calibre.gui2.dialogs.choose_format import ChooseFormatDialog
+from calibre.gui2.widgets2 import to_plain_text
 from calibre.ptempfile import TemporaryFile
 from calibre.utils.icu import utf16_length
 from calibre.utils.ipc.simple_worker import WorkerError, fork_job
-from polyglot.builtins import native_string_type, range, unicode_type
+from polyglot.builtins import native_string_type
 
 
 class RegexBuilder(QDialog, Ui_RegexBuilder):
@@ -45,22 +43,18 @@ class RegexBuilder(QDialog, Ui_RegexBuilder):
         self.regex.textChanged[native_string_type].connect(self.regex_valid)
         for src, slot in (('test', 'do'), ('previous', 'goto'), ('next',
             'goto')):
-            getattr(self, src).clicked.connect(getattr(self, '%s_%s'%(slot,
-                src)))
+            getattr(self, src).clicked.connect(getattr(self, f'{slot}_{src}'))
         self.test.setDefault(True)
 
         self.match_locs = []
-        geom = gprefs.get('regex_builder_geometry', None)
-        if geom is not None:
-            QApplication.instance().safe_restore_geometry(self, QByteArray(geom))
+        self.restore_geometry(gprefs, 'regex_builder_geometry')
         self.finished.connect(self.save_state)
 
     def save_state(self, result):
-        geom = bytearray(self.saveGeometry())
-        gprefs['regex_builder_geometry'] = geom
+        self.save_geometry(gprefs, 'regex_builder_geometry')
 
     def regex_valid(self):
-        regex = unicode_type(self.regex.text())
+        regex = str(self.regex.text())
         if regex:
             try:
                 compile_regular_expression(regex)
@@ -88,8 +82,8 @@ class RegexBuilder(QDialog, Ui_RegexBuilder):
             qt: int = 0
 
         if self.regex_valid():
-            text = unicode_type(self.preview.toPlainText())
-            regex = unicode_type(self.regex.text())
+            text = to_plain_text(self.preview)
+            regex = str(self.regex.text())
             cursor = QTextCursor(self.preview.document())
             extsel = QTextEdit.ExtraSelection()
             extsel.cursor = cursor
@@ -110,7 +104,7 @@ class RegexBuilder(QDialog, Ui_RegexBuilder):
         if self.match_locs:
             self.next.setEnabled(True)
             self.previous.setEnabled(True)
-        self.occurrences.setText(unicode_type(len(self.match_locs)))
+        self.occurrences.setText(str(len(self.match_locs)))
 
     def goto_previous(self):
         pos = self.preview.textCursor().position()
@@ -151,7 +145,7 @@ class RegexBuilder(QDialog, Ui_RegexBuilder):
             format = formats[0]
         elif len(formats) > 1:
             d = ChooseFormatDialog(self, _('Choose the format to view'), formats)
-            d.exec_()
+            d.exec()
             if d.result() == QDialog.DialogCode.Accepted:
                 format = d.format()
             else:
@@ -194,7 +188,7 @@ class RegexBuilder(QDialog, Ui_RegexBuilder):
                     (pathtoebook, tf))
             except WorkerError as e:
                 return error_dialog(self, _('Failed to generate preview'),
-                        err_msg, det_msg=e.orig_tb, show=True)
+                        err_msg, det_msg=str(e) + '\n\n' + e.orig_tb, show=True)
             except:
                 import traceback
                 return error_dialog(self, _('Failed to generate preview'),
@@ -209,23 +203,22 @@ class RegexBuilder(QDialog, Ui_RegexBuilder):
             self.open_book(files[0])
 
     def doc(self):
-        return unicode_type(self.preview.toPlainText())
+        return to_plain_text(self.preview)
 
 
-class RegexEdit(QWidget, Ui_Edit):
+class RegexEdit(XPathEdit):
 
-    doc_update = pyqtSignal(unicode_type)
+    doc_update = pyqtSignal(str)
 
     def __init__(self, parent=None):
-        QWidget.__init__(self, parent)
-        self.setupUi(self)
+        super().__init__(parent)
         self.edit.completer().setCaseSensitivity(Qt.CaseSensitivity.CaseSensitive)
-
         self.book_id = None
         self.db = None
         self.doc_cache = None
 
-        self.button.clicked.connect(self.builder)
+    def wizard(self):
+        return self.builder()
 
     def builder(self):
         if self.db is None:
@@ -237,16 +230,16 @@ class RegexEdit(QWidget, Ui_Edit):
         if not self.doc_cache:
             self.doc_cache = bld.doc()
             self.doc_update.emit(self.doc_cache)
-        if bld.exec_() == QDialog.DialogCode.Accepted:
+        if bld.exec() == QDialog.DialogCode.Accepted:
             self.edit.setText(bld.regex.text())
 
     def doc(self):
         return self.doc_cache
 
     def setObjectName(self, *args):
-        QWidget.setObjectName(self, *args)
+        super().setObjectName(*args)
         if hasattr(self, 'edit'):
-            self.edit.initialize('regex_edit_'+unicode_type(self.objectName()))
+            self.edit.initialize('regex_edit_'+str(self.objectName()))
 
     def set_msg(self, msg):
         self.msg.setText(msg)
@@ -268,7 +261,7 @@ class RegexEdit(QWidget, Ui_Edit):
 
     @property
     def text(self):
-        return unicode_type(self.edit.text())
+        return str(self.edit.text())
 
     @property
     def regex(self):
@@ -286,6 +279,6 @@ if __name__ == '__main__':
     app = Application([])
     d = RegexBuilder(None, None, 'a', doc='😉123abc XYZabc')
     d.do_test()
-    d.exec_()
+    d.exec()
     del d
     del app

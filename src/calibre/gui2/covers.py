@@ -1,25 +1,47 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 # License: GPLv3 Copyright: 2014, Kovid Goyal <kovid at kovidgoyal.net>
 
 import os
 from collections import OrderedDict
 from contextlib import suppress
 from copy import deepcopy
+
 from qt.core import (
-    QApplication, QCheckBox, QColor, QColorDialog, QDialog, QDialogButtonBox,
-    QFormLayout, QFrame, QGridLayout, QHBoxLayout, QIcon, QInputDialog, QLabel,
-    QLineEdit, QListWidget, QListWidgetItem, QMenu, QPixmap, QPushButton, QSize,
-    QSizePolicy, QSpinBox, Qt, QTabWidget, QTimer, QToolButton, QVBoxLayout, QWidget,
-    pyqtSignal
+    QCheckBox,
+    QColor,
+    QColorDialog,
+    QDialog,
+    QDialogButtonBox,
+    QFormLayout,
+    QFrame,
+    QGridLayout,
+    QHBoxLayout,
+    QIcon,
+    QInputDialog,
+    QLabel,
+    QLineEdit,
+    QListWidget,
+    QListWidgetItem,
+    QMenu,
+    QPixmap,
+    QPushButton,
+    QSize,
+    QSizePolicy,
+    QSpinBox,
+    Qt,
+    QTabWidget,
+    QTimer,
+    QToolButton,
+    QVBoxLayout,
+    QWidget,
+    pyqtSignal,
 )
 
 from calibre.constants import config_dir
-from calibre.ebooks.covers import (
-    all_styles, cprefs, default_color_themes, generate_cover, override_prefs
-)
+from calibre.ebooks.covers import all_styles, cprefs, default_color_themes, generate_cover, override_prefs
 from calibre.gui2 import error_dialog, gprefs
 from calibre.gui2.font_family_chooser import FontFamilyChooser
+from calibre.startup import connect_lambda
 from calibre.utils.date import now
 from calibre.utils.filenames import make_long_path_useable
 from calibre.utils.icu import primary_sort_key, sort_key
@@ -144,13 +166,13 @@ class CoverSettingsWidget(QWidget):
         self.colors_list = cl = QListWidget(cp)
         l.addWidget(cl, 1, 0, 1, -1)
         self.colors_map = OrderedDict()
-        self.ncs = ncs = QPushButton(QIcon(I('plus.png')), _('&New color scheme'), cp)
+        self.ncs = ncs = QPushButton(QIcon.ic('plus.png'), _('&New color scheme'), cp)
         ncs.clicked.connect(self.create_color_scheme)
         l.addWidget(ncs)
-        self.ecs = ecs = QPushButton(QIcon(I('format-fill-color.png')), _('&Edit color scheme'), cp)
+        self.ecs = ecs = QPushButton(QIcon.ic('format-fill-color.png'), _('&Edit color scheme'), cp)
         ecs.clicked.connect(self.edit_color_scheme)
         l.addWidget(ecs, l.rowCount()-1, 1)
-        self.rcs = rcs = QPushButton(QIcon(I('minus.png')), _('&Remove color scheme'), cp)
+        self.rcs = rcs = QPushButton(QIcon.ic('minus.png'), _('&Remove color scheme'), cp)
         rcs.clicked.connect(self.remove_color_scheme)
         l.addWidget(rcs, l.rowCount()-1, 2)
 
@@ -190,12 +212,12 @@ class CoverSettingsWidget(QWidget):
                 ('subtitle', _('&Subtitle font family:'), _('&Subtitle font size:')),
                 ('footer', _('&Footer font family:'), _('&Footer font size:')),
         ):
-            attr = '%s_font_family' % x
+            attr = f'{x}_font_family'
             ff = FontFamilyChooser(fp)
             setattr(self, attr, ff)
             l.addRow(label, ff)
             ff.family_changed.connect(self.emit_changed)
-            attr = '%s_font_size' % x
+            attr = f'{x}_font_size'
             fs = QSpinBox(fp)
             setattr(self, attr, fs)
             fs.setMinimum(8), fs.setMaximum(200), fs.setSuffix(' px')
@@ -282,9 +304,9 @@ class CoverSettingsWidget(QWidget):
 
     def _apply_prefs(self, prefs):
         for x in ('title', 'subtitle', 'footer'):
-            attr = '%s_font_family' % x
+            attr = f'{x}_font_family'
             getattr(self, attr).font_family = prefs[attr]
-            attr = '%s_font_size' % x
+            attr = f'{x}_font_size'
             getattr(self, attr).setValue(prefs[attr])
 
         for x in ('title', 'subtitle', 'footer'):
@@ -336,7 +358,7 @@ class CoverSettingsWidget(QWidget):
 
     @property
     def current_colors(self):
-        for name, li in iteritems(self.colors_map):
+        for name, li in self.colors_map.items():
             if li.isSelected():
                 return name
 
@@ -370,9 +392,9 @@ class CoverSettingsWidget(QWidget):
     def current_prefs(self):
         prefs = {k:self.original_prefs[k] for k in self.original_prefs.defaults}
         for x in ('title', 'subtitle', 'footer'):
-            attr = '%s_font_family' % x
+            attr = f'{x}_font_family'
             prefs[attr] = getattr(self, attr).font_family
-            attr = '%s_font_size' % x
+            attr = f'{x}_font_size'
             prefs[attr] = getattr(self, attr).value()
         prefs['color_themes'] = self.custom_colors
         prefs['disabled_styles'] = list(self.disabled_styles)
@@ -398,9 +420,12 @@ class CoverSettingsWidget(QWidget):
                 self.colors_list.item(i).setSelected(False)
 
     def create_color_scheme(self):
-        scheme = self.colors_map[self.current_colors].data(Qt.ItemDataRole.UserRole)
+        cs = self.current_colors
+        if cs is None:
+            cs = tuple(self.colors_map.keys())[0]
+        scheme = self.colors_map[cs].data(Qt.ItemDataRole.UserRole)
         d = CreateColorScheme('#' + _('My Color Scheme'), scheme, set(self.colors_map), parent=self)
-        if d.exec_() == QDialog.DialogCode.Accepted:
+        if d.exec() == QDialog.DialogCode.Accepted:
             name, scheme = d.data
             li = QListWidgetItem(name)
             li.setData(Qt.ItemDataRole.UserRole, scheme), li.setFlags(li.flags() | Qt.ItemFlag.ItemIsUserCheckable), li.setCheckState(Qt.CheckState.Checked)
@@ -416,7 +441,7 @@ class CoverSettingsWidget(QWidget):
                 ' color scheme instead.'), show=True)
         li = self.colors_map[cs]
         d = CreateColorScheme(cs, li.data(Qt.ItemDataRole.UserRole), set(self.colors_map), edit_scheme=True, parent=self)
-        if d.exec_() == QDialog.DialogCode.Accepted:
+        if d.exec() == QDialog.DialogCode.Accepted:
             name, scheme = d.data
             li.setText(name)
             li.setData(Qt.ItemDataRole.UserRole, scheme)
@@ -454,7 +479,7 @@ class CoverSettingsWidget(QWidget):
         attr = which + '_template'
         templ = getattr(self, attr).text()
         d = TemplateDialog(self, templ, mi=self.mi, fm=field_metadata)
-        if d.exec_() == QDialog.DialogCode.Accepted:
+        if d.exec() == QDialog.DialogCode.Accepted:
             templ = d.rule[1]
             getattr(self, attr).setText(templ)
             self.emit_changed()
@@ -473,7 +498,7 @@ class CoverSettingsWidget(QWidget):
         prefs = self.prefs_for_rendering
         hr = h / prefs['cover_height']
         for x in ('title', 'subtitle', 'footer'):
-            attr = '%s_font_size' % x
+            attr = f'{x}_font_size'
             prefs[attr] = int(prefs[attr] * hr)
         prefs['cover_width'], prefs['cover_height'] = w, h
         img = generate_cover(self.mi, prefs=prefs, as_qimage=True)
@@ -555,9 +580,7 @@ class CoverSettingsDialog(QDialog):
             ' the list of checked styles/colors.'))
 
         self.resize(self.sizeHint())
-        geom = gprefs.get('cover_settings_dialog_geom', None)
-        if geom is not None:
-            QApplication.instance().safe_restore_geometry(self, geom)
+        self.restore_geometry(gprefs, 'cover_settings_dialog_geom')
         self.prefs_for_rendering = None
 
     def restore_defaults(self):
@@ -593,7 +616,7 @@ class CoverSettingsDialog(QDialog):
 
     def _save_settings(self):
         gprefs.set('cover_generation_save_settings_for_future', self.save_settings.isChecked())
-        gprefs.set('cover_settings_dialog_geom', bytearray(self.saveGeometry()))
+        self.save_geometry(gprefs, 'cover_settings_dialog_geom')
         self.settings.save_state()
 
     def accept(self):
@@ -613,6 +636,6 @@ if __name__ == '__main__':
     app = Application([])
     d = CoverSettingsDialog()
     d.show()
-    app.exec_()
+    app.exec()
     del d
     del app

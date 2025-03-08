@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
 
 
 __license__   = 'GPL v3'
@@ -10,7 +9,6 @@ from qt.core import QDialog, QDialogButtonBox
 
 from calibre.gui2.convert.font_key_ui import Ui_Dialog
 from calibre.utils.localization import localize_user_manual_link
-from polyglot.builtins import unicode_type
 
 
 class FontKeyChooser(QDialog, Ui_Dialog):
@@ -67,7 +65,7 @@ class FontKeyChooser(QDialog, Ui_Dialog):
 
     @property
     def fsizes(self):
-        key = unicode_type(self.font_size_key.text()).strip()
+        key = str(self.font_size_key.text()).strip()
         return [float(x.strip()) for x in key.split(',' if ',' in key else ' ') if x.strip()]
 
     @property
@@ -93,17 +91,17 @@ class FontKeyChooser(QDialog, Ui_Dialog):
         from calibre.ebooks.oeb.transforms.flatcss import KeyMapper
         mapper = KeyMapper(sbase, dbase, fsizes)
         msize = mapper[fsize]
-        self.input_mapped_font_size.setText('%.1f pt'%msize)
+        self.input_mapped_font_size.setText(f'{msize:.1f} pt')
 
     def use_default(self):
         dbase, fsizes = self.get_profile_values()
         self.output_base_font_size.setValue(dbase)
-        self.font_size_key.setText(', '.join(['%.1f'%x for x in fsizes]))
+        self.font_size_key.setText(', '.join([f'{x:.1f}' for x in fsizes]))
 
 
 if __name__ == '__main__':
     from qt.core import QApplication
     app = QApplication([])
     d = FontKeyChooser()
-    d.exec_()
+    d.exec()
     del app

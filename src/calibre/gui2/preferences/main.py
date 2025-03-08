@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
 
 
 __license__   = 'GPL v3'
@@ -10,28 +9,43 @@ import re
 import textwrap
 from collections import OrderedDict
 from functools import partial
+
 from qt.core import (
-    QApplication, QDialog, QDialogButtonBox, QFont, QFrame, QHBoxLayout, QIcon,
-    QLabel, QPainter, QPointF, QScrollArea, QSize, QSizePolicy, QStackedWidget,
-    QStatusTipEvent, Qt, QTabWidget, QTextLayout, QToolBar, QVBoxLayout, QWidget,
-    pyqtSignal
+    QApplication,
+    QDialog,
+    QDialogButtonBox,
+    QFont,
+    QFrame,
+    QHBoxLayout,
+    QIcon,
+    QLabel,
+    QPainter,
+    QPointF,
+    QPushButton,
+    QScrollArea,
+    QSize,
+    QSizePolicy,
+    QStackedWidget,
+    QStatusTipEvent,
+    Qt,
+    QTabWidget,
+    QTextLayout,
+    QToolBar,
+    QVBoxLayout,
+    QWidget,
+    pyqtSignal,
 )
 
-from calibre.constants import __appname__, __version__, islinux
+from calibre.constants import __appname__, __version__
 from calibre.customize.ui import preferences_plugins
-from calibre.gui2 import (
-    available_width, gprefs, min_available_height, show_restart_warning
-)
+from calibre.gui2 import gprefs, show_restart_warning
 from calibre.gui2.dialogs.message_box import Icon
-from calibre.gui2.preferences import (
-    AbortCommit, AbortInitialize, get_plugin, init_gui
-)
-from polyglot.builtins import unicode_type
+from calibre.gui2.preferences import AbortCommit, AbortInitialize, get_plugin, init_gui
 
 ICON_SIZE = 32
 
-# Title Bar {{{
 
+# Title Bar {{{
 
 class Message(QWidget):
 
@@ -97,7 +111,7 @@ class TitleBar(QWidget):
         self.show_msg()
 
     def show_plugin(self, plugin=None):
-        self.icon.set_icon(QIcon(I('lt.png') if plugin is None else plugin.icon))
+        self.icon.set_icon(QIcon.ic('lt.png' if plugin is None else plugin.icon))
         self.title.setText('<h1>' + (_('Preferences') if plugin is None else plugin.gui_name))
 
     def show_msg(self, msg=None):
@@ -138,7 +152,7 @@ class Category(QWidget):  # {{{
         self.actions = []
         for p in plugins:
             target = partial(self.triggered, p)
-            ac = self.bar.addAction(QIcon(p.icon), p.gui_name.replace('&', '&&'), target)
+            ac = self.bar.addAction(QIcon.ic(p.icon), p.gui_name.replace('&', '&&'), target)
             ac.setToolTip(textwrap.fill(p.description))
             ac.setWhatsThis(textwrap.fill(p.description))
             ac.setStatusTip(p.description)
@@ -201,8 +215,13 @@ class Browser(QScrollArea):  # {{{
             w.plugin_activated.connect(self.show_plugin.emit)
         self._layout.addStretch(1)
 
-
 # }}}
+
+
+must_restart_message = _('The changes you have made require calibre be '
+                         'restarted immediately. You will not be allowed to '
+                         'set any more preferences, until you restart.')
+
 
 class Preferences(QDialog):
 
@@ -216,41 +235,26 @@ class Preferences(QDialog):
         self.committed = False
         self.close_after_initial = close_after_initial
 
-        self.resize(930, 720)
-        nh, nw = min_available_height()-25, available_width()-10
-        if nh < 0:
-            nh = 800
-        if nw < 0:
-            nw = 600
-        nh = min(self.height(), nh)
-        nw = min(self.width(), nw)
-        self.resize(nw, nh)
-
-        geom = gprefs.get('preferences dialog geometry', None)
-        if geom is not None:
-            QApplication.instance().safe_restore_geometry(self, geom)
-
-        # Center
-        if islinux:
-            self.move(gui.rect().center() - self.rect().center())
+        self.restore_geometry(gprefs, 'preferences dialog geometry')
 
         self.setWindowModality(Qt.WindowModality.ApplicationModal)
         self.setWindowTitle(__appname__ + ' — ' + _('Preferences'))
-        self.setWindowIcon(QIcon(I('config.png')))
+        self.setWindowIcon(QIcon.ic('config.png'))
         self.l = l = QVBoxLayout(self)
 
         self.stack = QStackedWidget(self)
         self.bb = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Close | QDialogButtonBox.StandardButton.Apply |
-            QDialogButtonBox.StandardButton.Cancel | QDialogButtonBox.StandardButton.RestoreDefaults
+            QDialogButtonBox.StandardButton.Cancel
         )
         self.bb.button(QDialogButtonBox.StandardButton.Apply).clicked.connect(self.accept)
-        self.bb.button(QDialogButtonBox.StandardButton.RestoreDefaults).setIcon(QIcon(I('clear_left.png')))
-        self.bb.button(QDialogButtonBox.StandardButton.RestoreDefaults).clicked.connect(self.restore_defaults)
-        self.wizard_button = self.bb.addButton(_('Run Welcome &wizard'), QDialogButtonBox.ButtonRole.ActionRole)
-        self.wizard_button.setIcon(QIcon(I('wizard.png')))
+        self.wizard_button = QPushButton(QIcon.ic('wizard.png'), _('Run Welcome &wizard'))
         self.wizard_button.clicked.connect(self.run_wizard, type=Qt.ConnectionType.QueuedConnection)
         self.wizard_button.setAutoDefault(False)
+        self.restore_defaults_button = rdb = QPushButton(QIcon.ic('clear_left.png'), _('Restore &defaults'))
+        rdb.clicked.connect(self.restore_defaults, type=Qt.ConnectionType.QueuedConnection)
+        rdb.setAutoDefault(False)
+        rdb.setVisible(False)
         self.bb.rejected.connect(self.reject)
         self.browser = Browser(self)
         self.browser.show_plugin.connect(self.show_plugin)
@@ -265,7 +269,10 @@ class Preferences(QDialog):
                 (QDialogButtonBox.StandardButton.Cancel, _('Cancel and return to overview'))]:
             self.bb.button(ac).setToolTip(tt)
 
-        l.addWidget(self.title_bar), l.addWidget(self.stack), l.addWidget(self.bb)
+        l.addWidget(self.title_bar), l.addWidget(self.stack)
+        h = QHBoxLayout()
+        l.addLayout(h)
+        h.addWidget(self.wizard_button), h.addWidget(self.restore_defaults_button), h.addStretch(10), h.addWidget(self.bb)
 
         if initial_plugin is not None:
             category, name = initial_plugin[:2]
@@ -280,9 +287,16 @@ class Preferences(QDialog):
                                 idx = c.indexOf(w)
                                 if idx > -1:
                                     c.setCurrentIndex(idx)
+                                    try:
+                                        self.showing_widget.initial_tab_changed()
+                                    except Exception:
+                                        pass
                                     break
         else:
             self.hide_plugin()
+
+    def sizeHint(self):
+        return QSize(930, 720)
 
     def event(self, ev):
         if isinstance(ev, QStatusTipEvent):
@@ -301,8 +315,8 @@ class Preferences(QDialog):
                 if isinstance(g, QLabel):
                     buddy = g.buddy()
                     if buddy is not None and hasattr(buddy, 'toolTip'):
-                        htext = unicode_type(buddy.toolTip()).strip()
-                        etext = unicode_type(g.toolTip()).strip()
+                        htext = str(buddy.toolTip()).strip()
+                        etext = str(g.toolTip()).strip()
                         if htext and not etext:
                             g.setToolTip(htext)
                             g.setWhatsThis(htext)
@@ -314,8 +328,10 @@ class Preferences(QDialog):
     def show_plugin(self, plugin):
         self.showing_widget = plugin.create_widget(self.scroll_area)
         self.showing_widget.genesis(self.gui)
+        self.showing_widget.do_on_child_tabs('genesis', self.gui)
         try:
             self.showing_widget.initialize()
+            self.showing_widget.do_on_child_tabs('initialize')
         except AbortInitialize:
             return
         self.set_tooltips_for_labels()
@@ -325,22 +341,24 @@ class Preferences(QDialog):
         self.setWindowTitle(__appname__ + ' - ' + _('Preferences') + ' - ' + plugin.gui_name)
         self.showing_widget.restart_now.connect(self.restart_now)
         self.title_bar.show_plugin(plugin)
-        self.setWindowIcon(QIcon(plugin.icon))
+        self.setWindowIcon(QIcon.ic(plugin.icon))
 
         self.bb.button(QDialogButtonBox.StandardButton.Close).setVisible(False)
         self.wizard_button.setVisible(False)
-        for button in (QDialogButtonBox.StandardButton.Apply, QDialogButtonBox.StandardButton.RestoreDefaults, QDialogButtonBox.StandardButton.Cancel):
+        for button in (QDialogButtonBox.StandardButton.Apply, QDialogButtonBox.StandardButton.Cancel):
             button = self.bb.button(button)
             button.setVisible(True)
 
         self.bb.button(QDialogButtonBox.StandardButton.Apply).setEnabled(False)
         self.bb.button(QDialogButtonBox.StandardButton.Apply).setDefault(False), self.bb.button(QDialogButtonBox.StandardButton.Apply).setDefault(True)
-        self.bb.button(QDialogButtonBox.StandardButton.RestoreDefaults).setEnabled(self.showing_widget.supports_restoring_to_defaults)
-        self.bb.button(QDialogButtonBox.StandardButton.RestoreDefaults).setToolTip(
+        self.restore_defaults_button.setEnabled(self.showing_widget.supports_restoring_to_defaults)
+        self.restore_defaults_button.setVisible(self.showing_widget.supports_restoring_to_defaults)
+        self.restore_defaults_button.setToolTip(
             self.showing_widget.restore_defaults_desc if self.showing_widget.supports_restoring_to_defaults else
             (_('Restoring to defaults not supported for') + ' ' + plugin.gui_name))
-        self.bb.button(QDialogButtonBox.StandardButton.RestoreDefaults).setText(_('Restore &defaults'))
+        self.restore_defaults_button.setText(_('Restore &defaults'))
         self.showing_widget.changed_signal.connect(self.changed_signal)
+        self.showing_widget.do_on_child_tabs('set_changed_signal', self.changed_signal)
 
     def changed_signal(self):
         b = self.bb.button(QDialogButtonBox.StandardButton.Apply)
@@ -352,16 +370,17 @@ class Preferences(QDialog):
                 getattr(self.showing_widget, sig).disconnect(getattr(self, sig))
             except Exception:
                 pass
+        self.stack.setCurrentIndex(0)
         self.showing_widget = QWidget(self.scroll_area)
         self.scroll_area.setWidget(self.showing_widget)
         self.setWindowTitle(__appname__ + ' - ' + _('Preferences'))
-        self.stack.setCurrentIndex(0)
         self.title_bar.show_plugin()
-        self.setWindowIcon(QIcon(I('config.png')))
+        self.setWindowIcon(QIcon.ic('config.png'))
 
-        for button in (QDialogButtonBox.StandardButton.Apply, QDialogButtonBox.StandardButton.RestoreDefaults, QDialogButtonBox.StandardButton.Cancel):
+        for button in (QDialogButtonBox.StandardButton.Apply, QDialogButtonBox.StandardButton.Cancel):
             button = self.bb.button(button)
             button.setVisible(False)
+        self.restore_defaults_button.setVisible(False)
 
         self.bb.button(QDialogButtonBox.StandardButton.Close).setVisible(True)
         self.bb.button(QDialogButtonBox.StandardButton.Close).setDefault(False), self.bb.button(QDialogButtonBox.StandardButton.Close).setDefault(True)
@@ -377,31 +396,33 @@ class Preferences(QDialog):
         self.accept()
 
     def commit(self, *args):
-        must_restart = self.showing_widget.commit()
+        # Commit the child widgets first in case the main widget uses the information
+        must_restart = bool(self.showing_widget.do_on_child_tabs('commit')) | bool(self.showing_widget.commit())
         rc = self.showing_widget.restart_critical
         self.committed = True
         do_restart = False
         if must_restart:
             self.must_restart = True
-            msg = _('Some of the changes you made require a restart.'
-                    ' Please restart calibre as soon as possible.')
             if rc:
-                msg = _('The changes you have made require calibre be '
-                        'restarted immediately. You will not be allowed to '
-                        'set any more preferences, until you restart.')
-
+                msg = must_restart_message
+            else:
+                msg = _('Some of the changes you made require a restart.'
+                        ' Please restart calibre as soon as possible.')
             do_restart = show_restart_warning(msg, parent=self)
 
+        # Same with refresh -- do the child widgets first so the main widget has the info
+        self.showing_widget.do_on_child_tabs('refresh_gui', self.gui)
         self.showing_widget.refresh_gui(self.gui)
         if do_restart:
             self.do_restart = True
         return self.close_after_initial or (must_restart and rc) or do_restart
 
     def restore_defaults(self, *args):
+        self.showing_widget.do_on_child_tabs('restore_defaults')
         self.showing_widget.restore_defaults()
 
     def on_shutdown(self):
-        gprefs.set('preferences dialog geometry', bytearray(self.saveGeometry()))
+        self.save_geometry(gprefs, 'preferences dialog geometry')
         if self.committed:
             self.gui.must_restart_before_config = self.must_restart
             self.gui.tags_view.recount()
@@ -438,5 +459,5 @@ if __name__ == '__main__':
     gui = init_gui()
 
     p = Preferences(gui)
-    p.exec_()
+    p.exec()
     gui.shutdown()

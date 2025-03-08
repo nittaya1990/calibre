@@ -1,5 +1,3 @@
-
-
 __license__   = 'GPL v3'
 __copyright__ = '2008, Kovid Goyal kovid@kovidgoyal.net'
 __docformat__ = 'restructuredtext en'
@@ -9,25 +7,25 @@ Wrapper for multi-threaded access to a single sqlite database connection. Serial
 all calls.
 '''
 
-import sqlite3 as sqlite, traceback, time, uuid, os
-from sqlite3 import IntegrityError, OperationalError
-from threading import Thread
-from threading import RLock
-from datetime import datetime
+import os
+import sqlite3 as sqlite
+import time
+import traceback
+import uuid
+from datetime import datetime, timezone
 from functools import partial
+from sqlite3 import IntegrityError, OperationalError
+from threading import RLock, Thread
 
-from calibre.ebooks.metadata import title_sort, author_to_author_sort
-from calibre.utils.date import parse_date, isoformat, local_tz, UNDEFINED_DATE
-from calibre import isbytestring, force_unicode
-from calibre.constants import iswindows, DEBUG, plugins_loc
+from calibre import force_unicode, isbytestring, prints
+from calibre.constants import DEBUG, iswindows, plugins, plugins_loc
+from calibre.ebooks.metadata import author_to_author_sort, title_sort
+from calibre.utils.date import UNDEFINED_DATE, isoformat, local_tz, parse_date
 from calibre.utils.icu import sort_key
 from calibre_extensions import speedup as _c_speedup
-from calibre import prints
-from polyglot.builtins import cmp, native_string_type, unicode_type
 from polyglot import reprlib
+from polyglot.builtins import cmp, native_string_type
 from polyglot.queue import Queue
-
-from dateutil.tz import tzoffset
 
 global_lock = RLock()
 
@@ -44,7 +42,7 @@ def _c_convert_timestamp(val):
     year, month, day, hour, minutes, seconds, tzsecs = ret
     try:
         return datetime(year, month, day, hour, minutes, seconds,
-                tzinfo=tzoffset(None, tzsecs)).astimezone(local_tz)
+                tzinfo=timezone(tzsecs)).astimezone(local_tz)
     except OverflowError:
         return UNDEFINED_DATE.astimezone(local_tz)
 
@@ -63,7 +61,7 @@ def _py_convert_timestamp(val):
             min = int(val[14:16])
             sec = int(val[17:19])
             return datetime(year, month, day, hour, min, sec,
-                    tzinfo=tzoffset(None, tzsecs))
+                    tzinfo=timezone(tzsecs))
         except:
             pass
         return parse_date(val, as_utc=False)
@@ -86,7 +84,7 @@ def convert_bool(val):
     return val != '0'
 
 
-sqlite.register_adapter(bool, lambda x : 1 if x else 0)
+sqlite.register_adapter(bool, lambda x: 1 if x else 0)
 sqlite.register_converter(native_string_type('bool'), convert_bool)
 sqlite.register_converter(native_string_type('BOOL'), convert_bool)
 
@@ -163,7 +161,7 @@ class IdentifiersConcat:
         self.ans = []
 
     def step(self, key, val):
-        self.ans.append('%s:%s'%(key, val))
+        self.ans.append(f'{key}:{val}')
 
     def finalize(self):
         try:
@@ -260,7 +258,7 @@ def do_connect(path, row_factory=None):
     conn.create_aggregate('sortconcat_amper', 2, SortedConcatenateAmper)
     conn.create_aggregate('identifiers_concat', 2, IdentifiersConcat)
     load_c_extensions(conn)
-    conn.row_factory = sqlite.Row if row_factory else (lambda cursor, row : list(row))
+    conn.row_factory = sqlite.Row if row_factory else (lambda cursor, row: list(row))
     conn.create_aggregate('concat', 1, Concatenate)
     conn.create_aggregate('aum_sortconcat', 4, AumSortedConcatenate)
     conn.create_collation(native_string_type('PYNOCASE'), partial(pynocase,
@@ -268,10 +266,11 @@ def do_connect(path, row_factory=None):
     conn.create_function('title_sort', 1, title_sort)
     conn.create_function('author_to_author_sort', 1,
             _author_to_author_sort)
-    conn.create_function('uuid4', 0, lambda : unicode_type(uuid.uuid4()))
+    conn.create_function('uuid4', 0, lambda: str(uuid.uuid4()))
     # Dummy functions for dynamically created filters
     conn.create_function('books_list_filter', 1, lambda x: 1)
     conn.create_collation(native_string_type('icucollate'), icu_collator)
+    plugins.load_sqlite3_extension(conn, 'sqlite_extension')
     return conn
 
 
@@ -280,8 +279,7 @@ class DBThread(Thread):
     CLOSE = '-------close---------'
 
     def __init__(self, path, row_factory):
-        Thread.__init__(self)
-        self.setDaemon(True)
+        Thread.__init__(self, daemon=True)
         self.path = path
         self.unhandled_error = (None, '')
         self.row_factory = row_factory
@@ -321,7 +319,7 @@ class DBThread(Thread):
                                 break
                             except OperationalError as err:
                                 # Retry if unable to open db file
-                                e = unicode_type(err)
+                                e = str(err)
                                 if 'unable to open' not in e or i == 2:
                                     if 'unable to open' in e:
                                         prints('Unable to open database for func',
@@ -341,7 +339,7 @@ class DatabaseException(Exception):
     def __init__(self, err, tb):
         tb = '\n\t'.join(('\tRemote'+tb).splitlines())
         try:
-            msg = unicode_type(err) +'\n' + tb
+            msg = str(err) +'\n' + tb
         except:
             msg = repr(err) + '\n' + tb
         Exception.__init__(self, msg)
@@ -362,7 +360,7 @@ def proxy(fn):
             ok, res = self.proxy.results.get()
             if not ok:
                 if isinstance(res[0], IntegrityError):
-                    raise IntegrityError(unicode_type(res[0]))
+                    raise IntegrityError(str(res[0]))
                 raise DatabaseException(*res)
             return res
     return run

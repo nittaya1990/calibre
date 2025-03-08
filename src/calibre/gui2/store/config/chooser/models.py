@@ -1,14 +1,9 @@
-# -*- coding: utf-8 -*-
-
-
 __license__ = 'GPL 3'
 __copyright__ = '2011, John Schember <john@nachtimwald.com>'
 __docformat__ = 'restructuredtext en'
 
 
-from qt.core import (
-    QAbstractItemModel, QIcon, QModelIndex, QStyledItemDelegate, Qt
-)
+from qt.core import QAbstractItemModel, QIcon, QModelIndex, QStyledItemDelegate, Qt
 
 from calibre import fit_image
 from calibre.customize.ui import disable_plugin, enable_plugin, is_disabled
@@ -16,7 +11,6 @@ from calibre.db.search import CONTAINS_MATCH, EQUALS_MATCH, REGEXP_MATCH, _match
 from calibre.utils.config_base import prefs
 from calibre.utils.icu import sort_key
 from calibre.utils.search_query_parser import SearchQueryParser
-from polyglot.builtins import range, unicode_type
 
 
 class Delegate(QStyledItemDelegate):
@@ -48,8 +42,8 @@ class Matches(QAbstractItemModel):
     def __init__(self, plugins):
         QAbstractItemModel.__init__(self)
 
-        self.NO_DRM_ICON = QIcon(I('ok.png'))
-        self.DONATE_ICON = QIcon(I('donate.png'))
+        self.NO_DRM_ICON = QIcon.ic('ok.png')
+        self.DONATE_ICON = QIcon.ic('donate.png')
 
         self.all_matches = plugins
         self.matches = plugins
@@ -81,14 +75,12 @@ class Matches(QAbstractItemModel):
     def enable_all(self):
         for i in range(len(self.matches)):
             index = self.createIndex(i, 0)
-            data = (True)
-            self.setData(index, data, Qt.ItemDataRole.CheckStateRole)
+            self.setData(index, Qt.CheckState.Checked, Qt.ItemDataRole.CheckStateRole)
 
     def enable_none(self):
         for i in range(len(self.matches)):
             index = self.createIndex(i, 0)
-            data = (False)
-            self.setData(index, data, Qt.ItemDataRole.CheckStateRole)
+            self.setData(index, Qt.CheckState.Unchecked, Qt.ItemDataRole.CheckStateRole)
 
     def enable_invert(self):
         for i in range(len(self.matches)):
@@ -96,7 +88,7 @@ class Matches(QAbstractItemModel):
 
     def toggle_plugin(self, index):
         new_index = self.createIndex(index.row(), 0)
-        data = (is_disabled(self.get_plugin(index)))
+        data = Qt.CheckState.Unchecked if is_disabled(self.get_plugin(index)) else Qt.CheckState.Checked
         self.setData(new_index, data, Qt.ItemDataRole.CheckStateRole)
 
     def index(self, row, column, parent=QModelIndex()):
@@ -129,7 +121,7 @@ class Matches(QAbstractItemModel):
         result = self.matches[row]
         if role in (Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole):
             if col == 1:
-                return ('<b>%s</b><br><i>%s</i>' % (result.name, result.description))
+                return (f'<b>{result.name}</b><br><i>{result.description}</i>')
             elif col == 3:
                 return (result.headquarters)
             elif col == 5:
@@ -148,7 +140,7 @@ class Matches(QAbstractItemModel):
                 return Qt.CheckState.Checked
         elif role == Qt.ItemDataRole.TextAlignmentRole:
             if col in self.CENTERED_COLUMNS:
-                return Qt.AlignmentFlag.AlignHCenter
+                return int(Qt.AlignmentFlag.AlignHCenter)  # https://bugreports.qt.io/browse/PYSIDE-1974
             return Qt.AlignmentFlag.AlignLeft
         elif role == Qt.ItemDataRole.ToolTipRole:
             if col == 0:
@@ -157,14 +149,14 @@ class Matches(QAbstractItemModel):
                 else:
                     return ('<p>' + _('This store is currently enabled and can be used in other parts of calibre.') + '</p>')
             elif col == 1:
-                return ('<p>%s</p>' % result.description)
+                return (f'<p>{result.description}</p>')
             elif col == 2:
                 if result.drm_free_only:
                     return ('<p>' + _('This store only distributes e-books without DRM.') + '</p>')
                 else:
-                    return ('<p>' + _('This store distributes e-books with DRM. It may have some titles without DRM, but you will need to check on a per title basis.') + '</p>')  # noqa
+                    return ('<p>' + _('This store distributes e-books with DRM. It may have some titles without DRM, but you will need to check on a per title basis.') + '</p>')  # noqa: E501
             elif col == 3:
-                return ('<p>' + _('This store is headquartered in %s. This is a good indication of what market the store caters to. However, this does not necessarily mean that the store is limited to that market only.') % result.headquarters + '</p>')  # noqa
+                return ('<p>' + _('This store is headquartered in %s. This is a good indication of what market the store caters to. However, this does not necessarily mean that the store is limited to that market only.') % result.headquarters + '</p>')  # noqa: E501
             elif col == 4:
                 if result.affiliate:
                     return ('<p>' + _('Buying from this store supports the calibre developer: %s.') % result.author + '</p>')
@@ -177,7 +169,7 @@ class Matches(QAbstractItemModel):
             return False
         col = index.column()
         if col == 0:
-            if bool(data):
+            if data in (Qt.CheckState.Checked, Qt.CheckState.Checked.value):
                 enable_plugin(self.get_plugin(index))
             else:
                 disable_plugin(self.get_plugin(index))
@@ -209,7 +201,7 @@ class Matches(QAbstractItemModel):
         if not self.matches:
             return
         descending = order == Qt.SortOrder.DescendingOrder
-        self.matches.sort(key=lambda x: sort_key(unicode_type(self.data_as_text(x, col))), reverse=descending)
+        self.matches.sort(key=lambda x: sort_key(str(self.data_as_text(x, col))), reverse=descending)
         if reset:
             self.beginResetModel(), self.endResetModel()
 
@@ -259,13 +251,13 @@ class SearchFilter(SearchQueryParser):
         all_locs = set(self.USABLE_LOCATIONS) - {'all'}
         locations = all_locs if location == 'all' else [location]
         q = {
-             'affiliate': lambda x: x.affiliate,
-             'description': lambda x: x.description.lower(),
-             'drm': lambda x: not x.drm_free_only,
-             'enabled': lambda x: not is_disabled(x),
-             'format': lambda x: ','.join(x.formats).lower(),
-             'headquarters': lambda x: x.headquarters.lower(),
-             'name': lambda x : x.name.lower(),
+            'affiliate': lambda x: x.affiliate,
+            'description': lambda x: x.description.lower(),
+            'drm': lambda x: not x.drm_free_only,
+            'enabled': lambda x: not is_disabled(x),
+            'format': lambda x: ','.join(x.formats).lower(),
+            'headquarters': lambda x: x.headquarters.lower(),
+            'name': lambda x: x.name.lower(),
         }
         q['formats'] = q['format']
         upf = prefs['use_primary_find_in_search']
@@ -274,14 +266,14 @@ class SearchFilter(SearchQueryParser):
                 accessor = q[locvalue]
                 if query == 'true':
                     if locvalue in ('affiliate', 'drm', 'enabled'):
-                        if accessor(sr) == True:  # noqa
+                        if accessor(sr) == True:  # noqa: E712
                             matches.add(sr)
                     elif accessor(sr) is not None:
                         matches.add(sr)
                     continue
                 if query == 'false':
                     if locvalue in ('affiliate', 'drm', 'enabled'):
-                        if accessor(sr) == False:  # noqa
+                        if accessor(sr) == False:  # noqa: E712
                             matches.add(sr)
                     elif accessor(sr) is None:
                         matches.add(sr)

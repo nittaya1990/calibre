@@ -1,22 +1,24 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:fdm=marker:ai
 
 
 __license__   = 'GPL v3'
 __copyright__ = '2013, Kovid Goyal <kovid at kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
 
-import sys, time, io, re
-from zlib import decompressobj
+import io
+import re
+import sys
+import time
 from collections import OrderedDict
 from threading import Thread
+from zlib import decompressobj
 
 from calibre import prints
-from calibre.constants import numeric_version, DEBUG
+from calibre.constants import DEBUG, numeric_version
 from calibre.gui2.store import StorePlugin
 from calibre.utils.config import JSONConfig
+from polyglot.builtins import iteritems, itervalues
 from polyglot.urllib import urlencode
-from polyglot.builtins import iteritems, itervalues, unicode_type
 
 
 class VersionMismatch(ValueError):
@@ -28,9 +30,9 @@ class VersionMismatch(ValueError):
 
 def download_updates(ver_map={}, server='https://code.calibre-ebook.com'):
     from calibre.utils.https import get_https_resource_securely
-    data = {k:unicode_type(v) for k, v in iteritems(ver_map)}
+    data = {k:str(v) for k, v in iteritems(ver_map)}
     data['ver'] = '1'
-    url = '%s/stores?%s'%(server, urlencode(data))
+    url = f'{server}/stores?{urlencode(data)}'
     # We use a timeout here to ensure the non-daemonic update thread does not
     # cause calibre to hang indefinitely during shutdown
     raw = get_https_resource_securely(url, timeout=90.0)
@@ -40,7 +42,7 @@ def download_updates(ver_map={}, server='https://code.calibre-ebook.com'):
         name = name.decode('utf-8')
         d = decompressobj()
         src = d.decompress(raw)
-        src = src.decode('utf-8').lstrip(u'\ufeff')
+        src = src.decode('utf-8').lstrip('\ufeff')
         # Python complains if there is a coding declaration in a unicode string
         src = re.sub(r'^#.*coding\s*[:=]\s*([-\w.]+)', '#', src, flags=re.MULTILINE)
         # Translate newlines to \n
@@ -130,8 +132,7 @@ class Stores(OrderedDict):
             import traceback
             traceback.print_exc()
         else:
-            for name, code in updates:
-                yield name, code
+            yield from updates
 
     def do_update(self):
         replacements = {}
@@ -199,4 +200,4 @@ if __name__ == '__main__':
         print(name)
         print(code.encode('utf-8'))
         print('\n', '_'*80, '\n', sep='')
-    print('Time to download all %d plugins: %.2f seconds'%(count, time.time() - st))
+    print(f'Time to download all {count} plugins: {time.time() - st:.2f} seconds')

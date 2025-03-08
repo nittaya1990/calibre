@@ -5,12 +5,14 @@
 __license__ = 'GPL v3'
 __copyright__ = '2015, Kovid Goyal <kovid at kovidgoyal.net>'
 
-import unittest, sys, argparse
+import argparse
+import sys
+import unittest
 
 from lxml import etree, html
 
-from css_selectors.errors import SelectorSyntaxError, ExpressionError
-from css_selectors.parser import tokenize, parse
+from css_selectors.errors import ExpressionError, SelectorSyntaxError
+from css_selectors.parser import parse, tokenize
 from css_selectors.select import Select
 
 
@@ -745,7 +747,8 @@ by William Shakespeare
     def test_select_shakespeare(self):
         document = html.document_fromstring(self.HTML_SHAKESPEARE)
         select = Select(document)
-        count = lambda s: sum(1 for r in select(s))
+        def count(s):
+            return sum(1 for r in select(s))
 
         # Data borrowed from http://mootools.net/slickspeed/
 

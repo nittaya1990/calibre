@@ -3,11 +3,7 @@
 #include <qpa/qplatformintegration.h>
 #include <qpa/qplatformscreen.h>
 #include <qpa/qplatformservices.h>
-#if (QT_VERSION >= QT_VERSION_CHECK(5, 8, 0))
-#include <QtServiceSupport/private/qgenericunixservices_p.h>
-#else
-#include <QtPlatformSupport/private/qgenericunixservices_p.h>
-#endif
+#include <QtGui/private/qgenericunixservices_p.h>
 #include <QScopedPointer>
 
 QT_BEGIN_NAMESPACE
@@ -45,6 +41,7 @@ public:
     QPlatformOpenGLContext *createPlatformOpenGLContext(QOpenGLContext *context) const override;
 	QStringList themeNames() const override;
 	QPlatformTheme *createPlatformTheme(const QString &name) const override;
+    QPlatformNativeInterface *nativeInterface() const override;
 
     unsigned options() const { return 0; }
 
@@ -55,6 +52,7 @@ public:
 private:
     QScopedPointer<QPlatformFontDatabase> m_fontDatabase;
     QScopedPointer<QPlatformServices> platform_services;
+    mutable QScopedPointer<QPlatformNativeInterface> m_nativeInterface;
 };
 
 QT_END_NAMESPACE

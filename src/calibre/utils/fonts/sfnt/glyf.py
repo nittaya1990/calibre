@@ -1,13 +1,12 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:fdm=marker:ai
 
 
 __license__   = 'GPL v3'
 __copyright__ = '2012, Kovid Goyal <kovid at kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
 
-from struct import unpack_from
 from collections import OrderedDict
+from struct import unpack_from
 
 from calibre.utils.fonts.sfnt import UnknownTable
 from polyglot.builtins import iteritems
@@ -47,7 +46,7 @@ class SimpleGlyph:
 class CompositeGlyph(SimpleGlyph):
 
     def __init__(self, num_of_countours, raw):
-        super(CompositeGlyph, self).__init__(num_of_countours, raw)
+        super().__init__(num_of_countours, raw)
         self.is_composite = True
 
         flags = MORE_COMPONENTS

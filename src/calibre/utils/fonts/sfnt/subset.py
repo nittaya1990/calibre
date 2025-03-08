@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:fdm=marker:ai
 
 
 __license__   = 'GPL v3'
@@ -8,13 +7,14 @@ __docformat__ = 'restructuredtext en'
 
 import traceback
 from collections import OrderedDict
-from operator import itemgetter
 from functools import partial
+from operator import itemgetter
 
-from calibre.utils.icu import safe_chr, ord_string
 from calibre.utils.fonts.sfnt.container import Sfnt
-from calibre.utils.fonts.sfnt.errors import UnsupportedFont, NoGlyphs
-from polyglot.builtins import unicode_type, range, iteritems, itervalues, map
+from calibre.utils.fonts.sfnt.errors import NoGlyphs, UnsupportedFont
+from calibre.utils.icu import ord_string, safe_chr
+from calibre.utils.resources import get_path as P
+from polyglot.builtins import iteritems, itervalues
 
 # TrueType outlines {{{
 
@@ -109,7 +109,7 @@ def pdf_subset(sfnt, glyphs):
 
 
 def safe_ord(x):
-    return ord_string(unicode_type(x))[0]
+    return ord_string(str(x))[0]
 
 
 def subset(raw, individual_chars, ranges=(), warnings=None):
@@ -164,7 +164,7 @@ def subset(raw, individual_chars, ranges=(), warnings=None):
             gsub.decompile()
             extra_glyphs = gsub.all_substitutions(itervalues(character_map))
         except UnsupportedFont as e:
-            warn('Usupported GSUB table: %s'%e)
+            warn(f'Usupported GSUB table: {e}')
         except Exception:
             warn('Failed to decompile GSUB table:', traceback.format_exc())
 
@@ -185,7 +185,7 @@ def subset(raw, individual_chars, ranges=(), warnings=None):
         try:
             sfnt[b'kern'].restrict_to_glyphs(frozenset(itervalues(character_map)))
         except UnsupportedFont as e:
-            warn('kern table unsupported, ignoring: %s'%e)
+            warn(f'kern table unsupported, ignoring: {e}')
         except Exception:
             warn('Subsetting of kern table failed, ignoring:',
                     traceback.format_exc())
@@ -193,11 +193,12 @@ def subset(raw, individual_chars, ranges=(), warnings=None):
     raw, new_sizes = sfnt()
     return raw, old_sizes, new_sizes
 
-# CLI {{{
 
+# CLI {{{
 
 def option_parser():
     import textwrap
+
     from calibre.utils.config import OptionParser
     parser = OptionParser(usage=textwrap.dedent('''\
             %prog [options] input_font_file output_font_file characters_to_keep
@@ -219,12 +220,11 @@ def option_parser():
 def print_stats(old_stats, new_stats):
     from calibre import prints
     prints('========= Table comparison (original vs. subset) =========')
-    prints('Table', ' ', '%10s'%'Size', '  ', 'Percent', '   ', '%10s'%'New Size',
-            ' New Percent')
+    prints('Table', ' ', f"{'Size':>10}", '  ', 'Percent', '   ', f"{'New Size':>10}", ' New Percent')
     prints('='*80)
     old_total = sum(itervalues(old_stats))
     new_total = sum(itervalues(new_stats))
-    tables = sorted(old_stats, key=lambda x:old_stats[x],
+    tables = sorted(old_stats, key=lambda x: old_stats[x],
             reverse=True)
     for table in tables:
         osz = old_stats[table]
@@ -233,14 +233,16 @@ def print_stats(old_stats, new_stats):
         np = nsz/new_total * 100
         suffix = ' | same size'
         if nsz != osz:
-            suffix = ' | reduced to %.1f %%'%(nsz/osz * 100)
-        prints('%4s'%table, '  ', '%10s'%osz, '  ', '%5.1f %%'%op, '   ',
-                '%10s'%nsz, '  ', '%5.1f %%'%np, suffix)
+            suffix = f' | reduced to {nsz/osz*100:.1f} %'
+        prints(f'{table:>4}', '  ', f'{osz:>10}', '  ', f'{op:5.1f} %', '   ',
+               f'{nsz:>10}', '  ', f'{np:5.1f} %', suffix)
     prints('='*80)
 
 
 def main(args):
-    import sys, time
+    import sys
+    import time
+
     from calibre import prints
     parser = option_parser()
     opts, args = parser.parse_args(args)
@@ -251,7 +253,7 @@ def main(args):
     with open(iff, 'rb') as f:
         orig = f.read()
 
-    chars = [x for x in chars.split(',')]
+    chars = chars.split(',')
     individual, ranges = set(), set()
 
     def not_single(c):
@@ -266,14 +268,15 @@ def main(args):
 
     for c in chars:
         if '-' in c:
-            parts = [x.strip() for x in c.split('-')]
+            parts = tuple(x.strip() for x in c.split('-'))
             if len(parts) != 2:
                 prints('Invalid range:', c, file=sys.stderr)
                 raise SystemExit(1)
             if opts.codes:
                 parts = tuple(map(conv_code, parts))
-            tuple(map(not_single, parts))
-            ranges.add(tuple(parts))
+            for i in parts:
+                not_single(i)
+            ranges.add(parts)
         else:
             if opts.codes:
                 c = conv_code(c)
@@ -285,10 +288,10 @@ def main(args):
     reduced = (len(sf)/len(orig)) * 100
 
     def sz(x):
-        return '%gKB'%(len(x)/1024.)
+        return f'{len(x)/1024.0:g}KB'
     print_stats(old_stats, new_stats)
-    prints('Original size:', sz(orig), 'Subset size:', sz(sf), 'Reduced to: %g%%'%(reduced))
-    prints('Subsetting took %g seconds'%taken)
+    prints('Original size:', sz(orig), 'Subset size:', sz(sf), f'Reduced to: {reduced:g}%')
+    prints(f'Subsetting took {taken:g} seconds')
     with open(off, 'wb') as f:
         f.write(sf)
     prints('Subset font written to:', off)
@@ -296,20 +299,20 @@ def main(args):
 
 if __name__ == '__main__':
     try:
-        import init_calibre
-        init_calibre
+        import init_calibre  # noqa: F401
     except ImportError:
         pass
     import sys
     main(sys.argv)
 # }}}
 
+
 # Tests {{{
 
-
 def test_mem():
-    from calibre.utils.mem import memory
     import gc
+
+    from calibre.utils.mem import memory
     gc.collect()
     start_mem = memory()
     raw = P('fonts/liberation/LiberationSerif-Regular.ttf', data=True)
@@ -324,7 +327,7 @@ def test_mem():
 
 def test():
     raw = P('fonts/liberation/LiberationSerif-Regular.ttf', data=True)
-    sf, old_stats, new_stats = subset(raw, set(('a', 'b', 'c')), ())
+    sf, old_stats, new_stats = subset(raw, {'a', 'b', 'c'}, ())
     if len(sf) > 0.3 * len(raw):
         raise Exception('Subsetting failed')
 
@@ -343,23 +346,23 @@ def all():
             total += 1
             try:
                 w = []
-                sf, old_stats, new_stats = subset(raw, set(('a', 'b', 'c')),
+                sf, old_stats, new_stats = subset(raw, {'a', 'b', 'c'},
                         (), w)
                 if w:
-                    warnings[font['full_name'] + ' (%s)'%font['path']] = w
+                    warnings[font['full_name'] + ' ({})'.format(font['path'])] = w
             except NoGlyphs:
                 print('No glyphs!')
                 continue
             except UnsupportedFont as e:
-                unsupported.append((font['full_name'], font['path'], unicode_type(e)))
+                unsupported.append((font['full_name'], font['path'], str(e)))
                 print('Unsupported!')
                 continue
             except Exception as e:
                 print('Failed!')
-                failed.append((font['full_name'], font['path'], unicode_type(e)))
+                failed.append((font['full_name'], font['path'], str(e)))
             else:
                 averages.append(sum(itervalues(new_stats))/sum(itervalues(old_stats)) * 100)
-                print('Reduced to:', '%.1f'%averages[-1] , '%')
+                print('Reduced to:', f'{averages[-1]:.1f}', '%')
     if unsupported:
         print('\n\nUnsupported:')
         for name, path, err in unsupported:
@@ -377,9 +380,8 @@ def all():
             print(name, path, err)
             print()
 
-    print('Average reduction to: %.1f%%'%(sum(averages)/len(averages)))
+    print(f'Average reduction to: {sum(averages)/len(averages):.1f}%')
     print('Total:', total, 'Unsupported:', len(unsupported), 'Failed:',
             len(failed), 'Warnings:', len(warnings))
-
 
 # }}}

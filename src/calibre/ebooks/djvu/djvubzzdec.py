@@ -1,8 +1,4 @@
 #!/usr/bin/env python
-# coding: utf-8
-
-
-from polyglot.builtins import range
 
 __license__   = 'GPL v3'
 __copyright__ = '2011, Anthon van der Neut <A.van.der.Neut@ruamel.eu>'
@@ -82,15 +78,14 @@ MAXLEN = 1024 ** 2
 
 
 class BZZDecoderError(Exception):
-
-    """This exception is raised when BZZDecode runs into trouble
-    """
+    '''This exception is raised when BZZDecode runs into trouble
+    '''
 
     def __init__(self, msg):
         self.msg = msg
 
     def __str__(self):
-        return "BZZDecoderError: %s" % (self.msg)
+        return f'BZZDecoderError: {self.msg}'
 
 
 # This table has been designed for the ZPCoder
@@ -393,7 +388,7 @@ xmtf = (
 # }}}
 
 
-class BZZDecoder():
+class BZZDecoder:
 
     def __init__(self, infile, outfile):
         self.instream = infile
@@ -421,7 +416,7 @@ class BZZDecoder():
         # Create machine independent ffz table
         for i in range(256):
             j = i
-            while(j & 0x80):
+            while j & 0x80:
                 self.ffzt[i] += 1
                 j <<= 1
         # Initialize table
@@ -472,7 +467,7 @@ class BZZDecoder():
                 self.byte = 0xff
                 self.delay -= 1
                 if self.delay < 1:
-                    raise BZZDecoderError("BiteStream EOF")
+                    raise BZZDecoderError('BiteStream EOF')
             self.bufint = (self.bufint << 8) | self.byte
             self.scount += 8
 
@@ -490,7 +485,7 @@ class BZZDecoder():
         if not self.xsize:
             return 0
         if self.xsize > MAXBLOCK * 1024:        # 4MB (4096 * 1024) is max block
-            raise BZZDecoderError("BiteStream.corrupt")
+            raise BZZDecoderError('BiteStream.corrupt')
         # Dec11ode Estimation Speed
         fshift = 0
         if self.zpcodec_decoder():
@@ -504,8 +499,10 @@ class BZZDecoder():
         # Decode
         mtfno = 3
         markerpos = -1
-        zc = lambda i: self.zpcodec_decode(self.ctx, i)
-        dc = lambda i, bits: self.decode_binary(self.ctx, i, bits)
+        def zc(i):
+            return self.zpcodec_decode(self.ctx, i)
+        def dc(i, bits):
+            return self.decode_binary(self.ctx, i, bits)
         for i in range(self.xsize):
             ctxid = CTXIDS - 1
             if ctxid > mtfno:
@@ -573,7 +570,7 @@ class BZZDecoder():
         # //////// Reconstruct the string
 
         if markerpos < 1 or markerpos >= self.xsize:
-            raise BZZDecoderError("BiteStream.corrupt")
+            raise BZZDecoderError('BiteStream.corrupt')
         # Allocate pointers
         posn = [0] * self.xsize
         # Prepare count buffer
@@ -604,7 +601,7 @@ class BZZDecoder():
             i = count[c] + (n & 0xffffff)
         # Free and check
         if i != markerpos:
-            raise BZZDecoderError("BiteStream.corrupt")
+            raise BZZDecoderError('BiteStream.corrupt')
         return self.xsize
 
     def decode_raw(self, bits):
@@ -733,11 +730,12 @@ class BZZDecoder():
 # for testing
 def main():
     import sys
+
     from calibre_extensions import bzzdec as d
-    with open(sys.argv[1], "rb") as f:
+    with open(sys.argv[1], 'rb') as f:
         raw = f.read()
     print(d.decompress(raw))
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

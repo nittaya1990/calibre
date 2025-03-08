@@ -1,20 +1,21 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 
 
 __license__ = 'GPL v3'
 __copyright__ = '2015, Kovid Goyal <kovid at kovidgoyal.net>'
 
-import ctypes, ctypes.wintypes as types, struct, datetime, numbers
+import ctypes
+import ctypes.wintypes as types
+import datetime
+import numbers
+import struct
 
-from polyglot.builtins import unicode_type
 from calibre_extensions import winutil
 
 try:
     import winreg
 except ImportError:
     import _winreg as winreg
-
 
 # Binding to C library {{{
 advapi32 = ctypes.windll.advapi32
@@ -41,7 +42,7 @@ RRF_ZEROONFAILURE = 0x20000000
 
 
 class FILETIME(ctypes.Structure):
-    _fields_ = [("dwLowDateTime", DWORD), ("dwHighDateTime", DWORD)]
+    _fields_ = [('dwLowDateTime', DWORD), ('dwHighDateTime', DWORD)]
 
 
 def default_errcheck(result, func, args):
@@ -113,11 +114,11 @@ def expand_environment_strings(src):
 def convert_to_registry_data(value, has_expansions=False):
     if value is None:
         return None, winreg.REG_NONE, 0
-    if isinstance(value, (unicode_type, bytes)):
+    if isinstance(value, (str, bytes)):
         buf = ctypes.create_unicode_buffer(value)
         return buf, (winreg.REG_EXPAND_SZ if has_expansions else winreg.REG_SZ), len(buf) * 2
     if isinstance(value, (list, tuple)):
-        buf = ctypes.create_unicode_buffer('\0'.join(map(unicode_type, value)) + '\0\0')
+        buf = ctypes.create_unicode_buffer('\0'.join(map(str, value)) + '\0\0')
         return buf, winreg.REG_MULTI_SZ, len(buf) * 2
     if isinstance(value, numbers.Integral):
         try:
@@ -129,7 +130,7 @@ def convert_to_registry_data(value, has_expansions=False):
     if isinstance(value, bytes):
         buf = ctypes.create_string_buffer(value)
         return buf, winreg.REG_BINARY, len(buf)
-    raise ValueError('Unknown data type: %r' % value)
+    raise ValueError(f'Unknown data type: {value!r}')
 
 
 def convert_registry_data(raw, size, dtype):
@@ -152,7 +153,7 @@ def convert_registry_data(raw, size, dtype):
         if size == 0:
             return 0
         return ctypes.cast(raw, ctypes.POINTER(ctypes.c_uint64)).contents.value
-    raise ValueError('Unsupported data type: %r' % dtype)
+    raise ValueError(f'Unsupported data type: {dtype!r}')
 
 
 try:

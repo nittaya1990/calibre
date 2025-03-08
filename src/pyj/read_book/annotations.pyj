@@ -150,9 +150,20 @@ class AnnotationsManager:  # {{{
             self.sync_annots_to_server('bookmarks')
         return changed
 
-    def default_bookmark_title(self):
+    def edit_bookmark(self, title, new_title):
+        changed = False
+        for b in self.bookmarks:
+            if b.title is title:
+                b.title = new_title
+                b.timestamp = Date().toISOString()
+                changed = True
+        if changed:
+            self.sync_annots_to_server('bookmarks')
+        return changed
+
+    def default_bookmark_title(self, base_default_title):
         all_titles = {bm.title:True for bm in self.bookmarks if not bm.removed}
-        base_default_title = _('Bookmark')
+        base_default_title = base_default_title or _('Bookmark')
         c = 0
         while True:
             c += 1
@@ -203,6 +214,11 @@ class AnnotationsManager:  # {{{
         h = self.highlights[uuid] if uuid else None
         if h:
             return h.notes
+
+    def text_for_highlight(self, uuid):
+        h = self.highlights[uuid] if uuid else None
+        if h:
+            return h.highlighted_text
 
     def set_notes_for_highlight(self, uuid, notes):
         h = self.highlights[uuid]

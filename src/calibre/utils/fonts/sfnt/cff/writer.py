@@ -1,16 +1,14 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:fdm=marker:ai
 
 
 __license__   = 'GPL v3'
 __copyright__ = '2012, Kovid Goyal <kovid at kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
 
-from struct import pack
 from collections import OrderedDict
+from struct import pack
 
 from calibre.utils.fonts.sfnt.cff.constants import cff_standard_strings
-from polyglot.builtins import range
 
 
 class Index(list):
@@ -43,7 +41,7 @@ class Index(list):
                 offsets = b''.join(pack(b'>L', x)[1:] for x in offsets)
             else:
                 fmt = {1:'B', 2:'H', 4:'L'}[offsize]
-                offsets = pack(('>%d%s'%(len(offsets), fmt)).encode('ascii'),
+                offsets = pack(f'>{len(offsets)}{fmt}'.encode('ascii'),
                         *offsets)
 
             self.raw = prefix + offsets + obj_data
@@ -104,7 +102,7 @@ class Charsets(list):
     def compile(self):
         ans = pack(b'>B', 0)
         sids = [self.strings(x) for x in self]
-        ans += pack(('>%dH'%len(self)).encode('ascii'), *sids)
+        ans += pack(f'>{len(self)}H'.encode('ascii'), *sids)
         self.raw = ans
         return ans
 

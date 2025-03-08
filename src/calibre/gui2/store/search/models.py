@@ -1,27 +1,29 @@
-# -*- coding: utf-8 -*-
-
-
 __license__ = 'GPL 3'
 __copyright__ = '2011, John Schember <john@nachtimwald.com>'
 __docformat__ = 'restructuredtext en'
 
-import re, string
+import re
+import string
 from operator import attrgetter
 
-from qt.core import (Qt, QAbstractItemModel, QPixmap, QModelIndex, QSize,
-                      pyqtSignal, QIcon, QApplication)
+from qt.core import QAbstractItemModel, QApplication, QIcon, QModelIndex, QPixmap, QSize, Qt, pyqtSignal
 
 from calibre import force_unicode
 from calibre.gui2 import FunctionDispatcher
+from calibre.gui2.store.search.download_thread import CoverThreadPool, DetailsThreadPool
 from calibre.gui2.store.search_result import SearchResult
-from calibre.gui2.store.search.download_thread import DetailsThreadPool, \
-    CoverThreadPool
+from calibre.utils.icu import lower as icu_lower
 from calibre.utils.icu import sort_key
+from calibre.utils.localization import pgettext
 from calibre.utils.search_query_parser import SearchQueryParser
-from polyglot.builtins import unicode_type
 
 
 def comparable_price(text):
+    if isinstance(text, (int, float)):
+        text = str(text)
+    if isinstance(text, bytes):
+        text = text.decode('utf-8', 'ignore')
+    text = text or ''
     # this keep thousand and fraction separators
     match = re.search(r'(?:\d|[,.](?=\d))(?:\d*(?:[,.\' ](?=\d))?)+', text)
     if match:
@@ -29,8 +31,8 @@ def comparable_price(text):
         m = re.sub(r'[.,\' ]', '.', match.group())
         # remove all separators accept fraction,
         # leave only 2 digits in fraction
-        m = re.sub(r'\.(?!\d*$)', r'', m)
-        text = '{0:0>8.0f}'.format(float(m) * 100.)
+        m = re.sub(r'\.(?!\d*$)', '', m)
+        text = f'{float(m) * 100.:0>8.0f}'
     return text
 
 
@@ -38,18 +40,18 @@ class Matches(QAbstractItemModel):
 
     total_changed = pyqtSignal(int)
 
-    HEADERS = [_('Cover'), _('Title'), _('Price'), _('DRM'), _('Store'), _('Download'), _('Affiliate')]
+    HEADERS = [_('Cover'), _('Title'), _('Price'), _('DRM'), pgettext('book store in the Get books calibre feature', 'Store'), _('Download'), _('Affiliate')]
     HTML_COLS = (1, 4)
     IMG_COLS = (0, 3, 5, 6)
 
     def __init__(self, cover_thread_count=2, detail_thread_count=4):
         QAbstractItemModel.__init__(self)
 
-        self.DRM_LOCKED_ICON = QIcon(I('drm-locked.png'))
-        self.DRM_UNLOCKED_ICON = QIcon(I('drm-unlocked.png'))
-        self.DRM_UNKNOWN_ICON = QIcon(I('dialog_question.png'))
-        self.DONATE_ICON = QIcon(I('donate.png'))
-        self.DOWNLOAD_ICON = QIcon(I('arrow-down.png'))
+        self.DRM_LOCKED_ICON = QIcon.ic('drm-locked.png')
+        self.DRM_UNLOCKED_ICON = QIcon.ic('drm-unlocked.png')
+        self.DRM_UNKNOWN_ICON = QIcon.ic('dialog_question.png')
+        self.DONATE_ICON = QIcon.ic('donate.png')
+        self.DOWNLOAD_ICON = QIcon.ic('arrow-down.png')
 
         # All matches. Used to determine the order to display
         # self.matches because the SearchFilter returns
@@ -153,12 +155,12 @@ class Matches(QAbstractItemModel):
         # Remove filter identifiers
         # Remove the prefix.
         for loc in ('all', 'author', 'author2', 'authors', 'title', 'title2'):
-            query = re.sub(r'%s:"(?P<a>[^\s"]+)"' % loc, r'\g<a>', query)
-            query = query.replace('%s:' % loc, '')
+            query = re.sub(rf'{loc}:"(?P<a>[^\s"]+)"', r'\g<a>', query)
+            query = query.replace(f'{loc}:', '')
         # Remove the prefix and search text.
         for loc in ('cover', 'download', 'downloads', 'drm', 'format', 'formats', 'price', 'store'):
-            query = re.sub(r'%s:"[^"]"' % loc, '', query)
-            query = re.sub(r'%s:[^\s]*' % loc, '', query)
+            query = re.sub(rf'{loc}:"[^"]"', '', query)
+            query = re.sub(rf'{loc}:[^\s]*', '', query)
         # Remove whitespace
         query = re.sub(r'\s', '', query)
         mod_query = re.sub(r'\s', '', mod_query)
@@ -202,11 +204,11 @@ class Matches(QAbstractItemModel):
             if col == 1:
                 t = result.title if result.title else _('Unknown')
                 a = result.author if result.author else ''
-                return ('<b>%s</b><br><i>%s</i>' % (t, a))
+                return (f'<b>{t}</b><br><i>{a}</i>')
             elif col == 2:
                 return (result.price)
             elif col == 4:
-                return ('<span>%s<br>%s</span>' % (result.store_name, result.formats))
+                return (f'<span>{result.store_name}<br>{result.formats}</span>')
             return None
         elif role == Qt.ItemDataRole.DecorationRole:
             if col == 0 and result.cover_data:
@@ -229,7 +231,7 @@ class Matches(QAbstractItemModel):
                     return (self.DONATE_ICON)
         elif role == Qt.ItemDataRole.ToolTipRole:
             if col == 1:
-                return ('<p>%s</p>' % result.title)
+                return (f'<p>{result.title}</p>')
             elif col == 2:
                 if result.price:
                     return ('<p>' + _(
@@ -240,13 +242,13 @@ class Matches(QAbstractItemModel):
                     'No price was found')
             elif col == 3:
                 if result.drm == SearchResult.DRM_LOCKED:
-                    return ('<p>' + _('This book as been detected as having DRM restrictions. This book may not work with your reader and you will have limitations placed upon you as to what you can do with this book. Check with the store before making any purchases to ensure you can actually read this book.') + '</p>')  # noqa
+                    return ('<p>' + _('This book as been detected as having DRM restrictions. This book may not work with your reader and you will have limitations placed upon you as to what you can do with this book. Check with the store before making any purchases to ensure you can actually read this book.') + '</p>')  # noqa: E501
                 elif result.drm == SearchResult.DRM_UNLOCKED:
-                    return ('<p>' + _('This book has been detected as being DRM Free. You should be able to use this book on any device provided it is in a format calibre supports for conversion. However, before making a purchase double check the DRM status with the store. The store may not be disclosing the use of DRM.') + '</p>')  # noqa
+                    return ('<p>' + _('This book has been detected as being DRM Free. You should be able to use this book on any device provided it is in a format calibre supports for conversion. However, before making a purchase double check the DRM status with the store. The store may not be disclosing the use of DRM.') + '</p>')  # noqa: E501
                 else:
-                    return ('<p>' + _('The DRM status of this book could not be determined. There is a very high likelihood that this book is actually DRM restricted.') + '</p>')  # noqa
+                    return ('<p>' + _('The DRM status of this book could not be determined. There is a very high likelihood that this book is actually DRM restricted.') + '</p>')  # noqa: E501
             elif col == 4:
-                return ('<p>%s</p>' % result.formats)
+                return (f'<p>{result.formats}</p>')
             elif col == 5:
                 if result.downloads:
                     return ('<p>' + _('The following formats can be downloaded directly: %s.') % ', '.join(result.downloads.keys()) + '</p>')
@@ -291,7 +293,7 @@ class Matches(QAbstractItemModel):
             return
         descending = order == Qt.SortOrder.DescendingOrder
         self.all_matches.sort(
-            key=lambda x: sort_key(unicode_type(self.data_as_text(x, col))),
+            key=lambda x: sort_key(str(self.data_as_text(x, col))),
             reverse=descending)
         self.reorder_matches()
         if reset:
@@ -395,15 +397,15 @@ class SearchFilter(SearchQueryParser):
         all_locs = set(self.USABLE_LOCATIONS) - {'all'}
         locations = all_locs if location == 'all' else [location]
         q = {
-             'affiliate': attrgetter('affiliate'),
-             'author': lambda x: x.author.lower(),
-             'cover': attrgetter('cover_url'),
-             'drm': attrgetter('drm'),
-             'download': attrgetter('downloads'),
-             'format': attrgetter('formats'),
-             'price': lambda x: comparable_price(x.price),
-             'store': lambda x: x.store_name.lower(),
-             'title': lambda x: x.title.lower(),
+            'affiliate': attrgetter('affiliate'),
+            'author': lambda x: x.author.lower(),
+            'cover': attrgetter('cover_url'),
+            'drm': attrgetter('drm'),
+            'download': attrgetter('downloads'),
+            'format': attrgetter('formats'),
+            'price': lambda x: comparable_price(x.price),
+            'store': lambda x: x.store_name.lower(),
+            'title': lambda x: x.title.lower(),
         }
         for x in ('author', 'download', 'format'):
             q[x+'s'] = q[x]

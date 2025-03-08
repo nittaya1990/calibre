@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
 
 
 __license__   = 'GPL v3'
@@ -53,7 +52,7 @@ PUBLICATION_METADATA_FIELDS = frozenset((
     'publisher',        # Simple string, no special semantics
     # Absolute path to image file encoded in filesystem_encoding
     'cover',
-    # Of the form (format, data) where format is, for e.g. 'jpeg', 'png', 'gif'...
+    # Of the form (format, data) where format is, e.g. 'jpeg', 'png', 'gif'...
     'cover_data',
     # Either thumbnail data, or an object with the attribute
     # image_path which is the path to an image file, encoded
@@ -86,8 +85,8 @@ CALIBRE_METADATA_FIELDS = frozenset((
     # a dict of user category names, where the value is a list of item names
     # from the book that are in that category
     'user_categories',
-    # a dict of author to an associated hyperlink
-    'author_link_map',
+    # a dict of items to associated hyperlink
+    'link_maps',
 ))
 
 ALL_METADATA_FIELDS =      SOCIAL_METADATA_FIELDS.union(

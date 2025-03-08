@@ -1,22 +1,23 @@
-# -*- coding: utf-8 -*-
-
-
 __license__ = 'GPL 3'
 __copyright__ = '2009, John Schember <john@nachtimwald.com>'
 __docformat__ = 'restructuredtext en'
 
-import os, re, time, sys
+import os
+import re
+import sys
+import time
 from functools import cmp_to_key
 
+from calibre import force_unicode, isbytestring
+from calibre.constants import preferred_encoding
+from calibre.devices.interface import BookList as _BookList
+from calibre.devices.mime import mime_type_ext
 from calibre.ebooks.metadata import title_sort
 from calibre.ebooks.metadata.book.base import Metadata
-from calibre.devices.mime import mime_type_ext
-from calibre.devices.interface import BookList as _BookList
-from calibre.constants import preferred_encoding
-from calibre import isbytestring, force_unicode
+from calibre.prints import debug_print
 from calibre.utils.config_base import tweaks
 from calibre.utils.icu import sort_key
-from polyglot.builtins import string_or_bytes, iteritems, itervalues, cmp
+from polyglot.builtins import cmp, iteritems, itervalues, string_or_bytes
 
 
 def none_cmp(xx, yy):
@@ -158,7 +159,6 @@ class CollectionsBookList(BookList):
         return cat_name.strip()
 
     def get_collections(self, collection_attributes):
-        from calibre.devices.usbms.driver import debug_print
         from calibre.utils.config import device_prefs
         debug_print('Starting get_collections:', device_prefs['manage_device_metadata'])
         debug_print('Renaming rules:', tweaks['sony_collection_renaming_rules'])
@@ -299,7 +299,7 @@ class CollectionsBookList(BookList):
                 if all_by_title not in collections:
                     collections[all_by_title] = {}
                 collections[all_by_title][lpath] = (book, tsval, asval)
-            for (n, sb) in all_by_something:
+            for n,sb in all_by_something:
                 if n not in collections:
                     collections[n] = {}
                 collections[n][lpath] = (book, book.get(sb, ''), tsval)

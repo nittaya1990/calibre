@@ -1,14 +1,13 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 # License: GPLv3 Copyright: 2014, Kovid Goyal <kovid at kovidgoyal.net>
 
 
 import glob
+import json
 import os
 import re
 import shutil
 import sys
-from calibre_extensions import hunspell
 from collections import defaultdict, namedtuple
 from functools import partial
 from itertools import chain
@@ -18,8 +17,9 @@ from calibre.constants import config_dir, filesystem_encoding, iswindows
 from calibre.spell import parse_lang_code
 from calibre.utils.config import JSONConfig
 from calibre.utils.icu import capitalize
-from calibre.utils.localization import get_lang, get_system_locale
-from polyglot.builtins import filter, iteritems, itervalues, map, unicode_type
+from calibre.utils.localization import _, get_lang, get_system_locale
+from calibre.utils.resources import get_path as P
+from polyglot.builtins import iteritems, itervalues
 
 Dictionary = namedtuple('Dictionary', 'primary_locale locales dicpath affpath builtin name id')
 LoadedDictionary = namedtuple('Dictionary', 'primary_locale locales obj builtin name id')
@@ -32,16 +32,15 @@ not_present = object()
 
 class UserDictionary:
 
-    __slots__ = ('name', 'is_active', 'words')
+    __slots__ = ('is_active', 'name', 'words')
 
     def __init__(self, **kwargs):
         self.name = kwargs['name']
         self.is_active = kwargs['is_active']
-        self.words = {(w, langcode) for w, langcode in kwargs['words']}
+        self.words = set(map(tuple, kwargs['words']))
 
     def serialize(self):
-        return {'name':self.name, 'is_active': self.is_active, 'words':[
-            (w, l) for w, l in self.words]}
+        return {'name':self.name, 'is_active': self.is_active, 'words': list(self.words)}
 
 
 _builtins = _custom = None
@@ -57,10 +56,22 @@ def builtin_dictionaries():
             locale = locales[0]
             base = os.path.dirname(lc)
             dics.append(Dictionary(
-                parse_lang_code(locale), frozenset(map(parse_lang_code, locales)), os.path.join(base, '%s.dic' % locale),
-                os.path.join(base, '%s.aff' % locale), True, None, None))
+                parse_lang_code(locale), frozenset(map(parse_lang_code, locales)), os.path.join(base, f'{locale}.dic'),
+                os.path.join(base, f'{locale}.aff'), True, None, None))
         _builtins = frozenset(dics)
     return _builtins
+
+
+def catalog_online_dictionaries():
+    loaded = json.loads(P('dictionaries/online-catalog.json', allow_user_override=False, data=True))
+    try:
+        loaded.update(json.loads(P('dictionaries/online-catalog.json', data=True)))
+    except:
+        pass
+    rslt = []
+    for lang, directory in loaded.items():
+        rslt.append({'primary_locale':parse_lang_code(lang), 'name':lang,'directory':directory})
+    return rslt
 
 
 def custom_dictionaries(reread=False):
@@ -79,8 +90,8 @@ def custom_dictionaries(reread=False):
             if ploc.countrycode is None:
                 continue
             dics.append(Dictionary(
-                ploc, frozenset(filter(lambda x:x.countrycode is not None, map(parse_lang_code, locales))), os.path.join(base, '%s.dic' % locale),
-                os.path.join(base, '%s.aff' % locale), False, name, os.path.basename(base)))
+                ploc, frozenset(filter(lambda x: x.countrycode is not None, map(parse_lang_code, locales))), os.path.join(base, f'{locale}.dic'),
+                os.path.join(base, f'{locale}.aff'), False, name, os.path.basename(base)))
         _custom = frozenset(dics)
     return _custom
 
@@ -165,13 +176,14 @@ def get_dictionary(locale, exact_match=False):
 
 
 def load_dictionary(dictionary):
+    from calibre_extensions import hunspell
 
     def fix_path(path):
         if isinstance(path, bytes):
             path = path.decode(filesystem_encoding)
         path = os.path.abspath(path)
         if iswindows:
-            path = r'\\?\{}'.format(path)
+            path = fr'\\?\{path}'
         return path
 
     obj = hunspell.Dictionary(fix_path(dictionary.dicpath), fix_path(dictionary.affpath))
@@ -181,7 +193,7 @@ def load_dictionary(dictionary):
 class Dictionaries:
 
     def __init__(self):
-        self.remove_hyphenation = re.compile('[\u2010-]+')
+        self.remove_hyphenation = re.compile(r'[\u2010-]+')
         self.negative_pat = re.compile(r'-[.\d+]')
         self.fix_punctuation_pat = re.compile(r'''[:.]''')
         self.dictionaries = {}
@@ -217,7 +229,7 @@ class Dictionaries:
                                 ans.obj.add(word)
                             except Exception:
                                 # not critical since all it means is that the word won't show up in suggestions
-                                prints('Failed to add the word %r to the dictionary for %s' % (word, locale), file=sys.stderr)
+                                prints(f'Failed to add the word {word!r} to the dictionary for {locale}', file=sys.stderr)
             self.dictionaries[locale] = ans
         return ans
 
@@ -274,11 +286,11 @@ class Dictionaries:
     def add_to_user_dictionary(self, name, word, locale):
         ud = self.user_dictionary(name)
         if ud is None:
-            raise ValueError('Cannot add to the dictionary named: %s as no such dictionary exists' % name)
+            raise ValueError(f'Cannot add to the dictionary named: {name} as no such dictionary exists')
         wl = len(ud.words)
         if isinstance(word, (set, frozenset)):
             ud.words |= word
-            self.add_user_words(word, locale.langcode)
+            self.add_user_words({x[0] for x in word}, locale.langcode)
         else:
             ud.words.add((word, locale.langcode))
             self.add_user_words((word,), locale.langcode)
@@ -331,7 +343,7 @@ class Dictionaries:
 
     def create_user_dictionary(self, name):
         if name in {d.name for d in self.all_user_dictionaries}:
-            raise ValueError('A dictionary named %s already exists' % name)
+            raise ValueError(f'A dictionary named {name} already exists')
         d = UserDictionary(name=name, is_active=True, words=())
         self.active_user_dictionaries.append(d)
         self.save_user_dictionaries()
@@ -397,7 +409,7 @@ class Dictionaries:
 
         if d is not None:
             try:
-                ans = d.obj.suggest(unicode_type(word).replace('\u2010', '-'))
+                ans = d.obj.suggest(str(word).replace('\u2010', '-'))
             except ValueError:
                 pass
             else:
@@ -437,22 +449,32 @@ def find_tests():
         def setUp(self):
             dictionaries = Dictionaries()
             dictionaries.initialize()
-            eng = parse_lang_code('en')
+            eng = parse_lang_code('en-GB')
             self.recognized = partial(dictionaries.recognized, locale=eng)
             self.suggestions = partial(dictionaries.suggestions, locale=eng)
 
         def ar(self, w):
             if not self.recognized(w):
-                raise AssertionError('The word %r was not recognized' % w)
+                raise AssertionError(f'The word {w!r} was not recognized')
 
         def test_dictionaries(self):
             for w in 'recognized one-half one\u2010half'.split():
                 self.ar(w)
-            d = load_dictionary(get_dictionary(parse_lang_code('es'))).obj
-            self.assertTrue(d.recognized('Achí'))
+            d = load_dictionary(get_dictionary(parse_lang_code('es-ES'))).obj
+            self.assertTrue(d.recognized('Ahí'))
             self.assertIn('one\u2010half', self.suggestions('oone\u2010half'))
+            d = load_dictionary(get_dictionary(parse_lang_code('es'))).obj
             self.assertIn('adequately', self.suggestions('ade-quately'))
             self.assertIn('magic. Wand', self.suggestions('magic.wand'))
             self.assertIn('List', self.suggestions('Lis𝑘t'))
 
     return unittest.TestLoader().loadTestsFromTestCase(TestDictionaries)
+
+
+def test():
+    from calibre.utils.run_tests import run_cli
+    run_cli(find_tests())
+
+
+if __name__ == '__main__':
+    test()

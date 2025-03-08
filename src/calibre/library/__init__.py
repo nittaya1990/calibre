@@ -1,5 +1,3 @@
-
-
 __license__   = 'GPL v3'
 __copyright__ = '2008, Kovid Goyal <kovid at kovidgoyal.net>'
 
@@ -7,7 +5,6 @@ __copyright__ = '2008, Kovid Goyal <kovid at kovidgoyal.net>'
 
 
 import os
-from polyglot.builtins import range
 
 
 def db(path=None, read_only=False):
@@ -27,7 +24,12 @@ def generate_test_db(library_path,  # {{{
         max_authors=10,
         max_tags=10
         ):
-    import random, string, os, sys, time
+    import os
+    import random
+    import string
+    import sys
+    import time
+
     from calibre.constants import preferred_encoding
 
     if not os.path.exists(library_path):

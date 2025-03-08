@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
 
 
 __license__   = 'GPL v3'
@@ -11,19 +10,21 @@ __docformat__ = 'restructuredtext en'
 Iterate over the HTML files in an ebook. Useful for writing viewers.
 '''
 
-import re, os, math
+import math
+import os
+import re
 from functools import partial
 
+from calibre import guess_type, prepare_string_for_xml
 from calibre.ebooks.metadata.opf2 import OPF
+from calibre.ebooks.oeb.base import urlparse, urlunquote
+from calibre.ebooks.oeb.iterator.bookmarks import BookmarksMixin
+from calibre.ebooks.oeb.iterator.spine import SpineItem, create_indexing_data
+from calibre.ebooks.oeb.transforms.cover import CoverManager
 from calibre.ptempfile import PersistentTemporaryDirectory, remove_dir
 from calibre.utils.config import DynamicConfig
 from calibre.utils.logging import default_log
 from calibre.utils.tdir_in_cache import tdir_in_cache
-from calibre import guess_type, prepare_string_for_xml
-from calibre.ebooks.oeb.transforms.cover import CoverManager
-from calibre.ebooks.oeb.iterator.spine import (SpineItem, create_indexing_data)
-from calibre.ebooks.oeb.iterator.bookmarks import BookmarksMixin
-from calibre.ebooks.oeb.base import urlparse, urlunquote
 
 TITLEPAGE = CoverManager.SVG_TEMPLATE.replace(
         '__ar__', 'none').replace('__viewbox__', '0 0 600 800'
@@ -38,8 +39,8 @@ class FakeOpts:
 
 
 def write_oebbook(oeb, path):
-    from calibre.ebooks.oeb.writer import OEBWriter
     from calibre import walk
+    from calibre.ebooks.oeb.writer import OEBWriter
     w = OEBWriter()
     w(oeb, path)
     for f in walk(path):
@@ -66,8 +67,7 @@ def extract_book(pathtoebook, tdir, log=None, view_kepub=False, processed=False,
         if not only_input_plugin:
             # Run the HTML preprocess/parsing from the conversion pipeline as
             # well
-            if (processed or plumber.input_fmt.lower() in {'pdb', 'pdf', 'rb'} and
-                    not hasattr(pathtoopf, 'manifest')):
+            if processed or (plumber.input_fmt.lower() in {'pdb', 'pdf', 'rb'} and not hasattr(pathtoopf, 'manifest')):
                 if hasattr(pathtoopf, 'manifest'):
                     pathtoopf = write_oebbook(pathtoopf, tdir)
                 pathtoopf = create_oebbook(log, pathtoopf, plumber.opts)
@@ -105,7 +105,7 @@ class EbookIterator(BookmarksMixin):
 
     def search(self, text, index, backwards=False):
         from calibre.ebooks.oeb.polish.parsing import parse
-        pmap = [(i, path) for i, path in enumerate(self.spine)]
+        pmap = list(enumerate(self.spine))
         if backwards:
             pmap.reverse()
         q = text.lower()

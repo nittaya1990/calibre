@@ -20,75 +20,16 @@
    <string>Manage authors</string>
   </property>
   <layout class="QVBoxLayout" name="verticalLayout">
-   <item >
-    <layout class="QGridLayout" name="">
-     <item row="0" column="0">
-      <widget class="QLabel">
-       <property name="text">
-        <string>&amp;Search for:</string>
-       </property>
-       <property name="buddy">
-        <cstring>find_box</cstring>
-       </property>
-      </widget>
-     </item>
-     <item row="0" column="1">
-      <widget class="HistoryLineEdit" name="find_box">
-       <property name="minimumSize">
-        <size>
-         <width>200</width>
-         <height>0</height>
-        </size>
-       </property>
-       <property name="clearButtonEnabled">
-        <bool>true</bool>
-       </property>
-      </widget>
-     </item>
-     <item row="0" column="2">
-      <widget class="QPushButton" name="find_button">
-       <property name="text">
-        <string>S&amp;earch</string>
-       </property>
-      </widget>
-     </item>
-     <item row="0" column="3">
-      <spacer>
-       <property name="orientation">
-        <enum>Qt::Horizontal</enum>
-       </property>
-       <property name="sizeHint" stdset="0">
-        <size>
-         <width>40</width>
-         <height>20</height>
-        </size>
-       </property>
-      </spacer>
-     </item>
-     <item row="0" column="4">
-      <widget class="QCheckBox" name="apply_vl_checkbox">
-       <property name="toolTip">
-        <string>&lt;p&gt;Only show authors in the
-          current Virtual library. Edits already done may be hidden but will
-          not be forgotten.&lt;/p&gt;</string>
-       </property>
-       <property name="text">
-        <string>Only show authors in the current &amp;Virtual library</string>
-       </property>
-      </widget>
-     </item>
-     <item row="1" column="0">
-      <widget class="QLabel">
-       <property name="text">
-        <string>Filter &amp;by:</string>
-       </property>
-       <property name="buddy">
-        <cstring>filter_box</cstring>
-       </property>
-      </widget>
-     </item>
+   <item>
+    <layout class="QGridLayout">
      <item row="1" column="1">
       <widget class="HistoryLineEdit" name="filter_box">
+       <property name="sizePolicy">
+        <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
+         <horstretch>0</horstretch>
+         <verstretch>0</verstretch>
+        </sizepolicy>
+       </property>
        <property name="minimumSize">
         <size>
          <width>200</width>
@@ -99,8 +40,47 @@
         <string>&lt;p&gt;Only show authors that contain the text in this box.
           The match ignores case.&lt;/p&gt;</string>
        </property>
-       <property name="clearButtonEnabled">
+       <property name="clearButtonEnabled" stdset="0">
         <bool>true</bool>
+       </property>
+      </widget>
+     </item>
+     <item row="0" column="0">
+      <widget class="QLabel" name="label">
+       <property name="text">
+        <string>&amp;Search for:</string>
+       </property>
+       <property name="buddy">
+        <cstring>find_box</cstring>
+       </property>
+      </widget>
+     </item>
+     <item row="0" column="1">
+      <widget class="HistoryLineEdit" name="find_box">
+       <property name="sizePolicy">
+        <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
+         <horstretch>0</horstretch>
+         <verstretch>0</verstretch>
+        </sizepolicy>
+       </property>
+       <property name="minimumSize">
+        <size>
+         <width>200</width>
+         <height>0</height>
+        </size>
+       </property>
+       <property name="clearButtonEnabled" stdset="0">
+        <bool>true</bool>
+       </property>
+      </widget>
+     </item>
+     <item row="1" column="0">
+      <widget class="QLabel" name="label">
+       <property name="text">
+        <string>Filter &amp;by:</string>
+       </property>
+       <property name="buddy">
+        <cstring>filter_box</cstring>
        </property>
       </widget>
      </item>
@@ -110,6 +90,56 @@
         <string>Fi&amp;lter</string>
        </property>
       </widget>
+     </item>
+     <item row="0" column="2">
+      <widget class="QPushButton" name="find_button">
+       <property name="text">
+        <string>S&amp;earch</string>
+       </property>
+      </widget>
+     </item>
+     <item row="0" column="3" rowspan="2">
+      <layout class="QVBoxLayout" name="show_button_layout">
+       <item>
+        <widget class="QRadioButton" name="apply_all_checkbox">
+         <property name="text">
+          <string>Show &amp;all authors</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QRadioButton" name="apply_vl_checkbox">
+         <property name="toolTip">
+          <string>&lt;p&gt;Show authors only if they appear in the
+                    current Virtual library. Edits already done may be hidden but will
+                    not be forgotten.
+                    &lt;/p&gt;&lt;p&gt;
+                    Note that this box affects only what is displayed. Changes
+                    will affect all books in your library even if this box
+                    is checked.&lt;/p&gt;&lt;</string>
+         </property>
+         <property name="text">
+          <string>Only show authors in the current &amp;Virtual library</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QRadioButton" name="apply_selection_checkbox">
+         <property name="toolTip">
+          <string>&lt;p&gt;Show items only if they appear in the
+                    currently selected books. Edits already done may be hidden but will
+                    not be forgotten.
+                    &lt;/p&gt;&lt;p&gt;
+                    Note that this box affects only what is displayed. Changes
+                    will affect all books in your library even if this box
+                    is checked.&lt;/p&gt;&lt;</string>
+         </property>
+         <property name="text">
+          <string>O&amp;nly show authors in the currently selected books</string>
+         </property>
+        </widget>
+       </item>
+      </layout>
      </item>
     </layout>
    </item>
@@ -151,7 +181,19 @@ after changing Preferences-&gt;Advanced-&gt;Tweaks-&gt;Author sort name algorith
        </property>
       </widget>
      </item>
-     <item row="1" column="2">
+     <item row="1" column="3">
+      <widget class="QPushButton" name="edit_current_cell">
+       <property name="toolTip">
+        <string>&lt;p&gt;Edit the currently selected cell. If an author is edited then it is renamed
+                in every book where it is used. Double-clicking and pressing the edit
+                key also work.&lt;/p&gt;</string>
+       </property>
+       <property name="text">
+        <string>Edi&amp;t current cell</string>
+       </property>
+      </widget>
+     </item>
+     <item row="1" column="4">
       <widget class="QDialogButtonBox" name="buttonBox">
        <property name="sizePolicy">
         <sizepolicy hsizetype="Minimum" vsizetype="Fixed">
@@ -174,6 +216,13 @@ after changing Preferences-&gt;Advanced-&gt;Tweaks-&gt;Author sort name algorith
    </item>
   </layout>
  </widget>
+ <customwidgets>
+  <customwidget>
+   <class>HistoryLineEdit</class>
+   <extends>QComboBox</extends>
+   <header>calibre/gui2/widgets.h</header>
+  </customwidget>
+ </customwidgets>
  <resources/>
  <connections>
   <connection>
@@ -209,11 +258,4 @@ after changing Preferences-&gt;Advanced-&gt;Tweaks-&gt;Author sort name algorith
    </hints>
   </connection>
  </connections>
- <customwidgets>
-  <customwidget>
-   <class>HistoryLineEdit</class>
-   <extends>QComboBox</extends>
-   <header>calibre/gui2/widgets.h</header>
-  </customwidget>
- </customwidgets>
 </ui>

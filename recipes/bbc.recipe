@@ -111,6 +111,23 @@ def parse_article_json(root, abort_article):
         elif bt == 'text':
             lines.extend(serialize_text(block))
     return '<html><body id="main-content">' + '\n'.join(lines) + '</body></html>'
+
+
+def parse_raw_html(html, abort_article):
+    q = '>window.__INITIAL_DATA__="{'
+    idx = html.find(q)
+    if idx < 0:
+        raise ValueError('Failed to find JSON')
+    data = html[idx + len(q) - 2:]
+    idx = data.find('}";</script>')
+    data = data[:idx+2]
+    data = json.loads(data)
+    root = json.loads(data)
+    return parse_article_json(root, abort_article)
+
+
+if __name__ == '__main__':
+    print(parse_raw_html(open('/t/raw.html').read(), print))
 # }}}
 
 
@@ -118,9 +135,9 @@ class BBCNews(BasicNewsRecipe):
 
     # Select / de-select the feeds you want in your ebook.
     feeds = [
-        ("News Home", "https://feeds.bbci.co.uk/news/rss.xml"),
-        ("UK", "https://feeds.bbci.co.uk/news/uk/rss.xml"),
-        ("World", "https://feeds.bbci.co.uk/news/world/rss.xml"),
+        ('News Home', 'https://feeds.bbci.co.uk/news/rss.xml'),
+        ('UK', 'https://feeds.bbci.co.uk/news/uk/rss.xml'),
+        ('World', 'https://feeds.bbci.co.uk/news/world/rss.xml'),
         # ("England", "https://feeds.bbci.co.uk/news/england/rss.xml"),
         # ("Scotland", "https://feeds.bbci.co.uk/news/scotland/rss.xml"),
         # ("Wales", "https://feeds.bbci.co.uk/news/wales/rss.xml"),
@@ -130,26 +147,26 @@ class BBCNews(BasicNewsRecipe):
         # ("Europe", "https://feeds.bbci.co.uk/news/world/europe/rss.xml"),
         # ("Latin America", "https://feeds.bbci.co.uk/news/world/latin_america/rss.xml"),
         # ("Middle East", "https://feeds.bbci.co.uk/news/world/middle_east/rss.xml"),
-        ("US & Canada", "https://feeds.bbci.co.uk/news/world/us_and_canada/rss.xml"),
-        ("Politics", "https://feeds.bbci.co.uk/news/politics/rss.xml"),
-        ("Science/Environment",
-         "https://feeds.bbci.co.uk/news/science_and_environment/rss.xml"),
-        ("Technology", "https://feeds.bbci.co.uk/news/technology/rss.xml"),
-        ("Magazine", "https://feeds.bbci.co.uk/news/magazine/rss.xml"),
-        ("Entertainment/Arts",
-         "https://feeds.bbci.co.uk/news/entertainment_and_arts/rss.xml"),
+        ('US & Canada', 'https://feeds.bbci.co.uk/news/world/us_and_canada/rss.xml'),
+        ('Politics', 'https://feeds.bbci.co.uk/news/politics/rss.xml'),
+        ('Science/Environment',
+         'https://feeds.bbci.co.uk/news/science_and_environment/rss.xml'),
+        ('Technology', 'https://feeds.bbci.co.uk/news/technology/rss.xml'),
+        ('Magazine', 'https://feeds.bbci.co.uk/news/magazine/rss.xml'),
+        ('Entertainment/Arts',
+         'https://feeds.bbci.co.uk/news/entertainment_and_arts/rss.xml'),
         # ("Health", "https://feeds.bbci.co.uk/news/health/rss.xml"),
         # ("Education/Family", "https://feeds.bbci.co.uk/news/education/rss.xml"),
-        ("Business", "https://feeds.bbci.co.uk/news/business/rss.xml"),
-        ("Special Reports", "https://feeds.bbci.co.uk/news/special_reports/rss.xml"),
-        ("Also in the News", "https://feeds.bbci.co.uk/news/also_in_the_news/rss.xml"),
+        ('Business', 'https://feeds.bbci.co.uk/news/business/rss.xml'),
+        ('Special Reports', 'https://feeds.bbci.co.uk/news/special_reports/rss.xml'),
+        ('Also in the News', 'https://feeds.bbci.co.uk/news/also_in_the_news/rss.xml'),
         # ("Newsbeat", "https://www.bbc.co.uk/newsbeat/rss.xml"),
         # ("Click", "http://newsrss.bbc.co.uk/rss/newsonline_uk_edition/programmes/click_online/rss.xml"),
         # ("Blog: Mark D'Arcy (Parliamentary Correspondent)", "https://feeds.bbci.co.uk/news/correspondents/markdarcy/rss.sxml"),
         # ("Blog: Robert Peston (Business Editor)", "https://feeds.bbci.co.uk/news/correspondents/robertpeston/rss.sxml"),
         # ("Blog: Stephanie Flanders (Economics Editor)", "https://feeds.bbci.co.uk/news/correspondents/stephanieflanders/rss.sxml"),
-        ("Sport Front Page",
-         "http://newsrss.bbc.co.uk/rss/sportonline_uk_edition/front_page/rss.xml"),
+        ('Sport Front Page',
+         'http://newsrss.bbc.co.uk/rss/sportonline_uk_edition/front_page/rss.xml'),
         # ("Football", "http://newsrss.bbc.co.uk/rss/sportonline_uk_edition/football/rss.xml"),
         # ("Cricket", "http://newsrss.bbc.co.uk/rss/sportonline_uk_edition/cricket/rss.xml"),
         # ("Rugby Union", "http://newsrss.bbc.co.uk/rss/sportonline_uk_edition/rugby_union/rss.xml"),
@@ -217,8 +234,22 @@ class BBCNews(BasicNewsRecipe):
     #
     oldest_article = 1.5
 
-    # Number of simultaneous downloads. 20 is consistantly working fine on the
-    # BBC News feeds with no problems. Speeds things up from the defualt of 5.
+    recipe_specific_options = {
+        'days': {
+            'short': 'Oldest article to download from this news source. In days ',
+            'long': 'For example, 0.5, gives you articles from the past 12 hours',
+            'default': str(oldest_article)
+        }
+    }
+
+    def __init__(self, *args, **kwargs):
+        BasicNewsRecipe.__init__(self, *args, **kwargs)
+        d = self.recipe_specific_options.get('days')
+        if d and isinstance(d, str):
+            self.oldest_article = float(d)
+
+    # Number of simultaneous downloads. 20 is consistently working fine on the
+    # BBC News feeds with no problems. Speeds things up from the default of 5.
     # If you have a lot of feeds and/or have increased oldest_article above 2
     # then you may wish to try increasing simultaneous_downloads to 25-30,
     # Or, of course, if you are in a hurry. [I've not tried beyond 20.]
@@ -269,12 +300,4 @@ class BBCNews(BasicNewsRecipe):
     resolve_internal_links = True
 
     def preprocess_raw_html(self, raw_html, url):
-        q = '>window.__INITIAL_DATA__={'
-        idx = raw_html.find(q)
-        if idx < 0:
-            raise ValueError('Failed to find JSON')
-        data = raw_html[idx + len(q) - 1:]
-        idx = data.find('};</script>')
-        data = data[:idx+1]
-        root = json.loads(data)
-        return parse_article_json(root, self.abort_article)
+        return parse_raw_html(raw_html, self.abort_article)

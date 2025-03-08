@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 
 
 __license__ = 'GPL v3'
@@ -11,10 +10,28 @@ import weakref
 from collections import OrderedDict, namedtuple
 from itertools import groupby
 from operator import attrgetter, itemgetter
+
 from qt.core import (
-    QDialog, QDialogButtonBox, QFrame, QGridLayout, QHBoxLayout, QIcon, QLabel,
-    QLineEdit, QListView, QListWidget, QListWidgetItem, QObject, QPushButton, QSize,
-    QStackedLayout, Qt, QTextCursor, QToolButton, QVBoxLayout, QWidget
+    QDialog,
+    QDialogButtonBox,
+    QFrame,
+    QGridLayout,
+    QHBoxLayout,
+    QIcon,
+    QLabel,
+    QLineEdit,
+    QListView,
+    QListWidget,
+    QListWidgetItem,
+    QObject,
+    QPushButton,
+    QSize,
+    QStackedLayout,
+    Qt,
+    QTextCursor,
+    QToolButton,
+    QVBoxLayout,
+    QWidget,
 )
 
 from calibre.constants import ismacos
@@ -25,13 +42,15 @@ from calibre.gui2.tweak_book.widgets import Dialog, PlainTextEdit
 from calibre.utils.config import JSONConfig
 from calibre.utils.icu import string_length as strlen
 from calibre.utils.localization import localize_user_manual_link
-from polyglot.builtins import (
-    codepoint_to_chr, iteritems, itervalues, range, unicode_type
-)
+from polyglot.builtins import codepoint_to_chr, iteritems, itervalues
 
-string_length = lambda x: strlen(unicode_type(x))  # Needed on narrow python builds, as subclasses of unicode dont work
+
+def string_length(x):
+    return strlen(str(x))  # Needed on narrow python builds, as subclasses of unicode dont work
+
+
 KEY = Qt.Key.Key_J
-MODIFIER = Qt.Modifier.META if ismacos else Qt.Modifier.CTRL
+MODIFIER = Qt.KeyboardModifier.MetaModifier if ismacos else Qt.KeyboardModifier.ControlModifier
 
 SnipKey = namedtuple('SnipKey', 'trigger syntaxes')
 
@@ -91,6 +110,7 @@ obtain some advantage from it? But.</p>
 
 }  # }}}
 
+
 # Parsing of snippets {{{
 escape = unescape = None
 
@@ -100,14 +120,16 @@ def escape_funcs():
     if escape is None:
         escapem = {('\\' + x):codepoint_to_chr(i+1) for i, x in enumerate('\\${}')}
         escape_pat = re.compile('|'.join(map(re.escape, escapem)))
-        escape = lambda x: escape_pat.sub(lambda m: escapem[m.group()], x.replace(r'\\', '\x01'))
+        def escape(x):
+            return escape_pat.sub(lambda m: escapem[m.group()], x.replace('\\\\', '\x01'))
         unescapem = {v:k[1] for k, v in iteritems(escapem)}
         unescape_pat = re.compile('|'.join(unescapem))
-        unescape = lambda x:unescape_pat.sub(lambda m:unescapem[m.group()], x)
+        def unescape(x):
+            return unescape_pat.sub(lambda m: unescapem[m.group()], x)
     return escape, unescape
 
 
-class TabStop(unicode_type):
+class TabStop(str):
 
     def __new__(self, raw, start_offset, tab_stops, is_toplevel=True):
         if raw.endswith('}'):
@@ -118,7 +140,7 @@ class TabStop(unicode_type):
             for c in child_stops:
                 c.parent = self
             tab_stops.extend(child_stops)
-            self = unicode_type.__new__(self, uraw)
+            self = str.__new__(self, uraw)
             if num.endswith('*'):
                 self.takes_selection = True
                 num = num[:-1]
@@ -126,7 +148,7 @@ class TabStop(unicode_type):
                 self.takes_selection = False
             self.num = int(num)
         else:
-            self = unicode_type.__new__(self, '')
+            self = str.__new__(self, '')
             self.num = int(raw[1:])
             self.takes_selection = False
         self.start = start_offset
@@ -137,8 +159,9 @@ class TabStop(unicode_type):
         return self
 
     def __repr__(self):
-        return 'TabStop(text=%s num=%d start=%d is_mirror=%s takes_selection=%s is_toplevel=%s)' % (
-            unicode_type.__repr__(self), self.num, self.start, self.is_mirror, self.takes_selection, self.is_toplevel)
+        return (
+            f'TabStop(text={str.__repr__(self)} num={self.num} start={self.start} is_mirror={self.is_mirror}'
+            f' takes_selection={self.takes_selection} is_toplevel={self.is_toplevel})')
 
 
 def parse_template(template, start_offset=0, is_toplevel=True, grouped=True):
@@ -177,14 +200,14 @@ def snippets(refresh=False):
     if _snippets is None or refresh:
         _snippets = copy.deepcopy(builtin_snippets)
         for snip in user_snippets.get('snippets', []):
-            if snip['trigger'] and isinstance(snip['trigger'], unicode_type):
+            if snip['trigger'] and isinstance(snip['trigger'], str):
                 key = snip_key(snip['trigger'], *snip['syntaxes'])
                 _snippets[key] = {'template':snip['template'], 'description':snip['description']}
-        _snippets = sorted(iteritems(_snippets), key=(lambda key_snip:string_length(key_snip[0].trigger)), reverse=True)
+        _snippets = sorted(iteritems(_snippets), key=(lambda key_snip: string_length(key_snip[0].trigger)), reverse=True)
     return _snippets
 
-# Editor integration {{{
 
+# Editor integration {{{
 
 class EditorTabStop:
 
@@ -212,8 +235,9 @@ class EditorTabStop:
         self.join_previous_edit = False
 
     def __repr__(self):
-        return 'EditorTabStop(num=%r text=%r left=%r right=%r is_deleted=%r mirrors=%r)' % (
-            self.num, self.text, self.left, self.right, self.is_deleted, self.mirrors)
+        return (
+            f'EditorTabStop(num={self.num!r} text={self.text!r} left={self.left!r} right={self.right!r} '
+            f'is_deleted={self.is_deleted!r} mirrors={self.mirrors!r})')
     __str__ = __unicode__ = __repr__
 
     def apply_selected_text(self, text):
@@ -438,8 +462,8 @@ class SnippetManager(QObject):
         return False
 # }}}
 
-# Config {{{
 
+# Config {{{
 
 class SnippetTextEdit(PlainTextEdit):
 
@@ -570,10 +594,10 @@ class UserSnippets(Dialog):
 
     def __init__(self, parent=None):
         Dialog.__init__(self, _('Create/edit snippets'), 'snippet-editor', parent=parent)
-        self.setWindowIcon(QIcon(I('snippets.png')))
+        self.setWindowIcon(QIcon.ic('snippets.png'))
 
     def setup_ui(self):
-        self.setWindowIcon(QIcon(I('modified.png')))
+        self.setWindowIcon(QIcon.ic('modified.png'))
         self.l = l = QVBoxLayout(self)
         self.stack = s = QStackedLayout()
         l.addLayout(s), l.addWidget(self.bb)
@@ -599,22 +623,22 @@ class UserSnippets(Dialog):
         c.l2 = l = QVBoxLayout()
         h.addLayout(l)
         self.add_button = b = QToolButton(self)
-        b.setIcon(QIcon(I('plus.png'))), b.setText(_('&Add snippet')), b.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextUnderIcon)
+        b.setIcon(QIcon.ic('plus.png')), b.setText(_('&Add snippet')), b.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextUnderIcon)
         b.clicked.connect(self.add_snippet)
         l.addWidget(b)
 
         self.edit_button = b = QToolButton(self)
-        b.setIcon(QIcon(I('modified.png'))), b.setText(_('&Edit snippet')), b.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextUnderIcon)
+        b.setIcon(QIcon.ic('modified.png')), b.setText(_('&Edit snippet')), b.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextUnderIcon)
         b.clicked.connect(self.edit_snippet)
         l.addWidget(b)
 
         self.add_button = b = QToolButton(self)
-        b.setIcon(QIcon(I('minus.png'))), b.setText(_('&Remove snippet')), b.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextUnderIcon)
+        b.setIcon(QIcon.ic('minus.png')), b.setText(_('&Remove snippet')), b.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextUnderIcon)
         b.clicked.connect(self.remove_snippet)
         l.addWidget(b)
 
         self.add_button = b = QToolButton(self)
-        b.setIcon(QIcon(I('config.png'))), b.setText(_('Change &built-in')), b.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextUnderIcon)
+        b.setIcon(QIcon.ic('config.png')), b.setText(_('Change &built-in')), b.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextUnderIcon)
         b.clicked.connect(self.change_builtin)
         l.addWidget(b)
 
@@ -627,7 +651,7 @@ class UserSnippets(Dialog):
         self.stack.addWidget(es)
 
     def snip_to_text(self, snip):
-        return '%s - %s' % (snip['trigger'], snip['description'])
+        return '{} - {}'.format(snip['trigger'], snip['description'])
 
     def snip_to_item(self, snip):
         i = QListWidgetItem(self.snip_to_text(snip), self.snip_list)
@@ -711,7 +735,7 @@ class UserSnippets(Dialog):
         d.bb = bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         l.addWidget(bb)
         bb.accepted.connect(d.accept), bb.rejected.connect(d.reject)
-        if d.exec_() == QDialog.DialogCode.Accepted and lw.currentItem() is not None:
+        if d.exec() == QDialog.DialogCode.Accepted and lw.currentItem() is not None:
             self.stack.setCurrentIndex(1)
             self.edit_snip.apply_snip(lw.currentItem().data(Qt.ItemDataRole.UserRole), creating_snippet=True)
 # }}}
@@ -721,5 +745,5 @@ if __name__ == '__main__':
     from calibre.gui2 import Application
     app = Application([])
     d = UserSnippets()
-    d.exec_()
+    d.exec()
     del app

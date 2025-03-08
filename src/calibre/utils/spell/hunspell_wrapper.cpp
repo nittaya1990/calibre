@@ -6,7 +6,7 @@
  * Distributed under terms of the GPL3 license.
  */
 
-#define PY_SSIZE_T_CLEAN 1
+#define PY_SSIZE_T_CLEAN
 #include <Python.h>
 #include <new>
 #include <string>
@@ -77,7 +77,7 @@ suggest(Dictionary *self, PyObject *args) {
 
     const std::vector<std::string>& word_list = self->handle->suggest(word);
 	ans = PyTuple_New(word_list.size());
-    if (ans == NULL) PyErr_NoMemory();
+    if (ans == NULL) return PyErr_NoMemory();
     Py_ssize_t i = 0;
     for(auto const& s: word_list) {
         temp = PyUnicode_Decode(s.c_str(), s.size(), self->encoding, "strict");

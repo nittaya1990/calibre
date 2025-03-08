@@ -1,28 +1,45 @@
-
 ''' E-book management software'''
 __license__   = 'GPL v3'
 __copyright__ = '2008, Kovid Goyal <kovid@kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
 
-import sys, os, re, time, random, warnings
-from polyglot.builtins import codepoint_to_chr, unicode_type, range, hasenv, native_string_type
+import os
+import re
+import sys
+import time
+import warnings
+from functools import lru_cache, partial
 from math import floor
-from functools import partial
+
+from polyglot.builtins import codepoint_to_chr, hasenv, native_string_type
 
 if not hasenv('CALIBRE_SHOW_DEPRECATION_WARNINGS'):
     warnings.simplefilter('ignore', DeprecationWarning)
 try:
     os.getcwd()
-except EnvironmentError:
+except OSError:
     os.chdir(os.path.expanduser('~'))
 
-from calibre.constants import (iswindows, ismacos, islinux, isfrozen,
-        isbsd, preferred_encoding, __appname__, __version__, __author__,
-        plugins, filesystem_encoding, config_dir)
+from calibre.constants import (
+    __appname__,
+    __author__,
+    __version__,
+    config_dir,
+    filesystem_encoding,
+    isbsd,
+    isfrozen,
+    islinux,
+    ismacos,
+    iswindows,
+    plugins,
+    preferred_encoding,
+)
 from calibre.startup import initialize_calibre
+
 initialize_calibre()
-from calibre.utils.icu import safe_chr
 from calibre.prints import prints
+from calibre.utils.icu import safe_chr
+from calibre.utils.resources import get_path as P
 
 if False:
     # Prevent pyflakes from complaining
@@ -39,6 +56,7 @@ def _init_mimetypes():
     _mt_inited = True
 
 
+@lru_cache(4096)
 def guess_type(*args, **kwargs):
     import mimetypes
     if not _mt_inited:
@@ -71,14 +89,16 @@ def get_types_map():
 
 
 def to_unicode(raw, encoding='utf-8', errors='strict'):
-    if isinstance(raw, unicode_type):
+    if isinstance(raw, str):
         return raw
     return raw.decode(encoding, errors)
 
 
 def patheq(p1, p2):
     p = os.path
-    d = lambda x : p.normcase(p.normpath(p.realpath(p.normpath(x))))
+
+    def d(x):
+        return p.normcase(p.normpath(p.realpath(p.normpath(x))))
     if not p1 or not p2:
         return False
     return d(p1) == d(p2)
@@ -236,20 +256,20 @@ def get_parsed_proxy(typ='http', debug=True):
     proxy = proxies.get(typ, None)
     if proxy:
         pattern = re.compile((
-            '(?:ptype://)?'
-            '(?:(?P<user>\\w+):(?P<pass>.*)@)?'
-            '(?P<host>[\\w\\-\\.]+)'
-            '(?::(?P<port>\\d+))?').replace('ptype', typ)
+            r'(?:ptype://)?'
+            r'(?:(?P<user>\w+):(?P<pass>.*)@)?'
+            r'(?P<host>[\w\-\.]+)'
+            r'(?::(?P<port>\d+))?').replace('ptype', typ)
         )
 
         match = pattern.match(proxies[typ])
         if match:
             try:
                 ans = {
-                        'host' : match.group('host'),
-                        'port' : match.group('port'),
-                        'user' : match.group('user'),
-                        'pass' : match.group('pass')
+                        'host': match.group('host'),
+                        'port': match.group('port'),
+                        'user': match.group('user'),
+                        'pass': match.group('pass')
                     }
                 if ans['port']:
                     ans['port'] = int(ans['port'])
@@ -259,7 +279,7 @@ def get_parsed_proxy(typ='http', debug=True):
                     traceback.print_exc()
             else:
                 if debug:
-                    prints('Using http proxy', unicode_type(ans))
+                    prints('Using http proxy', str(ans))
                 return ans
 
 
@@ -272,7 +292,7 @@ def get_proxy_info(proxy_scheme, proxy_string):
     '''
     from polyglot.urllib import urlparse
     try:
-        proxy_url = '%s://%s'%(proxy_scheme, proxy_string)
+        proxy_url = f'{proxy_scheme}://{proxy_string}'
         urlinfo = urlparse(proxy_url)
         ans = {
             'scheme': urlinfo.scheme,
@@ -291,18 +311,14 @@ def is_mobile_ua(ua):
 
 
 def random_user_agent(choose=None, allow_ie=True):
-    from calibre.utils.random_ua import common_user_agents, user_agents_popularity_map
+    from calibre.utils.random_ua import choose_randomly_by_popularity, common_user_agents
     ua_list = common_user_agents()
     ua_list = tuple(x for x in ua_list if not is_mobile_ua(x))
     if not allow_ie:
         ua_list = tuple(x for x in ua_list if 'Trident/' not in x)
     if choose is not None:
         return ua_list[choose]
-    pm = user_agents_popularity_map()
-    weights = None
-    if pm:
-        weights = tuple(map(pm.__getitem__, ua_list))
-    return random.choices(ua_list, weights=weights)[0]
+    return choose_randomly_by_popularity(ua_list)
 
 
 def browser(honor_time=True, max_time=2, user_agent=None, verify_ssl_certificates=True, handle_refresh=True, **kw):
@@ -320,6 +336,9 @@ def browser(honor_time=True, max_time=2, user_agent=None, verify_ssl_certificate
     opener.set_handle_robots(False)
     if user_agent is None:
         user_agent = random_user_agent(0, allow_ie=False)
+    elif user_agent == 'common_words/based':
+        from calibre.utils.random_ua import common_english_word_ua
+        user_agent = common_english_word_ua()
     opener.addheaders = [('User-agent', user_agent)]
     proxies = get_proxies()
     to_add = {}
@@ -344,6 +363,8 @@ def fit_image(width, height, pwidth, pheight):
     @param pheight: Height of box
     @return: scaled, new_width, new_height. scaled is True iff new_width and/or new_height is different from width or height.
     '''
+    if height < 1 or width < 1:
+        return False, int(width), int(height)
     scaled = height > pheight or width > pwidth
     if height > pheight:
         corrf = pheight / float(height)
@@ -372,7 +393,7 @@ class CurrentDir:
     def __exit__(self, *args):
         try:
             os.chdir(self.cwd)
-        except EnvironmentError:
+        except OSError:
             # The previous CWD no longer exists
             pass
 
@@ -419,7 +440,7 @@ def strftime(fmt, t=None):
         fmt = fmt.decode('mbcs' if iswindows else 'utf-8', 'replace')
     ans = time.strftime(fmt, t)
     if early_year:
-        ans = ans.replace('_early year hack##', unicode_type(orig_year))
+        ans = ans.replace('_early year hack##', str(orig_year))
     return ans
 
 
@@ -430,12 +451,20 @@ def my_unichr(num):
         return '?'
 
 
-def entity_to_unicode(match, exceptions=[], encoding='cp1252',
-        result_exceptions={}):
+XML_ENTITIES = {
+    '"': '&quot;',
+    "'": '&apos;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '&': '&amp;'
+}
+
+
+def entity_to_unicode(match, exceptions=(), encoding=None, result_exceptions={}):
     '''
     :param match: A match object such that '&'+match.group(1)';' is the entity.
 
-    :param exceptions: A list of entities to not convert (Each entry is the name of the entity, for e.g. 'apos' or '#1234'
+    :param exceptions: A list of entities to not convert (Each entry is the name of the entity, e.g. 'apos' or '#1234)'
 
     :param encoding: The encoding to use to decode numeric entities between 128 and 256.
     If None, the Unicode UCS encoding is used. A common encoding is cp1252.
@@ -445,61 +474,46 @@ def entity_to_unicode(match, exceptions=[], encoding='cp1252',
     Convenient way to specify exception for things like < or > that can be
     specified by various actual entities.
     '''
-    def check(ch):
-        return result_exceptions.get(ch, ch)
-
-    ent = match.group(1)
-    if ent in exceptions:
-        return '&'+ent+';'
-    if ent in {'apos', 'squot'}:  # squot is generated by some broken CMS software
-        return check("'")
-    if ent == 'hellips':
-        ent = 'hellip'
-    if ent.startswith('#'):
-        try:
-            if ent[1] in ('x', 'X'):
-                num = int(ent[2:], 16)
-            else:
-                num = int(ent[1:])
-        except:
-            return '&'+ent+';'
-        if encoding is None or num > 255:
-            return check(my_unichr(num))
-        try:
-            return check(bytes(bytearray((num,))).decode(encoding))
-        except UnicodeDecodeError:
-            return check(my_unichr(num))
-    from calibre.ebooks.html_entities import html5_entities
+    from calibre.ebooks.html_entities import entity_to_unicode_in_python
     try:
-        return check(html5_entities[ent])
-    except KeyError:
-        pass
-    from polyglot.html_entities import name2codepoint
-    try:
-        return check(my_unichr(name2codepoint[ent]))
-    except KeyError:
-        return '&'+ent+';'
+        from calibre_extensions.fast_html_entities import replace_all_entities
+    except ImportError:  # Running from source without updated binaries
+        return entity_to_unicode_in_python(match, exceptions, encoding, result_exceptions)
+    if not encoding and not exceptions and (not result_exceptions or result_exceptions is XML_ENTITIES):
+        return replace_all_entities(match.group(), result_exceptions is XML_ENTITIES)
+    return entity_to_unicode_in_python(match, exceptions, encoding, result_exceptions)
 
 
-_ent_pat = re.compile(r'&(\S+?);')
-xml_entity_to_unicode = partial(entity_to_unicode, result_exceptions={
-    '"' : '&quot;',
-    "'" : '&apos;',
-    '<' : '&lt;',
-    '>' : '&gt;',
-    '&' : '&amp;'})
+xml_entity_to_unicode = partial(entity_to_unicode, result_exceptions=XML_ENTITIES)
 
 
-def replace_entities(raw, encoding='cp1252'):
-    return _ent_pat.sub(partial(entity_to_unicode, encoding=encoding), raw)
+@lru_cache(2)
+def entity_regex():
+    return re.compile(r'&(\S+?);')
 
 
-def xml_replace_entities(raw, encoding='cp1252'):
-    return _ent_pat.sub(partial(xml_entity_to_unicode, encoding=encoding), raw)
+def replace_entities(raw, encoding=None):
+    if encoding is None:
+        try:
+            from calibre_extensions.fast_html_entities import replace_all_entities
+            replace_all_entities(raw)
+        except ImportError:  # Running from source without updated binaries
+            pass
+    return entity_regex().sub(partial(entity_to_unicode, encoding=encoding), raw)
+
+
+def xml_replace_entities(raw, encoding=None):
+    if encoding is None:
+        try:
+            from calibre_extensions.fast_html_entities import replace_all_entities
+            replace_all_entities(raw, True)
+        except ImportError:  # Running from source without updated binaries
+            pass
+    return entity_regex().sub(partial(xml_entity_to_unicode, encoding=encoding), raw)
 
 
 def prepare_string_for_xml(raw, attribute=False):
-    raw = _ent_pat.sub(entity_to_unicode, raw)
+    raw = replace_entities(raw)
     raw = raw.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
     if attribute:
         raw = raw.replace('"', '&quot;').replace("'", '&apos;')
@@ -531,7 +545,7 @@ def force_unicode(obj, enc=preferred_encoding):
 def as_unicode(obj, enc=preferred_encoding):
     if not isbytestring(obj):
         try:
-            obj = unicode_type(obj)
+            obj = str(obj)
         except Exception:
             try:
                 obj = native_string_type(obj)
@@ -548,15 +562,15 @@ def url_slash_cleaner(url):
 
 
 def human_readable(size, sep=' '):
-    """ Convert a size in bytes into a human readable form """
-    divisor, suffix = 1, "B"
+    ''' Convert a size in bytes into a human readable form '''
+    divisor, suffix = 1, 'B'
     for i, candidate in enumerate(('B', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB')):
         if size < (1 << ((i + 1) * 10)):
             divisor, suffix = (1 << (i * 10)), candidate
             break
-    size = unicode_type(float(size)/divisor)
-    if size.find(".") > -1:
-        size = size[:size.find(".")+2]
+    size = str(float(size)/divisor)
+    if size.find('.') > -1:
+        size = size[:size.find('.')+2]
     if size.endswith('.0'):
         size = size[:-2]
     return size + sep + suffix

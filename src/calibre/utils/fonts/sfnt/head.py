@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:fdm=marker:ai
 
 
 __license__   = 'GPL v3'
@@ -7,12 +6,11 @@ __copyright__ = '2012, Kovid Goyal <kovid at kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
 
 import array
-from struct import unpack_from, pack, calcsize
+from struct import calcsize, pack, unpack_from
 
-from calibre.utils.fonts.sfnt import UnknownTable, DateTimeProperty, FixedProperty
+from calibre.utils.fonts.sfnt import DateTimeProperty, FixedProperty, UnknownTable
 from calibre.utils.fonts.sfnt.errors import UnsupportedFont
 from calibre.utils.fonts.sfnt.loca import read_array
-from polyglot.builtins import zip
 
 
 class HeadTable(UnknownTable):
@@ -23,29 +21,29 @@ class HeadTable(UnknownTable):
     font_revision = FixedProperty('_font_revision')
 
     def __init__(self, *args, **kwargs):
-        super(HeadTable, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
 
         field_types = (
-                '_version_number' , 'l',
-                '_font_revision'  , 'l',
-                'checksum_adjustment' , 'L',
-                'magic_number' , 'L',
-                'flags' , 'H',
-                'units_per_em' , 'H',
-                '_created' , 'q',
-                '_modified' , 'q',
-                'x_min' , 'h',
-                'y_min' , 'h',
-                'x_max' , 'h',
-                'y_max' , 'h',
-                'mac_style' , 'H',
-                'lowest_rec_ppem' , 'H',
-                'font_direction_hint' , 'h',
-                'index_to_loc_format' , 'h',
-                'glyph_data_format'   , 'h'
+                '_version_number', 'l',
+                '_font_revision', 'l',
+                'checksum_adjustment', 'L',
+                'magic_number', 'L',
+                'flags', 'H',
+                'units_per_em', 'H',
+                '_created', 'q',
+                '_modified', 'q',
+                'x_min', 'h',
+                'y_min', 'h',
+                'x_max', 'h',
+                'y_max', 'h',
+                'mac_style', 'H',
+                'lowest_rec_ppem', 'H',
+                'font_direction_hint', 'h',
+                'index_to_loc_format', 'h',
+                'glyph_data_format', 'h'
         )
 
-        self._fmt = ('>%s'%(''.join(field_types[1::2]))).encode('ascii')
+        self._fmt = ('>{}'.format(''.join(field_types[1::2]))).encode('ascii')
         self._fields = field_types[0::2]
 
         for f, val in zip(self._fields, unpack_from(self._fmt, self.raw)):
@@ -90,7 +88,7 @@ class HorizontalHeader(UnknownTable):
 
     version_number = FixedProperty('_version_number')
     field_types = (
-        '_version_number' , 'l',
+        '_version_number', 'l',
         'ascender', 'h',
         'descender', 'h',
         'line_gap', 'h',
@@ -110,7 +108,7 @@ class HorizontalHeader(UnknownTable):
     )
 
     def read_data(self, hmtx, num_glyphs):
-        self._fmt = ('>%s'%(''.join(self.field_types[1::2]))).encode('ascii')
+        self._fmt = ('>{}'.format(''.join(self.field_types[1::2]))).encode('ascii')
         self._fields = self.field_types[0::2]
 
         for f, val in zip(self._fields, unpack_from(self._fmt, self.raw)):
@@ -139,7 +137,7 @@ class VerticalHeader(UnknownTable):
 
     version_number = FixedProperty('_version_number')
     field_types = (
-        '_version_number' , 'l',
+        '_version_number', 'l',
         'ascender', 'h',
         'descender', 'h',
         'line_gap', 'h',
@@ -159,7 +157,7 @@ class VerticalHeader(UnknownTable):
     )
 
     def read_data(self, vmtx, num_glyphs):
-        self._fmt = ('>%s'%(''.join(self.field_types[1::2]))).encode('ascii')
+        self._fmt = ('>{}'.format(''.join(self.field_types[1::2]))).encode('ascii')
         self._fields = self.field_types[0::2]
 
         for f, val in zip(self._fields, unpack_from(self._fmt, self.raw)):
@@ -191,7 +189,7 @@ class OS2Table(UnknownTable):
             return
         ver, = unpack_from(b'>H', self.raw)
         field_types = [
-            'version' , 'H',
+            'version', 'H',
             'average_char_width', 'h',
             'weight_class', 'H',
             'width_class', 'H',
@@ -229,7 +227,7 @@ class OS2Table(UnknownTable):
                 'max_context', 'H',
             ]
 
-        self._fmt = ('>%s'%(''.join(field_types[1::2]))).encode('ascii')
+        self._fmt = ('>{}'.format(''.join(field_types[1::2]))).encode('ascii')
         self._fields = field_types[0::2]
 
         for f, val in zip(self._fields, unpack_from(self._fmt, self.raw)):

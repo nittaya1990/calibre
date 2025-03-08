@@ -1,4 +1,3 @@
-
 '''
 CSS case-mangling transform.
 '''
@@ -7,18 +6,20 @@ __license__   = 'GPL v3'
 __copyright__ = '2008, Marshall T. Vandegrift <llasram@gmail.com>'
 
 from lxml import etree
-from calibre.ebooks.oeb.base import XHTML, XHTML_NS
-from calibre.ebooks.oeb.base import CSS_MIME
-from calibre.ebooks.oeb.base import namespace
+
+from calibre.ebooks.oeb.base import CSS_MIME, XHTML, XHTML_NS, namespace
 from calibre.ebooks.oeb.stylizer import Stylizer
+from calibre.utils.icu import lower as icu_lower
+from calibre.utils.icu import title_case as icu_title
+from calibre.utils.icu import upper as icu_upper
 from polyglot.builtins import string_or_bytes
 
-CASE_MANGLER_CSS = """
+CASE_MANGLER_CSS = '''
 .calibre_lowercase {
     font-variant: normal;
     font-size: 0.65em;
 }
-"""
+'''
 
 TEXT_TRANSFORMS = {'capitalize', 'uppercase', 'lowercase'}
 

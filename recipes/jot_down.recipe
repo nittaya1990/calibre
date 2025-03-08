@@ -10,6 +10,7 @@ http://www.jotdown.es/
 '''
 
 import re
+
 from calibre.web.feeds.news import BasicNewsRecipe
 
 
@@ -33,7 +34,7 @@ class jotdown(BasicNewsRecipe):
                          (u'Portada', u'http://www.jotdown.es/feed/')
                      ]
 
-    keep_only_tags     = [dict(name='div', attrs={'id':['content']}),
+    keep_only_tags     = [dict(name='div', attrs={'class':['entry-content']}),
                           dict(name='div', attrs={'id':['comments']}),
                          ]
 
@@ -46,7 +47,7 @@ class jotdown(BasicNewsRecipe):
                           dict(name='div', attrs={'id':'respond'})
                          ]
 
-    remove_tags_after  = dict(name='div' , attrs={'id':'respond'})
+    remove_tags_after  = dict(name='div', attrs={'id':'respond'})
 
     preprocess_regexps = [
         # To change the small size of the text

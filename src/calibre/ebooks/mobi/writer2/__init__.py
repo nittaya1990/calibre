@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
 
 
 __license__   = 'GPL v3'
@@ -11,4 +10,3 @@ UNCOMPRESSED = 1
 PALMDOC = 2
 HUFFDIC = 17480
 PALM_MAX_IMAGE_SIZE = 63 * 1024
-

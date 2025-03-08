@@ -1,58 +1,47 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 # License: GPLv3 Copyright: 2016, Kovid Goyal <kovid at kovidgoyal.net>
 
 
 import json
 import os
-import re
 import sys
-import time
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from functools import partial
 from itertools import count
+
 from lxml.etree import Comment
-from math import ceil
 
 from calibre import detect_ncpus, force_unicode, prepare_string_for_xml
-from calibre.constants import iswindows
 from calibre.customize.ui import plugin_for_input_format
-from calibre.ebooks.oeb.base import (
-    OEB_DOCS, OEB_STYLES, OPF, XHTML, XHTML_NS, XLINK, XPath as _XPath,
-    rewrite_links, urlunquote
-)
+from calibre.ebooks.oeb.base import EPUB, OEB_DOCS, OEB_STYLES, OPF, SMIL, XHTML, XHTML_NS, XLINK, rewrite_links, urlunquote
+from calibre.ebooks.oeb.base import XPath as _XPath
 from calibre.ebooks.oeb.iterator.book import extract_book
 from calibre.ebooks.oeb.polish.container import Container as ContainerBase
-from calibre.ebooks.oeb.polish.cover import (
-    find_cover_image, find_cover_image_in_page, find_cover_page
-)
-from calibre.ebooks.oeb.polish.pretty import pretty_script_or_style
+from calibre.ebooks.oeb.polish.cover import find_cover_image, find_cover_image_in_page, find_cover_page
 from calibre.ebooks.oeb.polish.toc import from_xpaths, get_landmarks, get_toc
 from calibre.ebooks.oeb.polish.utils import guess_type
-from calibre.ptempfile import PersistentTemporaryDirectory
 from calibre.srv.metadata import encode_datetime
-from calibre.srv.opts import grouper
 from calibre.utils.date import EPOCH
-from calibre.utils.filenames import rmtree
-from calibre.utils.ipc.simple_worker import start_pipe_worker
 from calibre.utils.logging import default_log
-from calibre.utils.serialize import (
-    json_dumps, json_loads, msgpack_dumps, msgpack_loads
-)
+from calibre.utils.serialize import json_dumps, json_loads, msgpack_loads
 from calibre.utils.short_uuid import uuid4
-from calibre_extensions import speedup
 from calibre_extensions.fast_css_transform import transform_properties
-from polyglot.binary import (
-    as_base64_unicode as encode_component, from_base64_bytes,
-    from_base64_unicode as decode_component
-)
-from polyglot.builtins import as_bytes, iteritems, map, unicode_type
+from polyglot.binary import as_base64_unicode as encode_component
+from polyglot.binary import from_base64_bytes
+from polyglot.binary import from_base64_unicode as decode_component
+from polyglot.builtins import as_bytes
 from polyglot.urllib import quote, urlparse
 
+try:
+    from calibre_extensions.speedup import get_num_of_significant_chars
+except ImportError:  # running from source without updated binary
+    def get_num_of_significant_chars(elem):
+        return len(getattr(elem, 'text', '') or '') + len(getattr(elem, 'tail', '') or '')
 RENDER_VERSION = 1
 
-BLANK_JPEG = b'\xff\xd8\xff\xdb\x00C\x00\x03\x02\x02\x02\x02\x02\x03\x02\x02\x02\x03\x03\x03\x03\x04\x06\x04\x04\x04\x04\x04\x08\x06\x06\x05\x06\t\x08\n\n\t\x08\t\t\n\x0c\x0f\x0c\n\x0b\x0e\x0b\t\t\r\x11\r\x0e\x0f\x10\x10\x11\x10\n\x0c\x12\x13\x12\x10\x13\x0f\x10\x10\x10\xff\xc9\x00\x0b\x08\x00\x01\x00\x01\x01\x01\x11\x00\xff\xcc\x00\x06\x00\x10\x10\x05\xff\xda\x00\x08\x01\x01\x00\x00?\x00\xd2\xcf \xff\xd9'  # noqa
+BLANK_JPEG = b'\xff\xd8\xff\xdb\x00C\x00\x03\x02\x02\x02\x02\x02\x03\x02\x02\x02\x03\x03\x03\x03\x04\x06\x04\x04\x04\x04\x04\x08\x06\x06\x05\x06\t\x08\n\n\t\x08\t\t\n\x0c\x0f\x0c\n\x0b\x0e\x0b\t\t\r\x11\r\x0e\x0f\x10\x10\x11\x10\n\x0c\x12\x13\x12\x10\x13\x0f\x10\x10\x10\xff\xc9\x00\x0b\x08\x00\x01\x00\x01\x01\x01\x11\x00\xff\xcc\x00\x06\x00\x10\x10\x05\xff\xda\x00\x08\x01\x01\x00\x00?\x00\xd2\xcf \xff\xd9'  # noqa: E501
 
 
 class Spineless(ValueError):
@@ -108,7 +97,7 @@ def create_link_replacer(container, link_uid, changed):
                 frag = urlunquote(frag)
                 url = resource_template.format(encode_url(name, frag))
             else:
-                if isinstance(name, unicode_type):
+                if isinstance(name, str):
                     name = name.encode('utf-8')
                 url = 'missing:' + force_unicode(quote(name), 'utf-8')
             changed.add(base)
@@ -151,37 +140,10 @@ def anchor_map(root):
 
 def get_length(root):
     ans = 0
-
-    fast = getattr(speedup, 'get_element_char_length', None)
-    if fast is None:
-        ignore_tags = frozenset('script style title noscript'.split())
-        img_tags = ('img', 'svg')
-        strip_space = re.compile(r'\s+')
-
-        def count(elem):
-            tag = getattr(elem, 'tag', count)
-            if callable(tag):
-                return len(strip_space.sub('', getattr(elem, 'tail', None) or ''))
-            num = 0
-            tname = tag.rpartition('}')[-1].lower()
-            if elem.text and tname not in ignore_tags:
-                num += len(strip_space.sub('', elem.text))
-            if elem.tail:
-                num += len(strip_space.sub('', elem.tail))
-            if tname in img_tags:
-                num += 1000
-            return num
-    else:
-        def count(elem):
-            tag = getattr(elem, 'tag', count)
-            if callable(tag):
-                return fast('', None, getattr(elem, 'tail', None))
-            return fast(tag, elem.text, elem.tail)
-
     for body in root.iterchildren(XHTML('body')):
-        ans += count(body)
+        ans += get_num_of_significant_chars(body)
         for elem in body.iterdescendants():
-            ans += count(elem)
+            ans += get_num_of_significant_chars(elem)
     return ans
 
 
@@ -194,9 +156,23 @@ def toc_anchor_map(toc):
         if name and node['id'] not in seen_map[name]:
             ans[name].append({'id':node['id'], 'frag':node['frag']})
             seen_map[name].add(node['id'])
-        tuple(map(process_node, node['children']))
+        for i in node['children']:
+            process_node(i)
 
     process_node(toc)
+    return dict(ans)
+
+
+def pagelist_anchor_map(page_list):
+    ans = defaultdict(list)
+    seen_map = defaultdict(set)
+    for i, x in enumerate(page_list):
+        x['id'] = i + 1
+        name = x['dest']
+        frag = x['frag']
+        if name and frag not in seen_map[name]:
+            ans[name].append({'id': x['id'], 'pagenum': x['pagenum'], 'frag':frag})
+            seen_map[name].add(frag)
     return dict(ans)
 
 
@@ -325,6 +301,106 @@ def transform_svg_image(container, name, link_uid, virtualize_resources, virtual
         container.commit_item(name)
 
 
+def parse_smil_time(x):
+    # https://www.w3.org/TR/SMIL3/smil-timing.html#q22
+    parts = x.split(':')
+    seconds = 0
+    if len(parts) == 3:
+        hours, minutes, seconds = int(parts[0]), int(parts[1]), float(parts[2])
+        seconds = abs(hours) * 3600 + max(0, min(abs(minutes), 59)) * 60 + max(0, min(abs(seconds), 59))
+    elif len(parts) == 2:
+        minutes, seconds = int(parts[0]), float(parts[1])
+        seconds = max(0, min(abs(minutes), 59)) * 60 + max(0, min(abs(seconds), 59))
+    elif len(parts) == 1:
+        if x.endswith('s'):
+            seconds = float(x[:-1])
+        elif x.endswith('ms'):
+            seconds = float(x[:-2]) * 0.001
+        elif x.endswith('min'):
+            seconds = float(x[:-3]) * 60
+        elif x.endswith('h'):
+            seconds = float(x[:-1]) * 3600
+        else:
+            raise ValueError(f'Malformed SMIL time: {x}')
+    else:
+        raise ValueError(f'Malformed SMIL time: {x}')
+    return seconds
+
+
+def transform_smil(container, name, link_uid, virtualize_resources, virtualized_names, smil_map):
+    root = container.parsed(name)
+    text_tag, audio_tag = SMIL('text'), SMIL('audio')
+    body_tag, seq_tag, par_tag = SMIL('body'), SMIL('seq'), SMIL('par')
+    type_attr, textref_attr = EPUB('type'), EPUB('textref')
+    parnum = 0
+
+    def make_par(par, target):
+        nonlocal parnum
+        parnum += 1
+        ans = {'num': parnum}
+        t = par.get(type_attr)
+        if t:
+            ans['type'] = t
+        for child in par.iterchildren('*'):
+            if child.tag == text_tag:
+                src = child.get('src')
+                if src:
+                    q = container.href_to_name(src, name)
+                    if q != target:
+                        return {}  # the par must match the textref of the parent seq
+                    ans['anchor'] = src.partition('#')[2]
+            elif child.tag == audio_tag:
+                src = child.get('src')
+                if src:
+                    ans['audio'] = container.href_to_name(src, name)
+                    b, e = child.get('clipBegin'), child.get('clipEnd')
+                    if b:
+                        ans['start'] = parse_smil_time(b)
+                    if e:
+                        ans['end'] = parse_smil_time(e)
+        return ans
+
+    def process_seq(seq_xml_element, tref, parent_seq=None):
+        target = container.href_to_name(tref, name)
+        seq = {'textref': [target, tref.partition('#')[2]], 'par': [], 'seq': []}
+        t = seq_xml_element.get(type_attr)
+        if t:
+            seq['type'] = t
+        if parent_seq is None:
+            parent_seq = smil_map.get(target)
+            if parent_seq is None:
+                smil_map[target] = parent_seq = {'textref': [target, ''], 'par':[], 'seq':[], 'type': 'root'}
+        else:
+            if parent_seq['textref'][0] != target:
+                return  # child seqs must be in the same HTML file as parent
+        parent_seq['seq'].append(seq)
+        for child in seq_xml_element.iterchildren('*'):
+            if child.tag == par_tag:
+                p = make_par(child, target)
+                if p.get('audio'):
+                    seq['par'].append(p)
+            elif child.tag == seq_tag:
+                tref = child.get(textref_attr)
+                if tref:
+                    process_seq(child, tref, seq)
+        if not seq['par']:
+            del seq['par']
+        if not seq['seq']:
+            del seq['seq']
+
+    for child in root.iterchildren('*'):
+        if child.tag == body_tag:
+            tref = child.get(textref_attr)
+            if tref:
+                process_seq(child, tref)
+            else:
+                for gc in child.iterchildren('*'):
+                    if gc.tag == seq_tag:
+                        tref = gc.get(textref_attr)
+                        if tref:
+                            process_seq(gc, tref)
+
+
 def transform_inline_styles(container, name, transform_sheet, transform_style):
     root = container.parsed(name)
     changed = False
@@ -334,7 +410,6 @@ def transform_inline_styles(container, name, transform_sheet, transform_style):
             if nraw != style.text:
                 changed = True
                 style.text = nraw
-                pretty_script_or_style(container, style)
     for elem in root.xpath('//*[@style]'):
         text = elem.get('style', None)
         if text:
@@ -346,9 +421,10 @@ def transform_inline_styles(container, name, transform_sheet, transform_style):
 
 
 def transform_html(container, name, virtualize_resources, link_uid, link_to_map, virtualized_names):
-    link_xpath = XPath('//h:a[@href]')
+    link_xpath = XPath('//h:*[@href and (self::h:a or self::h:area)]')
     svg_link_xpath = XPath('//svg:a')
     img_xpath = XPath('//h:img[@src]')
+    svg_img_xpath = XPath('//svg:image[@xl:href]')
     res_link_xpath = XPath('//h:link[@href]')
     root = container.parsed(name)
     changed_names = set()
@@ -357,6 +433,10 @@ def transform_html(container, name, virtualize_resources, link_uid, link_to_map,
     # Used for viewing images
     for img in img_xpath(root):
         img_name = container.href_to_name(img.get('src'), name)
+        if img_name:
+            img.set('data-calibre-src', img_name)
+    for img in svg_img_xpath(root):
+        img_name = container.href_to_name(img.get(XLINK('href')), name)
         if img_name:
             img.set('data-calibre-src', img_name)
 
@@ -392,6 +472,8 @@ def transform_html(container, name, virtualize_resources, link_uid, link_to_map,
             href = a.get(attr)
             if href:
                 href = link_replacer(name, href)
+            elif attr in a.attrib:
+                a.set(attr, 'javascript:void(0)')
             if href and href.startswith(link_uid):
                 a.set(attr, 'javascript:void(0)')
                 parts = href.split('|')
@@ -412,106 +494,10 @@ def transform_html(container, name, virtualize_resources, link_uid, link_to_map,
         f.write(shtml)
 
 
-class RenderManager:
-
-    def __init__(self, max_workers):
-        self.max_workers = max_workers
-
-    def launch_worker(self):
-        with lopen(os.path.join(self.tdir, '{}.json'.format(len(self.workers))), 'wb') as output:
-            error = lopen(os.path.join(self.tdir, '{}.error'.format(len(self.workers))), 'wb')
-            p = start_pipe_worker('from calibre.srv.render_book import worker_main; worker_main()', stdout=error, stderr=error)
-            p.output_path = output.name
-            p.error_path = error.name
-        self.workers.append(p)
-
-    def __enter__(self):
-        self.workers = []
-        self.tdir = PersistentTemporaryDirectory()
-        return self
-
-    def __exit__(self, *a):
-        while self.workers:
-            p = self.workers.pop()
-            if p.poll() is not None:
-                continue
-            p.terminate()
-            if not iswindows and p.poll() is None:
-                time.sleep(0.02)
-                if p.poll() is None:
-                    p.kill()
-        del self.workers
-        try:
-            rmtree(self.tdir)
-        except EnvironmentError:
-            time.sleep(0.1)
-            try:
-                rmtree(self.tdir)
-            except EnvironmentError:
-                pass
-        del self.tdir
-
-    def launch_workers(self, names, in_process_container):
-        num_workers = min(detect_ncpus(), len(names))
-        if self.max_workers:
-            num_workers = min(num_workers, self.max_workers)
-        if num_workers > 1:
-            if len(names) < 3 or sum(os.path.getsize(in_process_container.name_path_map[n]) for n in names) < 128 * 1024:
-                num_workers = 1
-        if num_workers > 1:
-            num_other_workers = num_workers - 1
-            while len(self.workers) < num_other_workers:
-                self.launch_worker()
-        return num_workers
-
-    def __call__(self, names, args, in_process_container):
-        num_workers = len(self.workers) + 1
-        if num_workers == 1:
-            return [process_book_files(names, *args, container=in_process_container)]
-
-        group_sz = int(ceil(len(names) / num_workers))
-        groups = tuple(grouper(group_sz, names))
-        for group, worker in zip(groups[:-1], self.workers):
-            worker.stdin.write(as_bytes(msgpack_dumps((worker.output_path, group,) + args)))
-            worker.stdin.flush(), worker.stdin.close()
-            worker.job_sent = True
-
-        for worker in self.workers:
-            if not hasattr(worker, 'job_sent'):
-                worker.stdin.write(b'_'), worker.stdin.flush(), worker.stdin.close()
-
-        error = None
-        results = [process_book_files(groups[-1], *args, container=in_process_container)]
-        for worker in self.workers:
-            if not hasattr(worker, 'job_sent'):
-                worker.wait()
-                continue
-            if worker.wait() != 0:
-                with lopen(worker.error_path, 'rb') as f:
-                    error = f.read().decode('utf-8', 'replace')
-            else:
-                with lopen(worker.output_path, 'rb') as f:
-                    results.append(msgpack_loads(f.read()))
-        if error is not None:
-            raise Exception('Render worker failed with error:\n' + error)
-        return results
-
-
-def worker_main():
-    stdin = getattr(sys.stdin, 'buffer', sys.stdin)
-    raw = stdin.read()
-    if raw == b'_':
-        return
-    args = msgpack_loads(raw)
-    result = process_book_files(*args[1:])
-    with open(args[0], 'wb') as f:
-        f.write(as_bytes(msgpack_dumps(result)))
-
-
 def virtualize_html(container, name, link_uid, link_to_map, virtualized_names):
 
     changed = set()
-    link_xpath = XPath('//h:a[@href]')
+    link_xpath = XPath('//h:*[@href and (self::h:a or self::h:area)]')
     svg_link_xpath = XPath('//svg:a')
     link_replacer = create_link_replacer(container, link_uid, changed)
 
@@ -523,13 +509,19 @@ def virtualize_html(container, name, link_uid, link_to_map, virtualized_names):
         href = a.get(attr) or ''
         if href.startswith(link_uid):
             a.set(attr, 'javascript:void(0)')
-            parts = decode_url(href.split('|')[1])
-            lname, lfrag = parts[0], parts[1]
-            link_to_map.setdefault(lname, {}).setdefault(lfrag or '', set()).add(name)
-            a.set('data-' + link_uid, json.dumps({'name':lname, 'frag':lfrag}, ensure_ascii=False))
+            try:
+                parts = decode_url(href.split('|')[1])
+            except IndexError:
+                pass
+            else:
+                lname, lfrag = parts[0], parts[1]
+                link_to_map.setdefault(lname, {}).setdefault(lfrag or '', set()).add(name)
+                a.set('data-' + link_uid, json.dumps({'name':lname, 'frag':lfrag}, ensure_ascii=False))
         elif href:
             a.set('target', '_blank')
             a.set('rel', 'noopener noreferrer')
+        elif attr in a.attrib:
+            a.set(attr, 'javascript:void(0)')
 
     for a in link_xpath(root):
         handle_link(a)
@@ -540,12 +532,16 @@ def virtualize_html(container, name, link_uid, link_to_map, virtualized_names):
     return name in changed
 
 
-def process_book_files(names, container_dir, opfpath, virtualize_resources, link_uid, data_for_clone, container=None):
+__smil_file_names__ = ''
+
+
+def process_book_files(names, container_dir, opfpath, virtualize_resources, link_uid, data_for_clone=None, container=None):
     if container is None:
         container = SimpleContainer(container_dir, opfpath, default_log, clone_data=data_for_clone)
         container.cloned = False
     link_to_map = {}
     html_data = {}
+    smil_map = {__smil_file_names__: []}
     virtualized_names = set()
     for name in names:
         if name is None:
@@ -563,12 +559,25 @@ def process_book_files(names, container_dir, opfpath, virtualize_resources, link
             transform_style_sheet(container, name, link_uid, virtualize_resources, virtualized_names)
         elif mt == 'image/svg+xml':
             transform_svg_image(container, name, link_uid, virtualize_resources, virtualized_names)
-    return link_to_map, html_data, virtualized_names
+        elif mt in ('application/smil', 'application/smil+xml'):
+            smil_map[__smil_file_names__].append(name)
+            transform_smil(container, name, link_uid, virtualize_resources, virtualized_names, smil_map)
+    return link_to_map, html_data, virtualized_names, smil_map
+
+
+def calculate_number_of_workers(names, in_process_container, max_workers):
+    num_workers = min(detect_ncpus(), len(names))
+    if max_workers:
+        num_workers = min(num_workers, max_workers)
+    if num_workers > 1:
+        if len(names) < 3 or sum(os.path.getsize(in_process_container.name_path_map[n]) for n in names) < 128 * 1024:
+            num_workers = 1
+    return num_workers
 
 
 def process_exploded_book(
-    book_fmt, opfpath, input_fmt, tdir, render_manager, log=None, book_hash=None, save_bookmark_data=False,
-    book_metadata=None, virtualize_resources=True
+    book_fmt, opfpath, input_fmt, tdir, log=None, book_hash=None, save_bookmark_data=False,
+    book_metadata=None, virtualize_resources=True, max_workers=1
 ):
     log = log or default_log
     container = SimpleContainer(tdir, opfpath, log)
@@ -576,17 +585,7 @@ def process_exploded_book(
     is_comic = bool(getattr(input_plugin, 'is_image_collection', False))
 
     def needs_work(mt):
-        return mt in OEB_STYLES or mt in OEB_DOCS or mt == 'image/svg+xml'
-
-    def work_priority(name):
-        # ensure workers with large files or stylesheets
-        # have the less names
-        size = os.path.getsize(container.name_path_map[name]),
-        is_html = container.mime_map.get(name) in OEB_DOCS
-        return (0 if is_html else 1), size
-
-    if not is_comic:
-        render_manager.launch_workers(tuple(n for n, mt in iteritems(container.mime_map) if needs_work(mt)), container)
+        return mt in OEB_STYLES or mt in OEB_DOCS or mt in ('image/svg+xml', 'application/smil', 'application/smil+xml')
 
     bookmark_data = None
     if save_bookmark_data:
@@ -599,12 +598,14 @@ def process_exploded_book(
     # browser has no good way to distinguish between zero byte files and
     # load failures.
     excluded_names = {
-        name for name, mt in iteritems(container.mime_map) if
+        name for name, mt in container.mime_map.items() if
         name == container.opf_name or mt == guess_type('a.ncx') or name.startswith('META-INF/') or
         name == 'mimetype' or not container.has_name_and_is_not_empty(name)}
     raster_cover_name, titlepage_name = create_cover_page(container, input_fmt.lower(), is_comic, book_metadata)
 
-    toc = get_toc(container, verify_destinations=False).to_dict(count())
+    tocobj = get_toc(container, verify_destinations=False)
+    page_list = tocobj.page_list or []
+    toc = tocobj.to_dict(count())
     if not toc or not toc.get('children'):
         toc = from_xpaths(container, ['//h:h1', '//h:h2', '//h:h3']).to_dict(count())
     spine = [name for name, is_linear in container.spine_names]
@@ -637,36 +638,55 @@ def process_exploded_book(
         'landmarks': landmarks,
         'link_to_map': {},
         'page_progression_direction': page_progression_direction,
+        'page_list': page_list,
+        'page_list_anchor_map': pagelist_anchor_map(page_list),
     }
 
-    names = sorted(
-        (n for n, mt in iteritems(container.mime_map) if needs_work(mt)),
-        key=work_priority)
+    names_that_need_work = tuple(n for n, mt in container.mime_map.items() if needs_work(mt))
+    num_workers = calculate_number_of_workers(names_that_need_work, container, max_workers)
+    results = []
+    if num_workers < 2:
+        results.append(process_book_files(names_that_need_work, tdir, opfpath, virtualize_resources, book_render_data['link_uid'], container=container))
+    else:
+        with ThreadPoolExecutor(max_workers=num_workers) as executor:
+            futures = tuple(
+                executor.submit(process_book_files, (name,), tdir, opfpath, virtualize_resources, book_render_data['link_uid'], container=container)
+                for name in names_that_need_work)
+            for future in futures:
+                results.append(future.result())
 
-    results = render_manager(
-        names, (
-            tdir, opfpath, virtualize_resources, book_render_data['link_uid'], container.data_for_clone()
-        ), container
-    )
     ltm = book_render_data['link_to_map']
     html_data = {}
     virtualized_names = set()
 
     def merge_ltm(dest, src):
-        for k, v in iteritems(src):
+        for k, v in src.items():
             if k in dest:
                 dest[k] |= v
             else:
                 dest[k] = v
 
-    for link_to_map, hdata, vnames in results:
+    final_smil_map = {}
+
+    def merge_smil_map(smil_map):
+        for n in smil_map.pop(__smil_file_names__):
+            excluded_names.add(n)
+        for n, d in smil_map.items():
+            if d:
+                # This assumes all smil data for a spine item is in a single
+                # smil file, which is required per the spec
+                final_smil_map[n] = d
+
+    for link_to_map, hdata, vnames, smil_map in results:
         html_data.update(hdata)
         virtualized_names |= vnames
-        for k, v in iteritems(link_to_map):
+        merge_smil_map(smil_map)
+        for k, v in link_to_map.items():
             if k in ltm:
                 merge_ltm(ltm[k], v)
             else:
                 ltm[k] = v
+    book_render_data['has_smil'] = bool(final_smil_map)
 
     def manifest_data(name):
         mt = (container.mime_map.get(name) or 'application/octet-stream').lower()
@@ -686,6 +706,9 @@ def process_exploded_book(
             if hm:
                 book_render_data['has_maths'] = True
             ans['anchor_map'] = data['anchor_map']
+            smil_map = final_smil_map.get(name)
+            if smil_map:
+                ans['smil_map'] = smil_map
         return ans
 
     book_render_data['files'] = {name:manifest_data(name) for name in set(container.name_path_map) - excluded_names}
@@ -695,12 +718,12 @@ def process_exploded_book(
         os.remove(container.name_path_map[name])
 
     ltm = book_render_data['link_to_map']
-    for name, amap in iteritems(ltm):
-        for k, v in tuple(iteritems(amap)):
+    for name, amap in ltm.items():
+        for k, v in tuple(amap.items()):
             amap[k] = tuple(v)  # needed for JSON serialization
 
     data = as_bytes(json.dumps(book_render_data, ensure_ascii=False))
-    with lopen(os.path.join(container.root, 'calibre-book-manifest.json'), 'wb') as f:
+    with open(os.path.join(container.root, 'calibre-book-manifest.json'), 'wb') as f:
         f.write(data)
 
     return container, bookmark_data
@@ -764,13 +787,12 @@ def get_stored_annotations(container, bookmark_data):
         return
     if raw.startswith(EPUB_FILE_TYPE_MAGIC):
         raw = raw[len(EPUB_FILE_TYPE_MAGIC):].replace(b'\n', b'')
-        for annot in json_loads(from_base64_bytes(raw)):
-            yield annot
+        yield from json_loads(from_base64_bytes(raw))
         return
 
     from calibre.ebooks.oeb.iterator.bookmarks import parse_bookmarks
     for bm in parse_bookmarks(raw):
-        if bm['type'] == 'cfi' and isinstance(bm['pos'], unicode_type):
+        if bm['type'] == 'cfi' and isinstance(bm['pos'], str):
             spine_index = (1 + bm['spine']) * 2
             epubcfi = 'epubcfi(/{}/{})'.format(spine_index, bm['pos'].lstrip('/'))
             title = bm.get('title')
@@ -780,41 +802,40 @@ def get_stored_annotations(container, bookmark_data):
                 yield {'type': 'last-read', 'pos': epubcfi, 'pos_type': 'epubcfi', 'timestamp': EPOCH}
 
 
-def render(pathtoebook, output_dir, book_hash=None, serialize_metadata=False, extract_annotations=False, virtualize_resources=True, max_workers=1):
+def render(pathtoebook, output_dir, book_hash=None, serialize_metadata=False, extract_annotations=False, virtualize_resources=True, max_workers=0):
     pathtoebook = os.path.abspath(pathtoebook)
-    with RenderManager(max_workers) as render_manager:
-        mi = None
-        if serialize_metadata:
-            from calibre.customize.ui import quick_metadata
-            from calibre.ebooks.metadata.meta import get_metadata
-            with lopen(pathtoebook, 'rb') as f, quick_metadata:
-                mi = get_metadata(f, os.path.splitext(pathtoebook)[1][1:].lower())
-        book_fmt, opfpath, input_fmt = extract_book(pathtoebook, output_dir, log=default_log)
-        container, bookmark_data = process_exploded_book(
-            book_fmt, opfpath, input_fmt, output_dir, render_manager,
-            book_hash=book_hash, save_bookmark_data=extract_annotations,
-            book_metadata=mi, virtualize_resources=virtualize_resources
-        )
-        if serialize_metadata:
-            from calibre.ebooks.metadata.book.serialize import metadata_as_dict
-            d = metadata_as_dict(mi)
-            d.pop('cover_data', None)
-            serialize_datetimes(d), serialize_datetimes(d.get('user_metadata', {}))
-            with lopen(os.path.join(output_dir, 'calibre-book-metadata.json'), 'wb') as f:
-                f.write(json_dumps(d))
-        if extract_annotations:
-            annotations = None
-            if bookmark_data:
-                annotations = json_dumps(tuple(get_stored_annotations(container, bookmark_data)))
-            if annotations:
-                with lopen(os.path.join(output_dir, 'calibre-book-annotations.json'), 'wb') as f:
-                    f.write(annotations)
+    mi = None
+    if serialize_metadata:
+        from calibre.customize.ui import quick_metadata
+        from calibre.ebooks.metadata.meta import get_metadata
+        with open(pathtoebook, 'rb') as f, quick_metadata:
+            mi = get_metadata(f, os.path.splitext(pathtoebook)[1][1:].lower())
+    book_fmt, opfpath, input_fmt = extract_book(pathtoebook, output_dir, log=default_log)
+    container, bookmark_data = process_exploded_book(
+        book_fmt, opfpath, input_fmt, output_dir, max_workers=max_workers,
+        book_hash=book_hash, save_bookmark_data=extract_annotations,
+        book_metadata=mi, virtualize_resources=virtualize_resources
+    )
+    if serialize_metadata:
+        from calibre.ebooks.metadata.book.serialize import metadata_as_dict
+        d = metadata_as_dict(mi)
+        d.pop('cover_data', None)
+        serialize_datetimes(d), serialize_datetimes(d.get('user_metadata', {}))
+        with open(os.path.join(output_dir, 'calibre-book-metadata.json'), 'wb') as f:
+            f.write(json_dumps(d))
+    if extract_annotations:
+        annotations = None
+        if bookmark_data:
+            annotations = json_dumps(tuple(get_stored_annotations(container, bookmark_data)))
+        if annotations:
+            with open(os.path.join(output_dir, 'calibre-book-annotations.json'), 'wb') as f:
+                f.write(annotations)
 
 
 def render_for_viewer(path, out_dir, book_hash):
     return render(
         path, out_dir, book_hash=book_hash, serialize_metadata=True,
-        extract_annotations=True, virtualize_resources=False, max_workers=0
+        extract_annotations=True, virtualize_resources=False
     )
 
 

@@ -1,6 +1,3 @@
-# -*- coding: utf-8 -*-
-
-
 '''
 Convert pml markup to and from html
 '''
@@ -9,9 +6,9 @@ __license__   = 'GPL v3'
 __copyright__ = '2009, John Schember <john@nachtimwald.com>'
 __docformat__ = 'restructuredtext en'
 
+import io
 import os
 import re
-import io
 from copy import deepcopy
 
 from calibre import my_unichr, prepare_string_for_xml
@@ -160,10 +157,10 @@ class PML_HTMLizer:
     def prepare_pml(self, pml):
         # Give Chapters the form \\*='text'text\\*. This is used for generating
         # the TOC later.
-        pml = re.sub(r'(?msu)(?P<c>\\x)(?P<text>.*?)(?P=c)', lambda match: '%s="%s"%s%s' %
-                     (match.group('c'), self.strip_pml(match.group('text')), match.group('text'), match.group('c')), pml)
-        pml = re.sub(r'(?msu)(?P<c>\\X[0-4])(?P<text>.*?)(?P=c)', lambda match: '%s="%s"%s%s' %
-                     (match.group('c'), self.strip_pml(match.group('text')), match.group('text'), match.group('c')), pml)
+        pml = re.sub(r'(?msu)(?P<c>\\x)(?P<text>.*?)(?P=c)', lambda match: '{}="{}"{}{}'.format(
+            match.group('c'), self.strip_pml(match.group('text')), match.group('text'), match.group('c')), pml)
+        pml = re.sub(r'(?msu)(?P<c>\\X[0-4])(?P<text>.*?)(?P=c)', lambda match: '{}="{}"{}{}'.format(
+            match.group('c'), self.strip_pml(match.group('text')), match.group('text'), match.group('c')), pml)
 
         # Remove comments
         pml = re.sub(r'(?mus)\\v(?P<text>.*?)\\v', '', pml)
@@ -175,18 +172,18 @@ class PML_HTMLizer:
         pml = re.sub(r'(?mus)^[ ]*$', '', pml)
 
         # Footnotes and Sidebars.
-        pml = re.sub(r'(?mus)<footnote\s+id="(?P<target>.+?)">\s*(?P<text>.*?)\s*</footnote>', lambda match: '\\FN="%s"%s\\FN' %
-                     (match.group('target'), match.group('text')) if match.group('text') else '', pml)
-        pml = re.sub(r'(?mus)<sidebar\s+id="(?P<target>.+?)">\s*(?P<text>.*?)\s*</sidebar>', lambda match: '\\SB="%s"%s\\SB' %
-                     (match.group('target'), match.group('text')) if match.group('text') else '', pml)
+        pml = re.sub(r'(?mus)<footnote\s+id="(?P<target>.+?)">\s*(?P<text>.*?)\s*</footnote>', lambda match: '\\FN="{}"{}\\FN'.format(
+            match.group('target'), match.group('text')) if match.group('text') else '', pml)
+        pml = re.sub(r'(?mus)<sidebar\s+id="(?P<target>.+?)">\s*(?P<text>.*?)\s*</sidebar>', lambda match: '\\SB="{}"{}\\SB'.format(
+            match.group('target'), match.group('text')) if match.group('text') else '', pml)
 
         # Convert &'s into entities so &amp; in the text doesn't get turned into
         # &. It will display as &amp;
         pml = pml.replace('&', '&amp;')
 
         # Replace \\a and \\U with either the unicode character or the entity.
-        pml = re.sub(r'\\a(?P<num>\d{3})', lambda match: '&#%s;' % match.group('num'), pml)
-        pml = re.sub(r'\\U(?P<num>[0-9a-f]{4})', lambda match: '%s' % my_unichr(int(match.group('num'), 16)), pml)
+        pml = re.sub(r'\\a(?P<num>\d{3})', lambda match: '&#{};'.format(match.group('num')), pml)
+        pml = re.sub(r'\\U(?P<num>[0-9a-f]{4})', lambda match: '{}'.format(my_unichr(int(match.group('num'), 16))), pml)
 
         pml = prepare_string_for_xml(pml)
 
@@ -223,9 +220,9 @@ class PML_HTMLizer:
         for key in self.STATES_TAGS:
             open, close = self.STATES_TAGS[key]
             if key in self.STATES_VALUE_REQ:
-                html = re.sub(r'(?u)%s\s*%s' % (open % '.*?', close), '', html)
+                html = re.sub(r'(?u){}\s*{}'.format(open % '.*?', close), '', html)
             else:
-                html = re.sub(r'(?u)%s\s*%s' % (open, close), '', html)
+                html = re.sub(fr'(?u){open}\s*{close}', '', html)
         html = re.sub(r'(?imu)<p>\s*</p>', '', html)
         return html
 
@@ -259,7 +256,7 @@ class PML_HTMLizer:
             else:
                 start += self.STATES_TAGS[key][0]
 
-        return '<p>%s' % start
+        return f'<p>{start}'
 
     def end_line(self):
         end = ''
@@ -282,7 +279,7 @@ class PML_HTMLizer:
             else:
                 end += self.STATES_TAGS[key][1]
 
-        return '%s</p>' % end
+        return f'{end}</p>'
 
     def process_code(self, code, stream, pre=''):
         text = ''
@@ -446,7 +443,7 @@ class PML_HTMLizer:
                 if code in self.LINK_STATES:
                     val = val.lstrip('#')
                 if pre:
-                    val = '%s-%s' % (pre, val)
+                    val = f'{pre}-{val}'
                 if code in self.STATES_VALUE_REQ:
                     text += self.STATES_TAGS[code][0] % val
                 else:
@@ -575,13 +572,13 @@ class PML_HTMLizer:
                         text = self.process_code(c, line)
                     elif c in 'FS':
                         l = line.read(1)
-                        if '%s%s' % (c, l) == 'Fn':
+                        if f'{c}{l}' == 'Fn':
                             text = self.process_code('Fn', line, 'fn')
-                        elif '%s%s' % (c, l) == 'FN':
+                        elif f'{c}{l}' == 'FN':
                             text = self.process_code('FN', line)
-                        elif '%s%s' % (c, l) == 'SB':
+                        elif f'{c}{l}' == 'SB':
                             text = self.process_code('SB', line)
-                        elif '%s%s' % (c, l) == 'Sd':
+                        elif f'{c}{l}' == 'Sd':
                             text = self.process_code('Sd', line, 'sb')
                     elif c in 'xXC':
                         empty = False
@@ -592,25 +589,25 @@ class PML_HTMLizer:
                         level = 0
                         if c in 'XC':
                             level = line.read(1)
-                        id = 'pml_toc-%s' % len(self.toc)
+                        id = f'pml_toc-{len(self.toc)}'
                         value = self.code_value(line)
                         if c == 'x':
                             t = self.process_code(c, line)
                         elif c == 'X':
-                            t = self.process_code('%s%s' % (c, level), line)
+                            t = self.process_code(f'{c}{level}', line)
                         if not value or value == '':
                             text = t
                         else:
                             self.toc.append((level, (os.path.basename(self.file_name), id, value)))
-                            text = '%s<span id="%s"></span>' % (t, id)
+                            text = f'{t}<span id="{id}"></span>'
                     elif c == 'm':
                         empty = False
                         src = self.code_value(line)
-                        text = '<img src="images/%s" />' % src
+                        text = f'<img src="images/{src}" />'
                     elif c == 'Q':
                         empty = False
                         id = self.code_value(line)
-                        text = '<span id="%s"></span>' % id
+                        text = f'<span id="{id}"></span>'
                     elif c == 'p':
                         empty = False
                         text = '<br /><br style="page-break-after: always;" />'
@@ -618,7 +615,7 @@ class PML_HTMLizer:
                         pass
                     elif c == 'w':
                         empty = False
-                        text = '<hr style="width: %s" />' % self.code_value(line)
+                        text = f'<hr style="width: {self.code_value(line)}" />'
                     elif c == 't':
                         indent_state['t'] = not indent_state['t']
                     elif c == 'T':
@@ -758,10 +755,11 @@ def pml_to_html(pml):
 def footnote_sidebar_to_html(pre_id, id, pml):
     id = id.strip('\x01')
     if id.strip():
-        html = '<br /><br style="page-break-after: always;" /><div id="%s-%s">%s<small><a href="#r%s-%s">return</a></small></div>' % (
-            pre_id, id, pml_to_html(pml), pre_id, id)
+        html = (
+            f'<br /><br style="page-break-after: always;" /><div id="{pre_id}-{id}">{pml_to_html(pml)}'
+            f'<small><a href="#r{pre_id}-{id}">return</a></small></div>')
     else:
-        html = '<br /><br style="page-break-after: always;" /><div>%s</div>' % pml_to_html(pml)
+        html = f'<br /><br style="page-break-after: always;" /><div>{pml_to_html(pml)}</div>'
     return html
 
 

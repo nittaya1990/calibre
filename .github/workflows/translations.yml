@@ -2,7 +2,8 @@ name: Transifex
 on:
   push:
     branches: [master, ]
-
+permissions:
+    contents: read # to fetch code (actions/checkout)
 
 jobs:
     Push-To-Transifex:
@@ -23,12 +24,10 @@ jobs:
               uses: actions/checkout@master
               with:
                 fetch-depth: 2
+                persist-credentials: false
 
             - name: Install calibre dependencies
               run: setup/arch-ci.sh
-
-            - name: Install translations dependencies
-              run: python -m pip install transifex-client
 
             - name: Bootstrap calibre
               run: runuser -u ci -- python setup.py bootstrap --ephemeral

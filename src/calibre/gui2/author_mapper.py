@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 # License: GPL v3 Copyright: 2018, Kovid Goyal <kovid at kovidgoyal.net>
 
 
@@ -8,13 +7,13 @@ from collections import OrderedDict
 from calibre.ebooks.metadata import authors_to_string, string_to_authors
 from calibre.ebooks.metadata.author_mapper import compile_rules, map_authors
 from calibre.gui2 import Application, elided_text
-from calibre.gui2.tag_mapper import (
-    RuleEdit as RuleEditBase, RuleEditDialog as RuleEditDialogBase,
-    RuleItem as RuleItemBase, Rules as RulesBase, RulesDialog as RulesDialogBase,
-    Tester as TesterBase
-)
+from calibre.gui2.tag_mapper import RuleEdit as RuleEditBase
+from calibre.gui2.tag_mapper import RuleEditDialog as RuleEditDialogBase
+from calibre.gui2.tag_mapper import RuleItem as RuleItemBase
+from calibre.gui2.tag_mapper import Rules as RulesBase
+from calibre.gui2.tag_mapper import RulesDialog as RulesDialogBase
+from calibre.gui2.tag_mapper import Tester as TesterBase
 from calibre.utils.config import JSONConfig
-from polyglot.builtins import unicode_type
 
 author_maps = JSONConfig('author-mapping-rules')
 
@@ -36,10 +35,11 @@ class RuleEdit(RuleEditBase):
         ('not_matches', _('does not match regex pattern')),
     ))
 
-    MSG = _('Create the rule below, the rule can be used to add or ignore files')
+    MSG = _('Create the rule below, the rule can be used to add or ignore authors')
     SUBJECT = _('the author, if the author name')
     VALUE_ERROR = _('You must provide a value for the author name to match')
     REPLACE_TEXT = _('with the name:')
+    SINGLE_EDIT_FIELD_NAME = 'authors'
 
     @property
     def can_use_tag_editor(self):
@@ -66,13 +66,13 @@ class RuleEdit(RuleEditBase):
     def rule(self, rule):
         def sc(name):
             c = getattr(self, name)
-            idx = c.findData(unicode_type(rule.get(name, '')))
+            idx = c.findData(str(rule.get(name, '')))
             if idx < 0:
                 idx = 0
             c.setCurrentIndex(idx)
         sc('match_type'), sc('action')
-        self.query.setText(unicode_type(rule.get('query', '')).strip())
-        self.replace.setText(unicode_type(rule.get('replace', '')).strip())
+        self.query.setText(str(rule.get('query', '')).strip())
+        self.replace.setText(str(rule.get('replace', '')).strip())
 
 
 class RuleEditDialog(RuleEditDialogBase):
@@ -90,7 +90,7 @@ class RuleItem(RuleItemBase):
             '<b>{action}</b> the author name, if it <i>{match_type}</i>: <b>{query}</b>').format(
                 action=RuleEdit.ACTION_MAP[rule['action']], match_type=RuleEdit.MATCH_TYPE_MAP[rule['match_type']], query=query)
         if rule['action'] == 'replace':
-            text += '<br>' + _('to the name') + ' <b>%s</b>' % rule['replace']
+            text += '<br>' + _('to the name') + ' <b>{}</b>'.format(rule['replace'])
         return '<div style="white-space: nowrap">' + text + '</div>'
 
 
@@ -132,7 +132,7 @@ if __name__ == '__main__':
     d.rules = [
             {'action':'replace', 'query':'alice B & alice bob', 'match_type':'one_of', 'replace':'Alice Bob'},
     ]
-    d.exec_()
+    d.exec()
     from pprint import pprint
     pprint(d.rules)
     del d, app

@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:ai
 
 
 __license__   = 'GPL v3'
@@ -19,22 +18,18 @@ from importlib.machinery import ModuleSpec
 from importlib.util import decode_source
 
 from calibre import as_unicode
-from calibre.customize import (
-    InvalidPlugin, Plugin, PluginNotFound, numeric_version, platform
-)
-from polyglot.builtins import itervalues, map, reload, string_or_bytes, unicode_type
-
-# PEP 302 based plugin loading mechanism, works around the bug in zipimport in
-# python 2.x that prevents importing from zip files in locations whose paths
-# have non ASCII characters
+from calibre.customize import InvalidPlugin, Plugin, PluginNotFound, numeric_version, platform
+from polyglot.builtins import itervalues, reload, string_or_bytes
 
 
-def get_resources(zfp, name_or_list_of_names):
+def get_resources(zfp, name_or_list_of_names, print_tracebacks_for_missing_resources=True):
     '''
     Load resources from the plugin zip file
 
     :param name_or_list_of_names: List of paths to resources in the zip file using / as
                 separator, or a single path
+
+    :param print_tracebacks_for_missing_resources: When True missing resources are reported to STDERR
 
     :return: A dictionary of the form ``{name : file_contents}``. Any names
                 that were not found in the zip file will not be present in the
@@ -50,20 +45,27 @@ def get_resources(zfp, name_or_list_of_names):
             try:
                 ans[name] = zf.read(name)
             except:
-                import traceback
-                traceback.print_exc()
+                if print_tracebacks_for_missing_resources:
+                    print('Failed to load resource:', repr(name), 'from the plugin zip file:', zfp, file=sys.stderr)
+                    import traceback
+                    traceback.print_exc()
     if len(names) == 1:
         ans = ans.pop(names[0], None)
 
     return ans
 
 
-def get_icons(zfp, name_or_list_of_names):
+def get_icons(zfp, name_or_list_of_names, plugin_name='', print_tracebacks_for_missing_resources=True):
     '''
     Load icons from the plugin zip file
 
     :param name_or_list_of_names: List of paths to resources in the zip file using / as
                 separator, or a single path
+
+    :param plugin_name: The human friendly name of the plugin, used to load icons from
+                the current theme, if present.
+
+    :param print_tracebacks_for_missing_resources: When True missing resources are reported to STDERR
 
     :return: A dictionary of the form ``{name : QIcon}``. Any names
                 that were not found in the zip file will be null QIcons.
@@ -71,25 +73,34 @@ def get_icons(zfp, name_or_list_of_names):
                 be A QIcon.
     '''
     from qt.core import QIcon, QPixmap
-    names = name_or_list_of_names
-    ans = get_resources(zfp, names)
-    if isinstance(names, string_or_bytes):
-        names = [names]
-    if ans is None:
-        ans = {}
-    if isinstance(ans, string_or_bytes):
-        ans = dict([(names[0], ans)])
+    ans = {}
+    namelist = [name_or_list_of_names] if isinstance(name_or_list_of_names, string_or_bytes) else name_or_list_of_names
+    failed = set()
+    if plugin_name:
+        for name in namelist:
+            q = QIcon.ic(f'{plugin_name}/{name}')
+            if q.is_ok():
+                ans[name] = q
+            else:
+                failed.add(name)
+    else:
+        failed = set(namelist)
+    if failed:
+        from_zfp = get_resources(zfp, list(failed), print_tracebacks_for_missing_resources=print_tracebacks_for_missing_resources)
+        if from_zfp is None:
+            from_zfp = {}
+        elif isinstance(from_zfp, string_or_bytes):
+            from_zfp = {namelist[0]: from_zfp}
 
-    ians = {}
-    for name in names:
-        p = QPixmap()
-        raw = ans.get(name, None)
-        if raw:
-            p.loadFromData(raw)
-        ians[name] = QIcon(p)
-    if len(names) == 1:
-        ians = ians.pop(names[0])
-    return ians
+        for name in failed:
+            p = QPixmap()
+            raw = from_zfp.get(name)
+            if raw:
+                p.loadFromData(raw)
+            ans[name] = QIcon(p)
+    if len(namelist) == 1 and ans:
+        ans = ans.pop(namelist[0])
+    return ans
 
 
 _translations_cache = {}
@@ -107,13 +118,15 @@ def load_translations(namespace, zfp):
             _translations_cache[zfp] = None
             return
         with zipfile.ZipFile(zfp) as zf:
-            try:
-                mo = zf.read('translations/%s.mo' % lang)
-            except KeyError:
-                mo = None  # No translations for this language present
-        if mo is None:
-            _translations_cache[zfp] = None
-            return
+            mo_path = zipfile.Path(zf, f'translations/{lang}.mo')
+            if not mo_path.exists() and '_' in lang:
+                mo_path = zipfile.Path(zf, f"translations/{lang.split('_')[0]}.mo")
+            if mo_path.exists():
+                mo = mo_path.read_bytes()
+            else:
+                _translations_cache[zfp] = None
+                return
+
         from gettext import GNUTranslations
         from io import BytesIO
         trans = _translations_cache[zfp] = GNUTranslations(BytesIO(mo))
@@ -125,8 +138,13 @@ def load_translations(namespace, zfp):
 class CalibrePluginLoader:
 
     __slots__ = (
-        'plugin_name', 'fullname_in_plugin', 'zip_file_path', '_is_package', 'names',
-        'filename', 'all_names'
+        '_is_package',
+        'all_names',
+        'filename',
+        'fullname_in_plugin',
+        'names',
+        'plugin_name',
+        'zip_file_path',
     )
 
     def __init__(self, plugin_name, fullname_in_plugin, zip_file_path, names, filename, is_package, all_names):
@@ -278,14 +296,14 @@ class CalibrePluginFinder:
 
     def load(self, path_to_zip_file):
         if not os.access(path_to_zip_file, os.R_OK):
-            raise PluginNotFound('Cannot access %r'%path_to_zip_file)
+            raise PluginNotFound(f'Cannot access {path_to_zip_file!r}')
 
         with zipfile.ZipFile(path_to_zip_file) as zf:
             plugin_name = self._locate_code(zf, path_to_zip_file)
 
         try:
             ans = None
-            plugin_module = 'calibre_plugins.%s'%plugin_name
+            plugin_module = f'calibre_plugins.{plugin_name}'
             m = sys.modules.get(plugin_module, None)
             if m is not None:
                 reload(m)
@@ -297,8 +315,7 @@ class CalibrePluginFinder:
                         obj.name != 'Trivial Plugin':
                     plugin_classes.append(obj)
             if not plugin_classes:
-                raise InvalidPlugin('No plugin class found in %s:%s'%(
-                    as_unicode(path_to_zip_file), plugin_name))
+                raise InvalidPlugin(f'No plugin class found in {as_unicode(path_to_zip_file)}:{plugin_name}')
             if len(plugin_classes) > 1:
                 plugin_classes.sort(key=lambda c:(getattr(c, '__module__', None) or '').count('.'))
 
@@ -306,14 +323,12 @@ class CalibrePluginFinder:
 
             if ans.minimum_calibre_version > numeric_version:
                 raise InvalidPlugin(
-                    'The plugin at %s needs a version of calibre >= %s' %
-                    (as_unicode(path_to_zip_file), '.'.join(map(unicode_type,
+                    'The plugin at {} needs a version of calibre >= {}'.format(as_unicode(path_to_zip_file), '.'.join(map(str,
                         ans.minimum_calibre_version))))
 
             if platform not in ans.supported_platforms:
                 raise InvalidPlugin(
-                    'The plugin at %s cannot be used on %s' %
-                    (as_unicode(path_to_zip_file), platform))
+                    f'The plugin at {as_unicode(path_to_zip_file)} cannot be used on {platform}')
 
             return ans
         except:
@@ -335,14 +350,13 @@ class CalibrePluginFinder:
             c = 0
             while True:
                 c += 1
-                plugin_name = 'dummy%d'%c
+                plugin_name = f'dummy{c}'
                 if plugin_name not in self.loaded_plugins:
                     break
         else:
             if self._identifier_pat.match(plugin_name) is None:
-                raise InvalidPlugin((
-                    'The plugin at %r uses an invalid import name: %r' %
-                    (path_to_zip_file, plugin_name)))
+                raise InvalidPlugin(
+                    f'The plugin at {path_to_zip_file!r} uses an invalid import name: {plugin_name!r}')
 
         pynames = [x for x in names if x.endswith('.py')]
 
@@ -376,9 +390,8 @@ class CalibrePluginFinder:
                     break
 
         if '__init__' not in names:
-            raise InvalidPlugin(('The plugin in %r is invalid. It does not '
+            raise InvalidPlugin(f'The plugin in {path_to_zip_file!r} is invalid. It does not '
                     'contain a top-level __init__.py file')
-                    % path_to_zip_file)
 
         with self._lock:
             self.loaded_plugins[plugin_name] = path_to_zip_file, names, tuple(all_names)

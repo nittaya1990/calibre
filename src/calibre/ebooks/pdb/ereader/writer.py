@@ -1,6 +1,3 @@
-# -*- coding: utf-8 -*-
-
-
 '''
 Write content to ereader pdb file.
 '''
@@ -19,7 +16,7 @@ from PIL import Image
 from calibre.ebooks.pdb.formatwriter import FormatWriter
 from calibre.ebooks.pdb.header import PdbHeaderBuilder
 from calibre.ebooks.pml.pmlml import PMLMLizer
-from polyglot.builtins import unicode_type, as_bytes
+from polyglot.builtins import as_bytes
 
 IDENTITY = 'PNRdPPrs'
 
@@ -36,7 +33,7 @@ class Writer(FormatWriter):
 
     def write_content(self, oeb_book, out_stream, metadata=None):
         pmlmlizer = PMLMLizer(self.log)
-        pml = unicode_type(pmlmlizer.extract_content(oeb_book, self.opts)).encode('cp1252', 'replace')
+        pml = str(pmlmlizer.extract_content(oeb_book, self.opts)).encode('cp1252', 'replace')
 
         text, text_sizes = self._text(pml)
         chapter_index = self._index_item(br'(?s)\\C(?P<val>[0-4])="(?P<text>.+?)"', pml)
@@ -67,7 +64,7 @@ class Writer(FormatWriter):
 
         lengths = [len(i) if i not in images else len(i[0]) + len(i[1]) for i in sections]
 
-        pdbHeaderBuilder = PdbHeaderBuilder(IDENTITY, metadata[0].partition('\x00')[0])
+        pdbHeaderBuilder = PdbHeaderBuilder(IDENTITY, metadata[0].partition(b'\x00')[0])
         pdbHeaderBuilder.build_header(lengths, out_stream)
 
         for item in sections:
@@ -108,9 +105,9 @@ class Writer(FormatWriter):
                 item += struct.pack('>L', mo.start())
                 text = mo.group('text')
                 # Strip all PML tags from text
-                text = re.sub(br'\\U[0-9a-z]{4}', '', text)
-                text = re.sub(br'\\a\d{3}', '', text)
-                text = re.sub(br'\\.', '', text)
+                text = re.sub(br'\\U[0-9a-z]{4}', b'', text)
+                text = re.sub(br'\\a\d{3}', b'', text)
+                text = re.sub(br'\\.', b'', text)
                 # Add appropriate spacing to denote the various levels of headings
                 if 'val' in mo.groupdict().keys():
                     text = b'%s%s' % (b' ' * 4 * int(mo.group('val')), text)
@@ -138,7 +135,7 @@ class Writer(FormatWriter):
             if item.media_type in OEB_RASTER_IMAGES and item.href in image_hrefs.keys():
                 try:
                     im = Image.open(io.BytesIO(item.data)).convert('P')
-                    im.thumbnail((300,300), Image.ANTIALIAS)
+                    im.thumbnail((300,300), Image.Resampling.LANCZOS)
 
                     data = io.BytesIO()
                     im.save(data, 'PNG')
@@ -154,8 +151,8 @@ class Writer(FormatWriter):
                     if len(data) + len(header) < 65505:
                         images.append((header, data))
                 except Exception as e:
-                    self.log.error('Error: Could not include file %s because '
-                        '%s.' % (item.href, e))
+                    self.log.error(f'Error: Could not include file {item.href} because '
+                        f'{e}.')
 
         return images
 
@@ -186,7 +183,7 @@ class Writer(FormatWriter):
             if len(metadata.publisher) >= 1:
                 publisher = metadata.publisher[0].value
 
-        return as_bytes('%s\x00%s\x00%s\x00%s\x00%s\x00' % (title, author, copyright, publisher, isbn))
+        return as_bytes(f'{title}\x00{author}\x00{copyright}\x00{publisher}\x00{isbn}\x00')
 
     def _header_record(self, text_count, chapter_count, link_count, image_count):
         '''

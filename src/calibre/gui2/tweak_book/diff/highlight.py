@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 
 
 __license__ = 'GPL v3'
@@ -7,13 +6,14 @@ __copyright__ = '2014, Kovid Goyal <kovid at kovidgoyal.net>'
 
 import os
 
-from qt.core import QTextDocument, QTextCursor, QPlainTextDocumentLayout
+from qt.core import QPlainTextDocumentLayout, QTextCursor, QTextDocument
 
 from calibre.gui2.tweak_book import tprefs
-from calibre.gui2.tweak_book.editor.text import get_highlighter as calibre_highlighter, SyntaxHighlighter
+from calibre.gui2.tweak_book.editor.syntax.utils import NULL_FMT, format_for_pygments_token
+from calibre.gui2.tweak_book.editor.text import SyntaxHighlighter
+from calibre.gui2.tweak_book.editor.text import get_highlighter as calibre_highlighter
 from calibre.gui2.tweak_book.editor.themes import get_theme, highlight_to_char_format
-from calibre.gui2.tweak_book.editor.syntax.utils import format_for_pygments_token, NULL_FMT
-from polyglot.builtins import iteritems, range
+from polyglot.builtins import iteritems
 
 
 class QtHighlighter(QTextDocument):
@@ -41,7 +41,7 @@ class QtHighlighter(QTextDocument):
                 dest_block = cursor.block()
                 c = QTextCursor(dest_block)
                 try:
-                    afs = block.layout().additionalFormats()
+                    afs = block.layout().formats()
                 except AttributeError:
                     afs = ()
                 for af in afs:
@@ -70,7 +70,8 @@ def pygments_lexer(filename):
         from pygments.util import ClassNotFound
     except ImportError:
         return None
-    glff = lambda n: get_lexer_for_filename(n, stripnl=False)
+    def glff(n):
+        return get_lexer_for_filename(n, stripnl=False)
     try:
         return glff(filename)
     except ClassNotFound:

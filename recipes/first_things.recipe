@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 from __future__ import unicode_literals
+
 __license__ = 'GPL v3'
 __copyright__ = '2017, John Hutson <jfhutson at gmail.com>'
 '''
@@ -7,6 +8,7 @@ firstthings.com
 '''
 import html5lib
 from lxml import html
+
 from calibre.web.feeds.news import BasicNewsRecipe
 
 
@@ -14,7 +16,7 @@ class FirstThings(BasicNewsRecipe):
 
     title = 'First Things'
     __author__ = 'John Hutson'
-    description = 'America\'s Most Influential Journal of Religion and Public Life'
+    description = "America's Most Influential Journal of Religion and Public Life"
     INDEX = 'https://www.firstthings.com/current-edition'
     language = 'en'
     encoding = 'utf-8'

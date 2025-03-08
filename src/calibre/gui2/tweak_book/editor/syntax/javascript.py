@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 
 
 __license__ = 'GPL v3'
@@ -7,28 +6,28 @@ __copyright__ = '2014, Kovid Goyal <kovid at kovidgoyal.net>'
 
 import re
 
-from pygments.lexer import RegexLexer, default, include
-from pygments.token import Comment, Punctuation, Number, Keyword, Text, String, Operator, Name
 import pygments.unistring as uni
+from pygments.lexer import RegexLexer, default, include
+from pygments.token import Comment, Keyword, Name, Number, Operator, Punctuation, String, Text
 
 from calibre.gui2.tweak_book.editor.syntax.pygments_highlighter import create_highlighter
+from calibre.utils.resources import get_path as P
 from polyglot.builtins import native_string_type
 
 JS_IDENT_START = ('(?:[$_' + uni.combine('Lu', 'Ll', 'Lt', 'Lm', 'Lo', 'Nl') +
                   ']|\\\\u[a-fA-F0-9]{4})')
 JS_IDENT_PART = ('(?:[$' + uni.combine('Lu', 'Ll', 'Lt', 'Lm', 'Lo', 'Nl',
                                        'Mn', 'Mc', 'Nd', 'Pc') +
-                 u'\u200c\u200d]|\\\\u[a-fA-F0-9]{4})')
+                 '\u200c\u200d]|\\\\u[a-fA-F0-9]{4})')
 JS_IDENT = JS_IDENT_START + '(?:' + JS_IDENT_PART + ')*'
 
 
 class JavascriptLexer(RegexLexer):
-
-    """
+    '''
     For JavaScript source code. This is based on the pygments JS highlighter,
     bu that does not handle multi-line comments in streaming mode, so we had to
     modify it.
-    """
+    '''
 
     flags = re.UNICODE | re.MULTILINE
 

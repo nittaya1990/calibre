@@ -1,29 +1,26 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 
 
 __license__   = 'GPL v3'
-__copyright__ = '2011, Roman Mukhin <ramses_ru at hotmail.com>, '\
-                '2008, Anatoly Shipitsin <norguhtar at gmail.com>'
+__copyright__ = ('2011, Roman Mukhin <ramses_ru at hotmail.com>, '
+                 '2008, Anatoly Shipitsin <norguhtar at gmail.com>')
 '''Read meta information from fb2 files'''
 
-import os, random
+import os
+import random
 from functools import partial
 from string import ascii_letters, digits
 
 from lxml import etree
 
-from calibre import strftime
+from calibre import force_unicode, guess_all_extensions, guess_type, prints, strftime
+from calibre.ebooks.chardet import xml_to_unicode
+from calibre.ebooks.metadata import MetaInformation, check_isbn
 from calibre.utils.date import parse_only_date
 from calibre.utils.img import save_cover_data_to
-from calibre.utils.xml_parse import safe_xml_fromstring
 from calibre.utils.imghdr import identify
-from calibre import guess_type, guess_all_extensions, prints, force_unicode
-from calibre.ebooks.metadata import MetaInformation, check_isbn
-from calibre.ebooks.chardet import xml_to_unicode
-from polyglot.builtins import unicode_type
+from calibre.utils.xml_parse import safe_xml_fromstring
 from polyglot.binary import as_base64_unicode
-
 
 NAMESPACES = {
     'fb2'   :   'http://www.gribuser.ru/xml/fictionbook/2.0',
@@ -35,7 +32,7 @@ tostring = partial(etree.tostring, method='text', encoding='unicode')
 
 
 def XLINK(tag):
-    return '{%s}%s'%(NAMESPACES['xlink'], tag)
+    return '{{{}}}{}'.format(NAMESPACES['xlink'], tag)
 
 
 class Context:
@@ -57,7 +54,7 @@ class Context:
     def get_or_create(self, parent, tag, attribs={}, at_start=True):
         xpathstr='./fb:'+tag
         for n, v in attribs.items():
-            xpathstr += '[@%s="%s"]' % (n, v)
+            xpathstr += f'[@{n}="{v}"]'
         ans = self.XPath(xpathstr)(parent)
         if ans:
             ans = ans[0]
@@ -66,7 +63,7 @@ class Context:
         return ans
 
     def create_tag(self, parent, tag, attribs={}, at_start=True):
-        ans = parent.makeelement('{%s}%s' % (self.fb_ns, tag))
+        ans = parent.makeelement(f'{{{self.fb_ns}}}{tag}')
         ans.attrib.update(attribs)
         if at_start:
             parent.insert(0, ans)
@@ -76,7 +73,7 @@ class Context:
 
     def clear_meta_tags(self, doc, tag):
         for parent in ('title-info', 'src-title-info', 'publish-info'):
-            for x in self.XPath('//fb:%s/fb:%s'%(parent, tag))(doc):
+            for x in self.XPath(f'//fb:{parent}/fb:{tag}')(doc):
                 x.getparent().remove(x)
 
     def text2fb2(self, parent, text):
@@ -91,7 +88,7 @@ class Context:
 
 
 def get_fb2_data(stream):
-    from calibre.utils.zipfile import ZipFile, BadZipfile
+    from calibre.utils.zipfile import BadZipfile, ZipFile
     pos = stream.tell()
     try:
         zf = ZipFile(stream)
@@ -117,7 +114,7 @@ def get_metadata(stream):
 
     # fallback for book_title
     if book_title:
-        book_title = unicode_type(book_title)
+        book_title = str(book_title)
     else:
         book_title = force_unicode(os.path.splitext(
             os.path.basename(getattr(stream, 'name',
@@ -167,7 +164,7 @@ def _parse_authors(root, ctx):
     # Those are fallbacks: <src-title-info>, <document-info>
     author = None
     for author_sec in ['title-info', 'src-title-info', 'document-info']:
-        for au in ctx.XPath('//fb:%s/fb:author'%author_sec)(root):
+        for au in ctx.XPath(f'//fb:{author_sec}/fb:author')(root):
             author = _parse_author(au, ctx)
             if author:
                 authors.append(author)
@@ -182,7 +179,7 @@ def _parse_authors(root, ctx):
 
 
 def _parse_author(elm_author, ctx):
-    """ Returns a list of display author and sortable author"""
+    ''' Returns a list of display author and sortable author'''
 
     xp_templ = 'normalize-space(fb:%s/text())'
 
@@ -201,7 +198,7 @@ def _parse_author(elm_author, ctx):
         if nname:
             author = nname
 
-    return author
+    return str(author)
 
 
 def _parse_book_title(root, ctx):
@@ -210,7 +207,7 @@ def _parse_book_title(root, ctx):
     xp_ti = '//fb:title-info/fb:book-title/text()'
     xp_pi = '//fb:publish-info/fb:book-title/text()'
     xp_si = '//fb:src-title-info/fb:book-title/text()'
-    book_title = ctx.XPath('normalize-space(%s|%s|%s)' % (xp_ti, xp_pi, xp_si))(root)
+    book_title = ctx.XPath(f'normalize-space({xp_ti}|{xp_pi}|{xp_si})')(root)
 
     return book_title
 
@@ -227,7 +224,7 @@ def _parse_cover(root, mi, ctx):
 
 def _parse_cover_data(root, imgid, mi, ctx):
     from calibre.ebooks.fb2 import base64_decode
-    elm_binary = ctx.XPath('//fb:binary[@id="%s"]'%imgid)(root)
+    elm_binary = ctx.XPath(f'//fb:binary[@id="{imgid}"]')(root)
     if elm_binary:
         mimetype = elm_binary[0].get('content-type', 'image/jpeg')
         mime_extensions = guess_all_extensions(mimetype)
@@ -244,7 +241,7 @@ def _parse_cover_data(root, imgid, mi, ctx):
                 fmt = identify(cdata)[0]
                 mi.cover_data = (fmt, cdata)
         else:
-            prints("WARNING: Unsupported coverpage mime-type '%s' (id=#%s)" % (mimetype, imgid))
+            prints(f"WARNING: Unsupported coverpage mime-type '{mimetype}' (id=#{imgid})")
 
 
 def _parse_tags(root, mi, ctx):
@@ -252,9 +249,9 @@ def _parse_tags(root, mi, ctx):
     # Those are fallbacks: <src-title-info>
     for genre_sec in ['title-info', 'src-title-info']:
         # -- i18n Translations-- ?
-        tags = ctx.XPath('//fb:%s/fb:genre/text()' % genre_sec)(root)
+        tags = ctx.XPath(f'//fb:{genre_sec}/fb:genre/text()')(root)
         if tags:
-            mi.tags = list(map(unicode_type, tags))
+            mi.tags = list(map(str, tags))
             break
 
 
@@ -265,7 +262,7 @@ def _parse_series(root, mi, ctx):
     xp_ti = '//fb:title-info/fb:sequence[1]'
     xp_pi = '//fb:publish-info/fb:sequence[1]'
 
-    elms_sequence = ctx.XPath('%s|%s' % (xp_ti, xp_pi))(root)
+    elms_sequence = ctx.XPath(f'{xp_ti}|{xp_pi}')(root)
     if elms_sequence:
         mi.series = elms_sequence[0].get('name', None)
         if mi.series:
@@ -289,7 +286,7 @@ def _parse_isbn(root, mi, ctx):
 def _parse_comments(root, mi, ctx):
     # pick up annotation but only from 1 section <title-info>;  fallback: <src-title-info>
     for annotation_sec in ['title-info', 'src-title-info']:
-        elms_annotation = ctx.XPath('//fb:%s/fb:annotation' % annotation_sec)(root)
+        elms_annotation = ctx.XPath(f'//fb:{annotation_sec}/fb:annotation')(root)
         if elms_annotation:
             mi.comments = tostring(elms_annotation[0])
             # TODO: tags i18n, xslt?
@@ -306,7 +303,7 @@ def _parse_pubdate(root, mi, ctx):
     year = ctx.XPath('number(//fb:publish-info/fb:year/text())')(root)
     if float.is_integer(year):
         # only year is available, so use 2nd of June
-        mi.pubdate = parse_only_date(unicode_type(int(year)))
+        mi.pubdate = parse_only_date(str(int(year)))
 
 
 def _parse_language(root, mi, ctx):
@@ -387,7 +384,7 @@ def _set_series(title_info, mi, ctx):
         seq = ctx.get_or_create(title_info, 'sequence')
         seq.set('name', mi.series)
         try:
-            seq.set('number', '%g'%mi.series_index)
+            seq.set('number', f'{mi.series_index:g}')
         except:
             seq.set('number', '1')
 

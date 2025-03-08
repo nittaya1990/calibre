@@ -1,13 +1,10 @@
-
-
 __license__   = 'GPL v3'
 __copyright__ = '2008, Kovid Goyal <kovid at kovidgoyal.net>'
 
-from qt.core import Qt, QDialog, QListWidgetItem
+from qt.core import QDialog, QListWidgetItem, Qt
 
+from calibre.gui2 import error_dialog, question_dialog
 from calibre.gui2.dialogs.device_category_editor_ui import Ui_DeviceCategoryEditor
-from calibre.gui2 import question_dialog, error_dialog
-from polyglot.builtins import unicode_type
 
 
 class ListWidgetItem(QListWidgetItem):
@@ -88,12 +85,12 @@ class DeviceCategoryEditor(QDialog, Ui_DeviceCategoryEditor):
     def finish_editing(self, item):
         if not item.text():
             error_dialog(self, _('Item is blank'),
-                            _('An item cannot be set to nothing. Delete it instead.')).exec_()
+                            _('An item cannot be set to nothing. Delete it instead.')).exec()
             item.setText(item.previous_text())
             return
         if item.text() != item.initial_text():
             id_ = int(item.data(Qt.ItemDataRole.UserRole))
-            self.to_rename[id_] = unicode_type(item.text())
+            self.to_rename[id_] = str(item.text())
 
     def rename_tag(self):
         item = self.available_tags.currentItem()
@@ -102,7 +99,7 @@ class DeviceCategoryEditor(QDialog, Ui_DeviceCategoryEditor):
     def _rename_tag(self, item):
         if item is None:
             error_dialog(self, _('No item selected'),
-                         _('You must select one item from the list of available items.')).exec_()
+                         _('You must select one item from the list of available items.')).exec()
             return
         self.available_tags.editItem(item)
 
@@ -110,9 +107,9 @@ class DeviceCategoryEditor(QDialog, Ui_DeviceCategoryEditor):
         deletes = self.available_tags.selectedItems()
         if not deletes:
             error_dialog(self, _('No items selected'),
-                         _('You must select at least one item from the list.')).exec_()
+                         _('You must select at least one item from the list.')).exec()
             return
-        ct = ', '.join([unicode_type(item.text()) for item in deletes])
+        ct = ', '.join([str(item.text()) for item in deletes])
         if not question_dialog(self, _('Are you sure?'),
             '<p>'+_('Are you sure you want to delete the following items?')+'<br>'+ct):
             return

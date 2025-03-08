@@ -1,5 +1,3 @@
-
-
 __license__   = 'GPL v3'
 __copyright__ = '2008, Ashish Kulkarni <kulkarni.ashish@gmail.com>'
 '''Read meta information from IMP files'''
@@ -7,19 +5,18 @@ __copyright__ = '2008, Ashish Kulkarni <kulkarni.ashish@gmail.com>'
 import sys
 
 from calibre.ebooks.metadata import MetaInformation, string_to_authors
-from polyglot.builtins import unicode_type
 
 MAGIC = (b'\x00\x01BOOKDOUG', b'\x00\x02BOOKDOUG')
 
 
 def get_metadata(stream):
-    """ Return metadata as a L{MetaInfo} object """
+    ''' Return metadata as a L{MetaInfo} object '''
     title = 'Unknown'
     mi = MetaInformation(title, ['Unknown'])
     stream.seek(0)
     try:
         if stream.read(10) not in MAGIC:
-            print('Couldn\'t read IMP header from file', file=sys.stderr)
+            print("Couldn't read IMP header from file", file=sys.stderr)
             return mi
 
         def cString(skip=0):
@@ -45,6 +42,6 @@ def get_metadata(stream):
         if category:
             mi.category = category
     except Exception as err:
-        msg = 'Couldn\'t read metadata from imp: %s with error %s'%(mi.title, unicode_type(err))
+        msg = f"Couldn't read metadata from imp: {mi.title} with error {err!s}"
         print(msg.encode('utf8'), file=sys.stderr)
     return mi

@@ -2,18 +2,18 @@
 #include "headless_integration.h"
 #include "headless_backingstore.h"
 #ifdef __APPLE__
-#include <QtFontDatabaseSupport/private/qcoretextfontdatabase_p.h>
+#include <QtGui/private/qcoretextfontdatabase_p.h>
 class QCoreTextFontEngine;
 #include <qpa/qplatformservices.h>
 #include <QtCore/private/qeventdispatcher_unix_p.h>
 #else
-#include "fontconfig_database.h"
+#include <QtGui/private/qfontconfigdatabase_p.h>
 #endif
 
 #ifdef Q_OS_WIN
 #include <QtCore/private/qeventdispatcher_win_p.h>
 #else
-#include <QtEventDispatcherSupport/private/qgenericunixeventdispatcher_p.h>
+#include <QtGui/private/qgenericunixeventdispatcher_p.h>
 #endif
 
 #include <QtGui/private/qpixmap_raster_p.h>
@@ -21,6 +21,7 @@ class QCoreTextFontEngine;
 #include <qpa/qplatformwindow.h>
 #include <qpa/qplatformfontdatabase.h>
 #include <qpa/qplatformtheme.h>
+#include <qpa/qplatformnativeinterface.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -32,10 +33,8 @@ class GenericUnixServices : public QGenericUnixServices {
      * leading to a segfault.  For example, defaultHintStyleFromMatch() queries
      * the nativeInterface() without checking that it is NULL. See
      * https://bugreports.qt-project.org/browse/QTBUG-40946
-     * This is no longer strictly necessary since we implement our own fontconfig database
-     * (a patched version of the Qt fontconfig database). However, it is probably a good idea to
-     * keep it unknown, since the headless QPA is used in contexts where a desktop environment
-     * does not make sense anyway.
+     *
+     * Also for the portal BS, we need to ignore openUrl and openDocument
      */
     QByteArray desktopEnvironment() const { return QByteArrayLiteral("UNKNOWN"); }
 	bool openUrl(const QUrl &url) { Q_UNUSED(url); return false; }
@@ -124,17 +123,22 @@ QAbstractEventDispatcher *HeadlessIntegration::createEventDispatcher() const
 #endif
 }
 
+QPlatformNativeInterface *HeadlessIntegration::nativeInterface() const
+{
+    if (!m_nativeInterface)
+        m_nativeInterface.reset(new QPlatformNativeInterface);
+    return m_nativeInterface.get();
+}
+
 HeadlessIntegration *HeadlessIntegration::instance()
 {
     return static_cast<HeadlessIntegration *>(QGuiApplicationPrivate::platformIntegration());
 }
 
-static QString themeName() { return QStringLiteral("headless"); }
 
-QStringList HeadlessIntegration::themeNames() const
-{
-    return QStringList(themeName());
-}
+#define THEME_NAME "headless"
+
+QStringList HeadlessIntegration::themeNames() const { return QStringList(THEME_NAME); }
 
 // Restrict the styles to "fusion" to prevent native styles requiring native
 // window handles (eg Windows Vista style) from being used.
@@ -157,7 +161,7 @@ public:
 
 QPlatformTheme *HeadlessIntegration::createPlatformTheme(const QString &name) const
 {
-    return name == themeName() ? new HeadlessTheme() : nullptr;
+    return name == THEME_NAME ? new HeadlessTheme() : nullptr;
 }
 
 QT_END_NAMESPACE

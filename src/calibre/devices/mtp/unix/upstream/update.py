@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
-# vim:fileencoding=UTF-8:ts=4:sw=4:sta:et:sts=4:fdm=marker:ai
 
 
 __license__   = 'GPL v3'
 __copyright__ = '2012, Kovid Goyal <kovid at kovidgoyal.net>'
 __docformat__ = 'restructuredtext en'
 
-import os, shutil, subprocess
+import os
+import shutil
+import subprocess
 
 base = os.path.dirname(os.path.abspath(__file__))
 

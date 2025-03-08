@@ -14,7 +14,6 @@ except ImportError:
 from contextlib import closing
 
 from lxml import html
-
 from qt.core import QUrl
 
 from calibre import browser
@@ -41,7 +40,7 @@ class BeamEBooksDEStore(BasicStoreConfig, StorePlugin):
             d = WebStoreDialog(self.gui, url, parent, detail_url)
             d.setWindowTitle(self.name)
             d.set_tags(self.config.get('tags', ''))
-            d.exec_()
+            d.exec()
 
     def search(self, query, max_results=10, timeout=60):
         url = 'https://www.beam-shop.de/search?saltFieldLimitation=all&sSearch=' + quote(query)
@@ -72,5 +71,5 @@ class BeamEBooksDEStore(BasicStoreConfig, StorePlugin):
                 s.price = price
                 s.drm = SearchResult.DRM_UNLOCKED
                 s.detail_item = id_
-#                 s.formats = None
+                # s.formats = None
                 yield s

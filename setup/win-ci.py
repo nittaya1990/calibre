@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 # License: GPLv3 Copyright: 2016, Kovid Goyal <kovid at kovidgoyal.net>
 
 
@@ -34,7 +33,7 @@ def download_file(url):
 def sw():
     sw = os.environ['SW']
     os.chdir(sw)
-    url = 'https://download.calibre-ebook.com/ci/calibre3/windows-64.tar.xz'
+    url = 'https://download.calibre-ebook.com/ci/calibre7/windows-64.tar.xz'
     tarball = download_file(url)
     with tarfile.open(fileobj=io.BytesIO(tarball)) as tf:
         tf.extractall()
@@ -50,9 +49,7 @@ def sanitize_path():
                 needed_paths.append(p)
                 executables.remove(x)
     sw = os.environ['SW']
-    paths = r'{0}\private\python\bin {0}\private\python\Lib\site-packages\pywin32_system32 {0}\bin {0}\qt\bin C:\Windows\System32'.format(
-        sw
-    ).split() + needed_paths
+    paths = rf'{sw}\private\python\bin {sw}\private\python\Lib\site-packages\pywin32_system32 {sw}\bin {sw}\qt\bin C:\Windows\System32'.split() + needed_paths
     os.environ['PATH'] = os.pathsep.join(paths)
     print('PATH:', os.environ['PATH'])
 
@@ -85,6 +82,8 @@ def setup_env():
     os.environ['QMAKE'] = os.path.join(SW, r'qt\bin\qmake')
     os.environ['CALIBRE_QT_PREFIX'] = os.path.join(SW, r'qt')
     os.environ['CI'] = 'true'
+    os.environ['OPENSSL_MODULES'] = os.path.join(SW, 'lib', 'ossl-modules')
+    os.environ['PIPER_TTS_DIR'] = os.path.join(SW, 'piper')
 
 
 def main():
@@ -99,7 +98,7 @@ def main():
     else:
         if len(sys.argv) == 1:
             raise SystemExit('Usage: win-ci.py sw|build|test')
-        raise SystemExit('%r is not a valid action' % sys.argv[-1])
+        raise SystemExit(f'{sys.argv[-1]!r} is not a valid action')
 
 
 if __name__ == '__main__':

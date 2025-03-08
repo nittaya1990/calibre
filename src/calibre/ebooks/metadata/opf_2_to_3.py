@@ -1,15 +1,28 @@
 #!/usr/bin/env python
-# vim:fileencoding=utf-8
 # License: GPLv3 Copyright: 2018, Kovid Goyal <kovid at kovidgoyal.net>
 
 
 from lxml import etree
 
 from calibre.ebooks.metadata.opf3 import (
-    DC, OPF, XPath, create_rating, create_series, create_timestamp,
-    encode_is_multiple, ensure_id, normalize_whitespace, parse_date, read_prefixes,
-    read_refines, read_user_metadata2, refdef, remove_element, set_last_modified,
-    set_refines, set_user_metadata3
+    DC,
+    OPF,
+    XPath,
+    create_rating,
+    create_series,
+    create_timestamp,
+    encode_is_multiple,
+    ensure_id,
+    normalize_whitespace,
+    parse_date,
+    read_prefixes,
+    read_refines,
+    read_user_metadata2,
+    refdef,
+    remove_element,
+    set_last_modified,
+    set_refines,
+    set_user_metadata3,
 )
 from calibre.ebooks.metadata.utils import parse_opf, pretty_print_opf
 from polyglot.builtins import itervalues
@@ -29,7 +42,7 @@ def upgrade_identifiers(root, data):
             if prefix and rest:
                 scheme, val = prefix, rest
         if scheme and val:
-            ident.text = '{}:{}'.format(scheme, val)
+            ident.text = f'{scheme}:{val}'
         for attr in tuple(ident.attrib):
             if attr != 'id':
                 del ident.attrib[attr]

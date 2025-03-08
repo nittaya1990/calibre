@@ -14,7 +14,6 @@ except ImportError:
 from contextlib import closing
 
 from lxml import html
-
 from qt.core import QUrl
 
 from calibre import browser
@@ -42,12 +41,12 @@ class EBookShoppeUKStore(BasicStoreConfig, StorePlugin):
             d = WebStoreDialog(self.gui, url, parent, detail_url)
             d.setWindowTitle(self.name)
             d.set_tags(self.config.get('tags', ''))
-            d.exec_()
+            d.exec()
 
     def search(self, query, max_results=10, timeout=60):
         url = 'http://www.ebookshoppe.com/search.php?search_query=' + quote(query)
         br = browser()
-        br.addheaders = [("Referer", "http://www.ebookshoppe.com/")]
+        br.addheaders = [('Referer', 'http://www.ebookshoppe.com/')]
 
         counter = max_results
         with closing(br.open(url, timeout=timeout)) as f:
